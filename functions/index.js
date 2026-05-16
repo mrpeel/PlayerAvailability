@@ -49,19 +49,60 @@ exports.api = onRequest({
         throw new Error("SPREADSHEET_ID secret is not set.");
       }
 
+      // --- ADMIN ACTIONS ---
+      if (action === 'getAdminRounds' || action === 'getAdminData') {
+        const normalizedInputPhone = normalizePhone(phone);
+        const [adminsRes, roundsRes] = await Promise.all([
+          sheets.spreadsheets.values.get({ spreadsheetId, range: 'Admins!A:B' }),
+          sheets.spreadsheets.values.get({ spreadsheetId, range: 'Rounds!A:Z' })
+        ]);
+
+        const adminRows = adminsRes.data.values || [];
+        const adminHeaders = adminRows[0] || [];
+        const phoneIdx = adminHeaders.indexOf('Phone');
+        
+        const isAdmin = adminRows.slice(1).some(row => normalizePhone(row[phoneIdx]) === normalizedInputPhone);
+        if (!isAdmin) {
+          return res.status(403).json({ error: 'You do not have access to the Admin Dashboard.' });
+        }
+
+        const roundsData = roundsRes.data.values || [];
+        const rHeaders = roundsData[0] || [];
+        const roundNumIdx = rHeaders.indexOf('RoundNum');
+        const date1Idx = rHeaders.indexOf('Date1');
+
+        if (action === 'getAdminRounds') {
+          // Filter out rounds that don't have a Date1
+          const validRounds = roundsData.slice(1).filter(r => r[date1Idx] && r[date1Idx].trim() !== '');
+          const rounds = validRounds.map(r => ({ num: r[roundNumIdx] }));
+          const current = validRounds.length > 0 ? validRounds[validRounds.length - 1][roundNumIdx] : null;
+          return res.json({ rounds, current });
+        }
+
+        let roundRow = roundNum ? roundsData.slice(1).find(r => r[roundNumIdx] == roundNum) : roundsData[roundsData.length - 1];
+        if (!roundRow) return res.status(404).json({ error: 'Round not found' });
+
+        return res.json({
+          roundNum: roundRow[roundNumIdx],
+          availMsg: roundRow[rHeaders.indexOf('AvailabilityMessage')],
+          shameMsg: roundRow[rHeaders.indexOf('WallOfShameMessage')]
+        });
+      }
+
+      // --- PLAYER ACTIONS ---
       if (action === 'getInitialData') {
         const normalizedInputPhone = normalizePhone(phone);
         
         const [playersRes, roundsRes, availRes] = await Promise.all([
           sheets.spreadsheets.values.get({ spreadsheetId, range: 'Players!A:Z' }),
-          sheets.spreadsheets.values.get({ spreadsheetId, range: 'Rounds!A:D', valueRenderOption: 'FORMATTED_VALUE' }),
+          sheets.spreadsheets.values.get({ spreadsheetId, range: 'Rounds!A:Z', valueRenderOption: 'FORMATTED_VALUE' }),
           sheets.spreadsheets.values.get({ spreadsheetId, range: 'Availability!A:D' })
         ]);
 
-        const playersData = playersRes.data.values;
-        const roundsData = roundsRes.data.values;
-        const availData = availRes.data.values;
-        const headers = playersData[0];
+        const playersData = playersRes.data.values || [];
+        const roundsData = roundsRes.data.values || [];
+        const availData = availRes.data.values || [];
+        const headers = playersData[0] || [];
 
         const firstNameIdx = headers.indexOf('FirstName');
         const familyNameIdx = headers.indexOf('FamilyName');
@@ -70,69 +111,47 @@ exports.api = onRequest({
           .filter(i => i !== -1);
           
         const household = [];
-        
         playersData.slice(1).forEach(row => {
           const isMatch = phoneCols.some(idx => normalizePhone(row[idx]) === normalizedInputPhone);
-          
           if (isMatch) {
-            const firstName = row[firstNameIdx] || '';
-            const familyName = row[familyNameIdx] || '';
             household.push({
               ID: row[headers.indexOf('ID')],
-              Name: `${firstName} ${familyName}`.trim(),
-              FirstName: firstName,
-              FamilyName: familyName,
+              Name: `${row[firstNameIdx] || ''} ${row[familyNameIdx] || ''}`.trim(),
               GlobalStatus: row[headers.indexOf('GlobalStatus')] || 'Active',
               ExpectedReturnDate: row[headers.indexOf('ExpectedReturnDate')] || ''
             });
           }
         });
 
-        if (household.length === 0) {
-          return res.status(404).json({ error: 'No players found for ' + phone });
-        }
+        if (household.length === 0) return res.status(404).json({ error: 'No players found' });
 
-        const rHeaders = roundsData[0];
-        let roundRow = null;
-        if (roundNum) {
-          roundRow = roundsData.slice(1).find(r => r[rHeaders.indexOf('RoundNum')] == roundNum);
-        } else {
-          roundRow = roundsData[roundsData.length - 1];
-        }
+        const rHeaders = roundsData[0] || [];
+        let roundRow = roundNum ? roundsData.slice(1).find(r => r[rHeaders.indexOf('RoundNum')] == roundNum) : roundsData[roundsData.length - 1];
+        if (!roundRow) return res.status(404).json({ error: 'Round not found' });
 
-        const roundInfo = roundRow ? {
+        const roundInfo = {
           RoundNum: roundRow[rHeaders.indexOf('RoundNum')],
           Date1: roundRow[rHeaders.indexOf('Date1')],
           Date2: roundRow[rHeaders.indexOf('Date2')],
           Format: (roundRow[rHeaders.indexOf('Date2')] && roundRow[rHeaders.indexOf('Date2')].trim() !== '') ? '2-Day' : '1-Day'
-        } : null;
+        };
 
-        const aHeaders = availData ? availData[0] : ['Timestamp', 'PlayerID', 'RoundNum', 'Response'];
+        const aHeaders = availData[0] || ['Timestamp', 'PlayerID', 'RoundNum', 'Response'];
         const householdAvail = {};
         household.forEach(player => {
-          const rows = availData ? availData.slice(1).filter(r => 
-            r[aHeaders.indexOf('PlayerID')] == player.ID && 
-            r[aHeaders.indexOf('RoundNum')] == roundInfo.RoundNum
-          ) : [];
+          const rows = availData.slice(1).filter(r => r[aHeaders.indexOf('PlayerID')] == player.ID && r[aHeaders.indexOf('RoundNum')] == roundInfo.RoundNum);
           householdAvail[player.ID] = rows.length > 0 ? rows[rows.length - 1][aHeaders.indexOf('Response')] : null;
         });
 
-        return res.json({
-          players: household,
-          roundInfo,
-          availability: householdAvail
-        });
+        return res.json({ players: household, roundInfo, availability: householdAvail });
       }
 
       if (action === 'saveAvailability') {
-        const timestamp = new Date().toISOString();
         await sheets.spreadsheets.values.append({
           spreadsheetId,
           range: 'Availability!A:D',
           valueInputOption: 'USER_ENTERED',
-          requestBody: {
-            values: [[timestamp, playerId, roundNum, response]]
-          }
+          requestBody: { values: [[new Date().toISOString(), playerId, roundNum, response]] }
         });
         return res.json({ success: true });
       }
@@ -142,35 +161,17 @@ exports.api = onRequest({
         const playersRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Players!A:Z' });
         const rows = playersRes.data.values;
         const headers = rows[0];
-        const idIdx = headers.indexOf('ID');
-        const statusIdx = headers.indexOf('GlobalStatus');
-        const returnIdx = headers.indexOf('ExpectedReturnDate');
-        
-        const rowIndex = rows.findIndex(r => r[idIdx] == playerId);
+        const rowIndex = rows.findIndex(r => r[headers.indexOf('ID')] == playerId);
         if (rowIndex === -1) throw new Error('Player not found');
 
         const rowNum = rowIndex + 1;
-        const updates = [
-          {
-            range: `Players!${String.fromCharCode(65 + statusIdx)}${rowNum}`,
-            values: [[status]]
-          }
-        ];
+        const statusIdx = headers.indexOf('GlobalStatus');
+        const returnIdx = headers.indexOf('ExpectedReturnDate');
 
-        if (returnIdx !== -1) {
-          updates.push({
-            range: `Players!${String.fromCharCode(65 + returnIdx)}${rowNum}`,
-            values: [[returnDate || '']]
-          });
-        }
+        const updates = [{ range: `Players!${String.fromCharCode(65 + statusIdx)}${rowNum}`, values: [[status]] }];
+        if (returnIdx !== -1) updates.push({ range: `Players!${String.fromCharCode(65 + returnIdx)}${rowNum}`, values: [[returnDate || '']] });
 
-        await sheets.spreadsheets.values.batchUpdate({
-          spreadsheetId,
-          requestBody: {
-            valueInputOption: 'USER_ENTERED',
-            data: updates
-          }
-        });
+        await sheets.spreadsheets.values.batchUpdate({ spreadsheetId, requestBody: { valueInputOption: 'USER_ENTERED', data: updates } });
         return res.json({ success: true });
       }
 

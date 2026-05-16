@@ -7,8 +7,8 @@
   <title>Laburnum CC Availability</title>
 
   <!-- Open Graph / Social Sharing -->
-  <meta property="og:title" content="Laburnum CC Availability" />
-  <meta property="og:description" content="🏏 Tap to confirm your availability for the next round" />
+  <meta property="og:title" content="LCC Availability" />
+  <meta property="og:description" content="🏏 Set your availability for the round" />
   <meta property="og:image" content="https://lcc-availability.web.app/availability-logo.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
@@ -318,15 +318,23 @@
       padding: 20px;
       margin: 40px auto;
     }
+
     .cricket-spinner {
       font-size: 3rem;
       display: inline-block;
       animation: match-spin 1.5s linear infinite;
     }
+
     @keyframes match-spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
     }
+
     .loader-text {
       font-family: 'Hanken Grotesk', sans-serif;
       color: var(--maroon);
@@ -409,7 +417,7 @@
 <body>
 
   <div class="header">
-    <div class="logo-container">
+    <div class="logo-container" onclick="handleLogoClick()">
       <svg version="1.0" viewBox="0 0 549 583" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
         <g transform="translate(0,583) scale(1,-1)">
           <path
@@ -449,6 +457,22 @@
       ROUND <span id="header-round"></span>
     </div>
   </div>
+
+  <script>
+    let logoClicks = 0;
+    let logoTimer = null;
+    function handleLogoClick() {
+      logoClicks++;
+      clearTimeout(logoTimer);
+      if (logoClicks >= 3) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const round = urlParams.get('round');
+        window.location.href = round ? `/admin.html?round=${round}` : '/admin.html';
+        return;
+      }
+      logoTimer = setTimeout(() => { logoClicks = 0; }, 1000);
+    }
+  </script>
 
   <!-- Views -->
   <div id="loading-view" class="container">

@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LCC Admin Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --maroon: #4d0012;
+      --gold: #fac218;
+      --cream: #fff8f7;
+      --white: #ffffff;
+      --radius: 12px;
+      --shadow: 0 4px 12px rgba(77, 0, 18, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Hanken Grotesk', sans-serif;
+      background-color: var(--cream);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding-bottom: 40px;
+    }
+
+    .header {
+      background-color: var(--maroon);
+      color: var(--white);
+      width: 100%;
+      padding: 20px;
+      text-align: center;
+      border-bottom: 6px solid var(--gold);
+      margin-bottom: 24px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 480px;
+      padding: 0 16px;
+      display: none;
+    }
+
+    .card {
+      background: var(--white);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .label {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--maroon);
+      margin-bottom: 8px;
+      display: block;
+      text-transform: uppercase;
+    }
+
+    .message-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px;
+      font-family: inherit;
+      font-size: 15px;
+      white-space: pre-wrap;
+      margin-bottom: 16px;
+      min-height: 100px;
+      color: #334155;
+    }
+
+    .btn {
+      width: 100%;
+      min-height: 54px;
+      border-radius: var(--radius);
+      font-weight: 800;
+      font-size: 16px;
+      border: none;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--maroon);
+      color: white;
+    }
+
+    .btn-primary:active {
+      transform: scale(0.98);
+    }
+
+    .btn-copy {
+      background: #e2e8f0;
+      color: #475569;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-copy.success {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .input-field {
+      width: 100%;
+      min-height: 56px;
+      border: 2px solid #e0d5d7;
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      font-size: 18px;
+      margin-bottom: 20px;
+      font-family: inherit;
+    }
+
+    .select-field {
+      width: 100%;
+      min-height: 56px;
+      border: 2px solid #e0d5d7;
+      border-radius: var(--radius);
+      padding: 0 16px;
+      font-size: 18px;
+      margin-bottom: 20px;
+      font-family: inherit;
+      background: white;
+      appearance: none;
+    }
+
+    .loader {
+      text-align: center;
+      margin-top: 40px;
+    }
+
+    .spinner {
+      font-size: 3rem;
+      animation: spin 1.5s linear infinite;
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      from {
+        transform: rotate(0deg);
+      }
+
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="header">
+    <h1>Admin Dashboard</h1>
+  </div>
+
+  <div id="login-view" class="container">
+    <div class="card">
+      <h2 style="margin-bottom: 8px;">Admin Access</h2>
+      <label class="label">Mobile Number</label>
+      <input type="tel" id="phone-input" class="input-field" placeholder="0400 000 000">
+      <button class="btn btn-primary" onclick="handleLogin()">Sign In</button>
+    </div>
+  </div>
+
+  <div id="round-view" class="container">
+    <div class="card">
+      <h2 style="margin-bottom: 12px;">Select Round</h2>
+      <label class="label">Which round do you need?</label>
+      <select id="round-select" class="select-field">
+        <option value="">Loading rounds...</option>
+      </select>
+      <button class="btn btn-primary" onclick="setRound()">Go to Round</button>
+    </div>
+  </div>
+
+  <div id="loading-view" class="container">
+    <div class="loader">
+      <div class="spinner">🏏</div>
+      <p style="margin-top:15px; font-weight:800;">Verifying...</p>
+    </div>
+  </div>
+
+  <div id="dashboard-view" class="container">
+    <div class="card">
+      <label class="label">Round <span id="round-num"></span> Availability</label>
+      <div id="avail-msg" class="message-box"></div>
+      <button class="btn btn-copy" onclick="copyText('avail-msg', this)">Copy for WhatsApp</button>
+    </div>
+    <div class="card">
+      <label class="label">Wall of Shame</label>
+      <div id="shame-msg" class="message-box"></div>
+      <button class="btn btn-copy" onclick="copyText('shame-msg', this)">Copy for WhatsApp</button>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <button class="btn btn-outline" style="flex: 1; border: 2px solid var(--maroon); color: var(--maroon);"
+        onclick="showView('round-view')">Change Round</button>
+      <button class="btn btn-primary" style="flex: 1;" onclick="loadAdminData()">Refresh</button>
+    </div>
+  </div>
+
+  <script>
+    let phone = localStorage.getItem('lcc_phone');
+    let currentRound = null;
+
+    function showView(id) {
+      console.log("Showing view:", id);
+      document.querySelectorAll('.container').forEach(v => v.style.display = 'none');
+      document.getElementById(id).style.display = 'block';
+    }
+
+    window.onload = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      currentRound = urlParams.get('round');
+
+      console.log("OnLoad - Phone:", phone, "Round:", currentRound);
+
+      if (!phone) {
+        showView('login-view');
+      } else {
+        // If we have phone, we always verify it first by fetching rounds
+        // This acts as our auth check
+        fetchRounds(!!currentRound);
+      }
+    };
+
+    function handleLogin() {
+      phone = document.getElementById('phone-input').value.trim();
+      localStorage.setItem('lcc_phone', phone);
+      fetchRounds(false);
+    }
+
+    async function fetchRounds(autoForward) {
+      showView('loading-view');
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'getAdminRounds', phone })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        const select = document.getElementById('round-select');
+        select.innerHTML = data.rounds.map(r => `<option value="${r.num}" ${r.num == (currentRound || data.current) ? 'selected' : ''}>Round ${r.num}</option>`).join('');
+
+        if (autoForward && currentRound) {
+          loadAdminData();
+        } else {
+          showView('round-view');
+        }
+      } catch (e) {
+        console.error("Auth/Fetch Error:", e);
+        alert(e.message);
+        localStorage.removeItem('lcc_phone');
+        showView('login-view');
+      }
+    }
+
+    function setRound() {
+      currentRound = document.getElementById('round-select').value;
+      const newUrl = new URL(window.location);
+      newUrl.searchParams.set('round', currentRound);
+      window.history.pushState({}, '', newUrl);
+      loadAdminData();
+    }
+
+    async function loadAdminData() {
+      showView('loading-view');
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'getAdminData', phone, roundNum: currentRound })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        document.getElementById('round-num').innerText = data.roundNum;
+        document.getElementById('avail-msg').innerText = data.availMsg || 'No message set';
+        document.getElementById('shame-msg').innerText = data.shameMsg || 'No message set';
+        showView('dashboard-view');
+      } catch (e) {
+        alert(e.message);
+        showView('round-view');
+      }
+    }
+
+    function copyText(elemId, btn) {
+      const text = document.getElementById(elemId).innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '✓ Copied!';
+        btn.classList.add('success');
+        setTimeout(() => { btn.innerHTML = originalText; btn.classList.remove('success'); }, 2000);
+      });
+    }
+  </script>
+</body>
+
+</html>
