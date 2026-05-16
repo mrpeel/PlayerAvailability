@@ -1,68 +1,43 @@
-# Firebase Deployment for Laburnum CC Availability Tracker
+# Firebase Deployment Guide
 
-This project has been migrated from Google Apps Script to Firebase to provide a premium, white-labeled experience without Google banners.
+This guide ensures you have everything needed to deploy the Laburnum CC Availability Tracker.
 
 ## Prerequisites
-1.  **Firebase Project**: Create one at [console.firebase.google.com](https://console.firebase.google.com).
-2.  **Service Account**:
-    *   Go to Project Settings > Service Accounts.
-    *   Click **Generate new private key**.
-    *   Save this file as `functions/service-account.json`.
-    *   **CRITICAL**: Copy the `client_email` from this JSON and share the Google Sheet with this email (Editor access).
+- **Node.js**: Version 20 (required by Firebase Functions).
+- **Google Cloud Secrets**: Ensure `SPREADSHEET_ID` and `GOOGLE_SERVICE_ACCOUNT` are set in the Firebase Console or via CLI.
 
-## Initial Setup
-Link your local directory to your Firebase project:
-```bash
-npx firebase-tools use --add
-# Select your project from the list and give it an alias (e.g., 'default')
-```
+## Deployment Setup
+We have configured local scripts to make deployment easier and avoid "command not found" errors.
 
-## Configuration
-Use **Firebase Secrets Manager** to keep your credentials out of the codebase.
-
-1.  **Set Spreadsheet ID**:
+1.  **Install Dependencies** (only needed once):
     ```bash
-    # Run this from the ROOT directory, then paste your ID
-    npx firebase-tools functions:secrets:set SPREADSHEET_ID
-    ```
-
-2.  **Set Google Credentials**:
-    ```bash
-    # Run this from the ROOT directory
-    npx firebase-tools functions:secrets:set GOOGLE_SERVICE_ACCOUNT < functions/service-account.json
-    ```
-
-3.  **Local Development**:
-    Place a `service-account.json` file inside the `functions/` directory. It is already added to `.gitignore` and will be used as a fallback for the local emulator.
-
-## Deployment
-1.  **Install dependencies**:
-    ```bash
+    npm install
     cd functions && npm install
+    cd ..
     ```
-2.  **Login to Firebase**:
+
+2.  **Select Your Project**:
+    You must tell Firebase which project to deploy to. Replace `your-project-id` with your actual Firebase Project ID (e.g., `lcc-availability`):
     ```bash
-    npx firebase-tools login
+    npx firebase use --add
     ```
+
 3.  **Deploy**:
+    Run this from the **root** directory (where `firebase.json` is located):
     ```bash
-    npx firebase-tools deploy
+    npm run deploy
     ```
+    *Note: This is an alias for `npx firebase deploy`.*
+
+## Troubleshooting
+- **"command not found: firebase"**: Always use `npx firebase` or `npm run deploy` to use the local installation.
+- **"No Hosting site detected"**: Ensure you have run `npx firebase use <project-id>` first so Firebase knows which project's hosting site to target.
+- **404 Requested entity not found**: This usually means the Project ID in your command or config doesn't exist. Double-check your Project ID in the [Firebase Console](https://console.firebase.google.com/).
 
 ## Local Testing
-1.  **Configure local variables**:
-    Create a file named `functions/.env` and add your spreadsheet ID:
+1.  **Start the Emulator**:
     ```bash
-    SPREADSHEET_ID=your_spreadsheet_id_here
+    npx firebase emulators:start
     ```
-    *(Note: The `service-account.json` you downloaded earlier is used automatically for auth during local testing)*.
-
-2.  **Start the Emulator**:
-    Run this from the root directory:
-    ```bash
-    npx firebase-tools emulators:start
-    ```
-
-3.  **Open the App**:
-    Go to [http://localhost:5000](http://localhost:5000) in your browser.
-    *The API will be running locally at http://localhost:5001 (mapped automatically).*
+2.  **Open the App**:
+    Go to [http://localhost:5000](http://localhost:5000).

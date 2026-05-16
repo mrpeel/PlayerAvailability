@@ -1,19 +1,12 @@
-const functions = require('firebase-functions');
+const { onRequest } = require("firebase-functions/v2/https");
 const { google } = require('googleapis');
 const cors = require('cors')({ origin: true });
 
-// NOTE: You will need to set these using:
-// firebase functions:secrets:set SPREADSHEET_ID
-// firebase functions:secrets:set GOOGLE_SERVICE_ACCOUNT (paste the entire JSON content)
-
 async function getSheetsClient() {
   let credentials;
-  
-  // Try to load from Firebase Secrets Manager (Production)
   if (process.env.GOOGLE_SERVICE_ACCOUNT) {
     credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
   } else {
-    // Fallback to local file for development (ignored by git)
     try {
       credentials = require('./service-account.json');
     } catch (e) {
@@ -28,9 +21,6 @@ async function getSheetsClient() {
   return google.sheets({ version: 'v4', auth });
 }
 
-/**
- * Normalizes phone numbers to E164 format (+61...)
- */
 function normalizePhone(phone) {
   if (!phone) return "";
   let clean = phone.replace(/\D/g, "");
@@ -42,9 +32,13 @@ function normalizePhone(phone) {
   return clean.startsWith("+") ? clean : "+" + clean;
 }
 
-exports.api = functions.runWith({ 
-  secrets: ["SPREADSHEET_ID", "GOOGLE_SERVICE_ACCOUNT"] 
-}).https.onRequest(async (req, res) => {
+exports.api = onRequest({ 
+  secrets: ["SPREADSHEET_ID", "GOOGLE_SERVICE_ACCOUNT"],
+  region: "australia-southeast1",
+  maxInstances: 5,
+  memory: "256MiB",
+  timeoutSeconds: 30
+}, async (req, res) => {
   return cors(req, res, async () => {
     try {
       const { action, phone, roundNum, playerId, response } = req.body;
@@ -58,7 +52,6 @@ exports.api = functions.runWith({
       if (action === 'getInitialData') {
         const normalizedInputPhone = normalizePhone(phone);
         
-        // Fetch all sheets in parallel
         const [playersRes, roundsRes, availRes] = await Promise.all([
           sheets.spreadsheets.values.get({ spreadsheetId, range: 'Players!A:Z' }),
           sheets.spreadsheets.values.get({ spreadsheetId, range: 'Rounds!A:D', valueRenderOption: 'FORMATTED_VALUE' }),
@@ -70,7 +63,6 @@ exports.api = functions.runWith({
         const availData = availRes.data.values;
         const headers = playersData[0];
 
-        // 1. Get Players for this phone number
         const firstNameIdx = headers.indexOf('FirstName');
         const familyNameIdx = headers.indexOf('FamilyName');
         const phoneCols = ['Phone', 'Phone2', 'Phone3', 'Phone4']
@@ -100,23 +92,21 @@ exports.api = functions.runWith({
           return res.status(404).json({ error: 'No players found for ' + phone });
         }
 
-        // 2. Get Round Info
         const rHeaders = roundsData[0];
         let roundRow = null;
         if (roundNum) {
           roundRow = roundsData.slice(1).find(r => r[rHeaders.indexOf('RoundNum')] == roundNum);
         } else {
-          roundRow = roundsData[roundsData.length - 1]; // Default to latest
+          roundRow = roundsData[roundsData.length - 1];
         }
 
         const roundInfo = roundRow ? {
           RoundNum: roundRow[rHeaders.indexOf('RoundNum')],
           Date1: roundRow[rHeaders.indexOf('Date1')],
           Date2: roundRow[rHeaders.indexOf('Date2')],
-          Format: roundRow[rHeaders.indexOf('Format')]
+          Format: (roundRow[rHeaders.indexOf('Date2')] && roundRow[rHeaders.indexOf('Date2')].trim() !== '') ? '2-Day' : '1-Day'
         } : null;
 
-        // 3. Get Availability for these players
         const aHeaders = availData ? availData[0] : ['Timestamp', 'PlayerID', 'RoundNum', 'Response'];
         const householdAvail = {};
         household.forEach(player => {
@@ -167,7 +157,6 @@ exports.api = functions.runWith({
           }
         ];
 
-        // Only update Return Date if the column exists
         if (returnIdx !== -1) {
           updates.push({
             range: `Players!${String.fromCharCode(65 + returnIdx)}${rowNum}`,
