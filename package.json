@@ -3,9 +3,15 @@
   "version": "1.0.0",
   "description": "Laburnum CC Availability Tracker",
   "scripts": {
-    "deploy": "firebase deploy"
+    "deploy": "firebase deploy",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "push": "npm test && clasp push -f"
   },
   "devDependencies": {
-    "firebase-tools": "^13.0.0"
+    "firebase-tools": "^13.0.0",
+    "@google/clasp": "^2.4.2",
+    "@types/google-apps-script": "^1.0.100",
+    "jest": "^30.0.0"
   }
 }
