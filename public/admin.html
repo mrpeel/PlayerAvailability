@@ -196,6 +196,29 @@
   </div>
 
   <div id="dashboard-view" class="container">
+    <div id="counts-card" class="card" style="display: flex; justify-content: space-around; text-align: center; padding: 16px; background: #fff;">
+      <div>
+        <div id="count-avail" style="font-size: 22px; font-weight: 800; color: #166534;">-</div>
+        <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase;">Available</div>
+      </div>
+      <div>
+        <div id="count-unavail" style="font-size: 22px; font-weight: 800; color: #991b1b;">-</div>
+        <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase;">Unavailable</div>
+      </div>
+      <div>
+        <div id="count-unknown" style="font-size: 22px; font-weight: 800; color: #b45309;">-</div>
+        <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase;">Unknown</div>
+      </div>
+    </div>
+
+    <!-- Simulator button for selectors/testers -->
+    <div class="card" style="border: 1px dashed var(--maroon); background: #fffcfb; padding: 18px; margin-bottom: 20px;">
+      <h3 style="color: var(--maroon); font-size: 15px; margin-bottom: 6px;">🎲 Test Availability Simulator</h3>
+      <p style="font-size: 13px; color: #64748b; margin-bottom: 12px;">Populate realistic test responses across all players for this round (85% full, 5% Day 1, 5% Day 2, 5% Unavail for 2-Day; 90%/10% for 1-Day).</p>
+      <button id="admin-sim-btn" class="btn" style="background: var(--gold); color: var(--maroon); font-weight: 800;" onclick="runAdminSimulation()">Run Simulation</button>
+      <div id="admin-sim-result" style="display: none; margin-top: 10px; font-size: 13px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; white-space: pre-wrap; color: var(--text);"></div>
+    </div>
+
     <div class="card">
       <label class="label">Round <span id="round-num"></span> Availability</label>
       <div id="avail-msg" class="message-box"></div>
@@ -218,7 +241,6 @@
     let currentRound = null;
 
     function showView(id) {
-      console.log("Showing view:", id);
       document.querySelectorAll('.container').forEach(v => v.style.display = 'none');
       document.getElementById(id).style.display = 'block';
     }
@@ -227,13 +249,9 @@
       const urlParams = new URLSearchParams(window.location.search);
       currentRound = urlParams.get('round');
 
-      console.log("OnLoad - Phone:", phone, "Round:", currentRound);
-
       if (!phone) {
         showView('login-view');
       } else {
-        // If we have phone, we always verify it first by fetching rounds
-        // This acts as our auth check
         fetchRounds(!!currentRound);
       }
     };
@@ -256,7 +274,7 @@
         if (!res.ok) throw new Error(data.error);
 
         const select = document.getElementById('round-select');
-        select.innerHTML = data.rounds.map(r => `<option value="${r.num}" ${r.num == (currentRound || data.current) ? 'selected' : ''}>Round ${r.num}</option>`).join('');
+        select.innerHTML = (data.rounds || []).map(r => `<option value="${r.date || r.num}" ${r.date == (currentRound || data.current) || r.num == (currentRound || data.current) ? 'selected' : ''}>${r.label || ('Round ' + r.num)}</option>`).join('');
 
         if (autoForward && currentRound) {
           loadAdminData();
@@ -285,18 +303,58 @@
         const res = await fetch('/api', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'getAdminData', phone, roundNum: currentRound })
+          body: JSON.stringify({ action: 'getAdminData', phone, roundNum: currentRound, dateStr: currentRound })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
 
-        document.getElementById('round-num').innerText = data.roundNum;
+        document.getElementById('round-num').innerText = data.roundNum || currentRound;
         document.getElementById('avail-msg').innerText = data.availMsg || 'No message set';
         document.getElementById('shame-msg').innerText = data.shameMsg || 'No message set';
+
+        if (data.counts) {
+          document.getElementById('count-avail').innerText = data.counts.available;
+          document.getElementById('count-unavail').innerText = data.counts.unavailable;
+          document.getElementById('count-unknown').innerText = data.counts.unknown;
+        }
+
         showView('dashboard-view');
       } catch (e) {
         alert(e.message);
         showView('round-view');
+      }
+    }
+
+    async function runAdminSimulation() {
+      const btn = document.getElementById('admin-sim-btn');
+      const resultBox = document.getElementById('admin-sim-result');
+      btn.innerText = 'Simulating...';
+      btn.disabled = true;
+      resultBox.style.display = 'none';
+
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'simulateRoundAvailability',
+            dateStr: currentRound
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        resultBox.innerText = data.message || 'Simulation complete!';
+        resultBox.style.display = 'block';
+
+        // Refresh counts
+        setTimeout(loadAdminData, 1200);
+      } catch (err) {
+        resultBox.innerText = 'Simulation error: ' + err.message;
+        resultBox.style.display = 'block';
+      } finally {
+        btn.innerText = 'Run Simulation';
+        btn.disabled = false;
       }
     }
 

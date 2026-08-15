@@ -9,9 +9,12 @@
     "push": "npm test && clasp push -f"
   },
   "devDependencies": {
-    "firebase-tools": "^13.0.0",
     "@google/clasp": "^2.4.2",
     "@types/google-apps-script": "^1.0.100",
+    "firebase-tools": "^13.0.0",
     "jest": "^30.0.0"
+  },
+  "dependencies": {
+    "firebase-functions": "^7.3.2"
   }
 }

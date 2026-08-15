@@ -20,8 +20,11 @@ Here is an executive summary of what is contained inside the document:
 
 ### 2. Sheet Setup & Database Schemas (`Setup.gs`)
 * **Single Master Function:** `setupInitialSystem()` builds all initial database tables in sequence:
-  * **`Players`:** Stores `ProfileID`, `First Name`, `Last Name`, `Full Name`, `GlobalStatus` (`Active`, `Injured`, `Long-Term Away`, `Inactive`), `ExpectedReturnDate`, `Phone`, `Phone2`, `Phone3`, `Phone4`, `Email`, `T20_Squad`, and `JuniorClass` (`Adult`, `U18` `*`, `U16_Y2` `^`, `U16_Y1` `!`, `U14` `~`).
-  * **`Fixtures`:** Wide table capturing grade-by-grade opponents, venues, and formats (One Day / Two Day / T20).
+  * **`Players`:** Stores `ProfileID`, `First Name`, `Last Name`, `Full Name`, `JuniorLevel`, `T20Squad`, `GlobalStatus` (`Active`, `Injured`, `Long-Term Away`, `Inactive`), `ExpectedReturnDate`, `Phone`, `Phone2`, `Phone3`, `Phone4`, `Email`.
+  * **`Config`:** Configuration switchboard storing:
+    * Team Mappings (`Internal Team Name`, `Competition`, `Play Cricket Team Name`) for fixture matching.
+    * WhatsApp & system templates (`Availability Callout`, `Wall of Shame`, `Selection Announcement`).
+  * **`Fixtures`:** Wide table capturing grade-by-grade opponents, venues, and individual match formats per team (`1st Opponent`, `1st Venue`, `1st Format`, `2nd Opponent`, etc.). Populated via phased PlayHQ Home and Away CSV imports.
   * **`Availability_Log`:** Audit log capturing timestamps, profile IDs, match dates, responses, and notes.
   * **`Presentation_Staging`:** Switchboard tab with `=INDIRECT()` formulas for live slide linking.
 

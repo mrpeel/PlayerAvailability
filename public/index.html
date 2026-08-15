@@ -485,12 +485,28 @@
   <div id="login-view" class="container">
     <div class="card">
       <h2 style="margin-bottom: 8px; font-weight: 800;">Player Access</h2>
-      <p style="color: var(--text-muted); margin-bottom: 24px; font-size: 15px;">Enter your phone number to update your
-        availability.</p>
+      <p style="color: var(--text-muted); margin-bottom: 24px; font-size: 15px;">Enter your mobile number to update your availability.</p>
       <label class="label">Mobile Number</label>
       <input type="tel" id="phone-input" class="input-field" placeholder="0400 000 000"
         onkeypress="if(event.key === 'Enter') handleLogin()">
       <button class="btn btn-primary" onclick="handleLogin()">Let's go</button>
+    </div>
+
+    <!-- Testing & Simulation Toolbox for Dev/Selectors -->
+    <div class="card" style="border: 1px dashed var(--maroon); background: #fffcfb; padding: 18px; margin-top: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleTestTools()">
+        <span style="font-weight: 800; font-size: 14px; color: var(--maroon);">🧪 Testing & Simulation Toolbox</span>
+        <span id="test-tools-arrow" style="font-weight: bold; font-size: 14px;">▼</span>
+      </div>
+      <div id="test-tools-content" style="display: none; margin-top: 14px;">
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+          Quickly simulate player availability across all club players for the active round using the club standard distributions (90% available for 1-Day, 85%/5%/5%/5% for 2-Day).
+        </p>
+        <button id="sim-btn" class="btn" style="background: var(--gold); color: var(--maroon); font-weight: 800; margin-bottom: 8px;" onclick="runSimulation()">
+          🎲 Simulate All Player Availabilities
+        </button>
+        <div id="sim-result" style="display: none; margin-top: 10px; font-size: 13px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; white-space: pre-wrap; color: var(--text);"></div>
+      </div>
     </div>
   </div>
 
@@ -529,7 +545,10 @@
       phone: localStorage.getItem('lcc_phone'),
       players: [],
       roundInfo: null,
-      availability: {}
+      fixtureInfo: null,
+      availability: {},
+      notes: {},
+      matchDate: ''
     };
 
     window.onload = () => {
@@ -540,6 +559,45 @@
     function showView(viewId) {
       document.querySelectorAll('.container').forEach(c => c.style.display = 'none');
       document.getElementById(viewId).style.display = 'block';
+    }
+
+    function toggleTestTools() {
+      const content = document.getElementById('test-tools-content');
+      const arrow = document.getElementById('test-tools-arrow');
+      if (content.style.display === 'none') {
+        content.style.display = 'block';
+        arrow.innerText = '▲';
+      } else {
+        content.style.display = 'none';
+        arrow.innerText = '▼';
+      }
+    }
+
+    async function runSimulation() {
+      const simBtn = document.getElementById('sim-btn');
+      const simResult = document.getElementById('sim-result');
+      simBtn.innerText = 'Simulating...';
+      simBtn.disabled = true;
+      simResult.style.display = 'none';
+
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const round = urlParams.get('round');
+
+        const res = await callApi({
+          action: 'simulateRoundAvailability',
+          dateStr: round
+        });
+
+        simResult.innerText = res.message || 'Simulation completed successfully!';
+        simResult.style.display = 'block';
+      } catch (err) {
+        simResult.innerText = 'Simulation error: ' + err.message;
+        simResult.style.display = 'block';
+      } finally {
+        simBtn.innerText = '🎲 Simulate All Player Availabilities';
+        simBtn.disabled = false;
+      }
     }
 
     async function callApi(body) {
@@ -557,7 +615,7 @@
 
     function handleLogin() {
       const input = document.getElementById('phone-input').value.trim();
-      if (!input) return alert('Enter phone number');
+      if (!input) return alert('Please enter your phone number');
       state.phone = input;
       localStorage.setItem('lcc_phone', input);
       loadData();
@@ -578,12 +636,20 @@
         const data = await callApi({
           action: 'getInitialData',
           phone: state.phone,
+          dateStr: roundNum,
           roundNum: roundNum
         });
 
-        state.players = data.players;
-        state.roundInfo = data.roundInfo;
-        state.availability = data.availability;
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
+        state.players = data.players || [];
+        state.roundInfo = data.roundInfo || {};
+        state.fixtureInfo = data.fixtureInfo || {};
+        state.availability = data.availability || {};
+        state.notes = data.notes || {};
+        state.matchDate = data.matchDate || '';
 
         renderDashboard();
         showView('dashboard-view');
@@ -594,80 +660,85 @@
     }
 
     function parseDate(dateStr) {
-      if (!dateStr) return null;
-      // If it's DD/MM/YYYY
+      if (!dateStr) return '';
       if (dateStr.includes('/')) {
         const parts = dateStr.split('/');
-        // Assuming DD/MM/YYYY or D/M/YYYY
         if (parts.length === 3) {
           return `${parts[0]} ${new Date(2000, parts[1] - 1).toLocaleString('en-AU', { month: 'short' })}`;
         }
       }
-      // Fallback for standard formats
       const d = new Date(dateStr);
       return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
     }
 
     function renderDashboard() {
-      const info = state.roundInfo;
-      const d1 = parseDate(info.Date1) || '';
-      const d2 = parseDate(info.Date2) || '';
-      const dateStr = d2 ? `${d1} & ${d2}` : d1;
+      const info = state.roundInfo || {};
+      const d1 = parseDate(info.Date1 || state.matchDate) || '';
+      const roundNumText = info.RoundNum || '1';
 
-      document.getElementById('header-round').innerText = info.RoundNum;
+      document.getElementById('header-round').innerText = roundNumText;
       document.getElementById('round-indicator-container').style.display = 'inline-block';
-      document.getElementById('round-title').innerText = `Round ${info.RoundNum} - ${dateStr}`;
-      document.getElementById('round-date').innerText = info.Format;
+      document.getElementById('round-title').innerText = `${info.RoundTitle || 'Round ' + roundNumText} - ${d1}`;
+      document.getElementById('round-date').innerText = info.Format || 'Two Day Match';
 
       const list = document.getElementById('players-list');
       list.innerHTML = '';
 
       state.players.forEach(player => {
-        const currentAvail = state.availability[player.ID];
+        const pId = player.id || player.profileId || player.ID;
+        const pName = player.name || player.fullName || player.Name || '';
+        const pStatus = player.globalStatus || player.GlobalStatus || 'Active';
+        const pReturn = player.expectedReturnDate || player.ExpectedReturnDate || '';
+        const currentAvail = state.availability[pId] || '';
+        const currentNote = state.notes[pId] || '';
+
         const card = document.createElement('div');
         card.className = 'card player-card';
-        card.setAttribute('data-id', player.ID);
+        card.setAttribute('data-id', pId);
 
-        const options = getOptionsForFormat(info.Format, player.ID, currentAvail);
+        const options = getOptionsForFormat(info.Format || 'Two Day', pId, currentAvail);
 
         let statusClass = 'status-active';
-        let statusText = player.GlobalStatus;
-        if (player.GlobalStatus === 'Injured') {
+        let statusText = pStatus;
+        if (pStatus === 'Injured') {
           statusClass = 'status-injured';
-        } else if (player.GlobalStatus === 'UnavailableUntil' || player.GlobalStatus.startsWith('Away')) {
+        } else if (pStatus === 'UnavailableUntil' || pStatus.startsWith('Away') || pStatus === 'Inactive') {
           statusClass = 'status-away';
-          statusText = `Unavailable until ${player.ExpectedReturnDate || '?'}`;
+          statusText = pReturn ? `Unavailable until ${pReturn}` : (pStatus === 'Inactive' ? 'Inactive' : 'Unavailable');
         }
 
         card.innerHTML = `
           <div style="display: flex; justify-content: space-between; align-items: flex-start;">
             <div style="flex: 1;">
-              <h2 style="margin-bottom: 4px;">${player.Name}</h2>
+              <h2 style="margin-bottom: 4px; font-weight: 800;">${pName}</h2>
               <div class="status-dropdown">
-                <div class="status-tag ${statusClass}" onclick="toggleStatusMenu('${player.ID}')">
+                <div class="status-tag ${statusClass}" onclick="toggleStatusMenu('${pId}')">
                   <span>${statusText}</span>
                   <svg width="12" height="8" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-left: 2px;">
                     <path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
                   </svg>
                 </div>
-                <div id="status-menu-${player.ID}" class="status-menu">
-                  <div class="status-menu-item active" onclick="updateGlobalStatus('${player.ID}', 'Active')">Set as Active</div>
-                  <div class="status-menu-item injured" onclick="updateGlobalStatus('${player.ID}', 'Injured')">Set as Injured</div>
+                <div id="status-menu-${pId}" class="status-menu">
+                  <div class="status-menu-item active" onclick="updateGlobalStatus('${pId}', 'Active')">Set as Active</div>
+                  <div class="status-menu-item injured" onclick="updateGlobalStatus('${pId}', 'Injured')">Set as Injured</div>
                   <div class="status-menu-item away" style="position: relative;" onclick="triggerDatePicker(this)">
                     Unavailable Until...
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                    <input type="date" class="hidden-picker" onchange="handleDatePicker(this, '${player.ID}')">
+                    <input type="date" class="hidden-picker" onchange="handleDatePicker(this, '${pId}')">
                   </div>
                 </div>
               </div>
             </div>
-            <div id="status-icon-${player.ID}">
-               ${currentAvail ? '<span style="color: #166534; font-size: 28px;">✓</span>' : ''}
+            <div id="status-icon-${pId}">
+               ${currentAvail && currentAvail !== 'Unknown' ? '<span style="color: #166534; font-size: 28px; font-weight:bold;">✓</span>' : ''}
             </div>
           </div>
-          <div class="response-group">${options}</div>
-          <div style="text-align: center; margin-top: 12px;">
-            <span id="msg-${player.ID}" class="success-pill">✓ SAVED</span>
+          <div class="response-group" style="margin-top: 14px;">${options}</div>
+          <div style="margin-top: 12px;">
+            <input type="text" id="note-${pId}" class="input-field" style="font-size: 13px; padding: 10px; margin-bottom: 0;" placeholder="Add notes (e.g. arriving by 1:30pm)" value="${currentNote}" onblur="saveNotes('${pId}')" onkeypress="if(event.key === 'Enter') saveNotes('${pId}')">
+          </div>
+          <div style="text-align: center; margin-top: 10px;">
+            <span id="msg-${pId}" class="success-pill">✓ SAVED</span>
           </div>
         `;
         list.appendChild(card);
@@ -681,7 +752,6 @@
       if (!isVisible) menu.style.display = 'block';
     }
 
-    // Close menus when clicking outside
     window.addEventListener('click', (e) => {
       if (!e.target.closest('.status-dropdown')) {
         document.querySelectorAll('.status-menu').forEach(m => m.style.display = 'none');
@@ -689,7 +759,6 @@
     });
 
     async function updateGlobalStatus(playerId, newStatus, returnDate = '') {
-      // Optimistic UI Update
       const statusPill = document.querySelector(`.player-card[data-id="${playerId}"] .status-tag`);
       const statusSpan = statusPill.querySelector('span');
 
@@ -708,7 +777,8 @@
       try {
         await callApi({
           action: 'updateGlobalStatus',
-          playerId,
+          profileId: playerId,
+          playerId: playerId,
           status: newStatus,
           returnDate: returnDate
         });
@@ -718,7 +788,7 @@
         setTimeout(() => pill.style.display = 'none', 3000);
       } catch (e) {
         alert("Failed to update status: " + e.message);
-        loadData(); // Revert on failure
+        loadData();
       }
     }
 
@@ -734,41 +804,75 @@
     function handleDatePicker(input, playerId) {
       if (input.value) {
         const d = new Date(input.value);
-        const formatted = d.toLocaleDateString('en-GB'); // DD/MM/YYYY
+        const formatted = d.toISOString().split('T')[0];
         updateGlobalStatus(playerId, 'UnavailableUntil', formatted);
       }
     }
 
     function getOptionsForFormat(format, playerId, current) {
-      let opts = format === '1-Day' ? ['Available', 'Unavailable'] : ['Both Days', 'Day 1 Only', 'Day 2 Only', 'Unavailable'];
+      const fmtLower = String(format || '').toLowerCase();
+      const isOneDay = fmtLower.includes('one') || fmtLower.includes('t20') || fmtLower.includes('1-day');
+      let opts = isOneDay ? ['Available', 'Unavailable'] : ['Both Days', 'Day 1 Only', 'Day 2 Only', 'Unavailable'];
+
       return opts.map(opt => {
-        const isSelected = current === opt;
+        let isSelected = false;
+        if (current === opt) isSelected = true;
+        else if (opt === 'Both Days' && current === 'Available') isSelected = true;
+
         let btnClass = isSelected ? (opt.includes('Unavailable') ? 'btn-selected-unavailable' : 'btn-selected-available') : 'btn-outline';
         return `<button class="btn ${btnClass}" onclick="submitResponse('${playerId}', '${opt}')" data-player="${playerId}" data-opt="${opt}">${opt}</button>`;
       }).join('');
     }
 
     async function submitResponse(playerId, response) {
-      // UI Update
       document.querySelectorAll(`button[data-player="${playerId}"]`).forEach(b => {
         const opt = b.getAttribute('data-opt');
         let cls = opt === response ? (opt.includes('Unavailable') ? 'btn-selected-unavailable' : 'btn-selected-available') : 'btn-outline';
         b.className = 'btn ' + cls;
       });
 
+      const noteInput = document.getElementById(`note-${playerId}`);
+      const notes = noteInput ? noteInput.value.trim() : '';
+
       try {
         await callApi({
           action: 'saveAvailability',
-          playerId,
-          roundNum: state.roundInfo.RoundNum,
-          response
+          profileId: playerId,
+          playerId: playerId,
+          dateStr: state.matchDate || (state.roundInfo && state.roundInfo.Date1),
+          response: response,
+          notes: notes
         });
+        state.availability[playerId] = response;
         const pill = document.getElementById(`msg-${playerId}`);
         pill.style.display = 'inline-block';
-        document.getElementById(`status-icon-${playerId}`).innerHTML = '<span style="color: #166534; font-size: 28px;">✓</span>';
+        document.getElementById(`status-icon-${playerId}`).innerHTML = '<span style="color: #166534; font-size: 28px; font-weight:bold;">✓</span>';
         setTimeout(() => pill.style.display = 'none', 3000);
       } catch (e) {
-        alert("Failed to save: " + e.message);
+        alert("Failed to save availability: " + e.message);
+      }
+    }
+
+    async function saveNotes(playerId) {
+      const noteInput = document.getElementById(`note-${playerId}`);
+      const notes = noteInput ? noteInput.value.trim() : '';
+      const currentResp = state.availability[playerId] || 'Available';
+
+      try {
+        await callApi({
+          action: 'saveAvailability',
+          profileId: playerId,
+          playerId: playerId,
+          dateStr: state.matchDate || (state.roundInfo && state.roundInfo.Date1),
+          response: currentResp,
+          notes: notes
+        });
+        state.notes[playerId] = notes;
+        const pill = document.getElementById(`msg-${playerId}`);
+        pill.style.display = 'inline-block';
+        setTimeout(() => pill.style.display = 'none', 3000);
+      } catch (e) {
+        console.error('Failed to save notes:', e);
       }
     }
 
