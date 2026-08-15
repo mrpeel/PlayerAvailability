@@ -47,6 +47,13 @@ function checkHeadshotFolder() {
  * WORKSPACE GENERATOR: Spawns a standalone date snapshot ledger sheet.
  */
 function deployVerticalRoundSheet(ss, dateStr) {
+  if (typeof ss === "string" && !dateStr) {
+    dateStr = ss;
+    ss = getSS();
+  }
+  if (!ss || typeof ss.getSheetByName !== "function") {
+    ss = getSS();
+  }
   var sheetName = dateStr;
   if (ss.getSheetByName(sheetName)) {
     throw new Error("Tab '" + sheetName + "' already exists in this spreadsheet.");
@@ -218,7 +225,17 @@ function deployVerticalRoundSheet(ss, dateStr) {
   if (staging) staging.getRange("B1").setValue(sheetName);
 
   ss.setActiveSheet(ws);
-  return "Selection ledger tab '" + sheetName + "' initialised successfully!\n\nSpreadsheet has switched to the new round tab.";
+  return "Selection tab '" + sheetName + "' initialised successfully!\n\nSpreadsheet has switched to the new round tab.";
+}
+
+
+/**
+ * Backend logic invoked by Datepicker dialog to deploy a new round tab.
+ */
+function executeTabDeployment(dateStr) {
+  var ss = getSS();
+  if (!ss) throw new Error("Active spreadsheet not found.");
+  return deployVerticalRoundSheet(ss, dateStr);
 }
 
 
@@ -1417,7 +1434,7 @@ function showDatePickerDialog() {
     '  .result-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; font-size: 13px; white-space: pre-wrap; color: #333; max-height: 180px; overflow-y: auto; box-sizing: border-box; }' +
     '</style>' +
     '</head><body>' +
-    '  <h3>Initialise Round Selection Ledger</h3>' +
+    '  <h3>Initialise Round Selection Tab</h3>' +
     '  <p>Select the first match date for this round to spawn a standalone selection tab.</p>' +
     '' +
     '  <div id="inputSection">' +
@@ -1433,7 +1450,7 @@ function showDatePickerDialog() {
     '' +
     '  <div id="spinnerSection" style="display:none; text-align:center; padding:15px;">' +
     '    <div class="spinner"></div>' +
-    '    <p style="font-weight:bold; color:#6A1B29;">Generating round selection ledger...</p>' +
+    '    <p style="font-weight:bold; color:#6A1B29;">Generating round selection tab...</p>' +
     '  </div>' +
     '' +
     '  <div id="resultSection" style="display:none;">' +
@@ -1465,7 +1482,7 @@ function showDatePickerDialog() {
     '  </script>' +
     '</body></html>'
   ).setWidth(460).setHeight(320);
-  SpreadsheetApp.getUi().showModalDialog(htmlOutput, "LCC Selection Engine");
+  SpreadsheetApp.getUi().showModalDialog(htmlOutput, "Initialise Round Selection Tab");
 }
 
 
