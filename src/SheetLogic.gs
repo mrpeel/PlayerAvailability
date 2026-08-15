@@ -89,8 +89,8 @@ function deployVerticalRoundSheet(ss, dateStr) {
   var initialRoundId = (fixInfo && (fixInfo["1st round"] || fixInfo["roundid"] || fixInfo["round"])) ? (fixInfo["1st round"] || fixInfo["roundid"] || fixInfo["round"]) : "";
   ws.getRange("A1").setValue("Round ID:").setFontWeight("bold");
   ws.getRange("B1").setValue(initialRoundId).setBackground(LCC_PALETTE.inputHighlight).setHorizontalAlignment("center").setFontWeight("bold");
-  ws.getRange("D1").setValue("Roster Last Synced:").setFontWeight("bold");
-  ws.getRange("E1").setValue(new Date()).setNumberFormat("dd/mm/yyyy hh:mm").setFontColor("#666666");
+  ws.getRange("G1").setValue("Roster Last Synced:").setFontWeight("bold");
+  ws.getRange("H1").setValue(new Date()).setNumberFormat("dd/mm/yyyy hh:mm").setFontColor("#666666");
   ws.getRange("A2").setValue("Date").setFontWeight("bold");
   ws.getRange("B2").setValue(targetDate).setNumberFormat("dd/mm/yyyy").setBackground(LCC_PALETTE.inputHighlight).setHorizontalAlignment("center").setFontWeight("bold");
 
@@ -683,10 +683,21 @@ function getInitialData(phone, dateStr) {
     const fData = fixturesSheet.getDataRange().getValues();
     const fHeaders = fData[0];
     const fRows = fData.slice(1);
+    const gameDateIdx = fHeaders.indexOf('Game Date');
 
-    let targetFixture = fRows.find(row => String(row[fHeaders.indexOf('Game Date')]).indexOf(dateStr) > -1);
-    if (!targetFixture && fRows.length > 0) {
-      targetFixture = fRows[0];
+    let targetFixture = null;
+    if (dateStr) {
+      targetFixture = fRows.find(row => String(row[gameDateIdx]).indexOf(dateStr) > -1);
+      const roundTabExists = ss.getSheetByName(dateStr) !== null;
+      if (!targetFixture && !roundTabExists) {
+        return {
+          error: "Round '" + dateStr + "' was not found. Please verify the link or check with your club selector.",
+          invalidRound: true,
+          requestedDate: dateStr
+        };
+      }
+    } else {
+      targetFixture = fRows.length > 0 ? fRows[0] : null;
     }
 
     const fixtureInfo = {};
@@ -1763,6 +1774,59 @@ function showImportFixturesDialog() {
 
 
 /**
+ * Returns round tabs list and active sheet context for the Pull Players modal.
+ */
+function getRoundTabsForDialog() {
+  var ss = getSS();
+  if (!ss) return { activeIsRound: false, activeTab: "", roundTabs: [] };
+  var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log"];
+  var activeTab = ss.getActiveSheet().getName();
+  var activeIsRound = nonRoundNames.indexOf(activeTab) === -1;
+  var roundTabs = [];
+  ss.getSheets().forEach(function(s) {
+    var name = s.getName();
+    if (nonRoundNames.indexOf(name) === -1) {
+      roundTabs.push(name);
+    }
+  });
+  return {
+    activeIsRound: activeIsRound,
+    activeTab: activeTab,
+    roundTabs: roundTabs
+  };
+}
+
+
+/**
+ * Returns sorted list of all players for modal dropdowns.
+ */
+function getPlayersForDropdown() {
+  var ss = getSS();
+  if (!ss) return [];
+  var pSheet = ss.getSheetByName("Players");
+  if (!pSheet || pSheet.getLastRow() < 2) return [];
+  var data = pSheet.getRange(2, 1, pSheet.getLastRow() - 1, pSheet.getLastColumn()).getValues();
+  var list = [];
+  data.forEach(function(row) {
+    var pId = String(row[0]).trim();
+    var fName = row[3] || (row[1] + " " + row[2]);
+    var status = String(row[6] || "Active").trim();
+    var junior = row[4] || "";
+    if (pId && fName.trim()) {
+      list.push({
+        profileId: pId,
+        name: formatNameWithJuniorTag(fName, junior),
+        rawName: fName,
+        status: status
+      });
+    }
+  });
+  list.sort(function(a, b) { return a.name.localeCompare(b.name); });
+  return list;
+}
+
+
+/**
  * DIALOG 2: Pull new players modal dialog.
  */
 function showPullNewPlayersDialog() {
@@ -1777,6 +1841,9 @@ function showPullNewPlayersDialog() {
     '  h3 { color: #6A1B29; margin-top: 0; margin-bottom: 6px; font-size: 16px; font-weight: 800; }' +
     '  p { font-size: 13px; color: #555; line-height: 1.4; margin: 0 0 12px; }' +
     '  .card { background: #fdfdfd; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 13px; color: #444; }' +
+    '  .form-group { margin-bottom: 10px; }' +
+    '  .form-label { font-weight: bold; font-size: 12px; color: #6A1B29; margin-bottom: 4px; display: block; }' +
+    '  select { width: 100%; font-size: 13px; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; background: #fff; }' +
     '  .btn { padding: 9px 16px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; font-size: 13px; transition: all 0.2s; }' +
     '  .btn-primary { background: #6A1B29; color: white; }' +
     '  .btn-primary:hover { background: #52131e; }' +
@@ -1788,15 +1855,23 @@ function showPullNewPlayersDialog() {
     '</style>' +
     '</head><body>' +
     '  <h3>Pull New Players from Master</h3>' +
-    '  <p>Scan the Master Players directory for new registrations and pull them into the Unknown status list on the active round tab.</p>' +
+    '  <p>Scan the Master Players directory for new registrations and pull them into the Unknown status list on the selection tab.</p>' +
     '' +
-    '  <div id="inputSection">' +
+    '  <div id="loadingTabs" style="text-align:center; padding:15px;">' +
+    '    <div class="spinner"></div>' +
+    '    <p style="font-size:12px; color:#666;">Checking round tabs...</p>' +
+    '  </div>' +
+    '' +
+    '  <div id="inputSection" style="display:none;">' +
     '    <div class="card">' +
-    '      Ensure your active tab is the round you wish to update before proceeding.' +
+    '      <div class="form-group" style="margin-bottom:0;">' +
+    '        <label class="form-label">Target Round Tab</label>' +
+    '        <select id="roundTabSelect"></select>' +
+    '      </div>' +
     '    </div>' +
     '    <div class="actions">' +
     '      <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>' +
-    '      <button class="btn btn-primary" onclick="startSync()">Sync Players</button>' +
+    '      <button id="syncBtn" class="btn btn-primary" onclick="startSync()">Pull Players</button>' +
     '    </div>' +
     '  </div>' +
     '' +
@@ -1813,7 +1888,34 @@ function showPullNewPlayersDialog() {
     '  </div>' +
     '' +
     '  <script>' +
+    '    google.script.run' +
+    '      .withSuccessHandler(function(ctx) {' +
+    '        document.getElementById("loadingTabs").style.display = "none";' +
+    '        var sel = document.getElementById("roundTabSelect");' +
+    '        sel.innerHTML = "";' +
+    '        if (!ctx.roundTabs || ctx.roundTabs.length === 0) {' +
+    '          document.getElementById("resultSection").style.display = "block";' +
+    '          document.getElementById("resultMessage").innerText = "No round selection tabs found.\\n\\nPlease initialise a round first via \"Initialise new round\".";' +
+    '          return;' +
+    '        }' +
+    '        ctx.roundTabs.forEach(function(tab) {' +
+    '          var opt = document.createElement("option");' +
+    '          opt.value = tab;' +
+    '          opt.innerText = tab + (tab === ctx.activeTab ? " (Active Tab)" : "");' +
+    '          if (tab === ctx.activeTab || (ctx.activeIsRound && tab === ctx.activeTab)) opt.selected = true;' +
+    '          sel.appendChild(opt);' +
+    '        });' +
+    '        document.getElementById("inputSection").style.display = "block";' +
+    '      })' +
+    '      .withFailureHandler(function(err) {' +
+    '        document.getElementById("loadingTabs").style.display = "none";' +
+    '        alert("Error loading tabs: " + err.message);' +
+    '      })' +
+    '      .getRoundTabsForDialog();' +
+    '' +
     '    function startSync() {' +
+    '      var selTab = document.getElementById("roundTabSelect").value;' +
+    '      if (!selTab) { alert("Please select a round tab."); return; }' +
     '      document.getElementById("inputSection").style.display = "none";' +
     '      document.getElementById("spinnerSection").style.display = "block";' +
     '      google.script.run' +
@@ -1827,11 +1929,11 @@ function showPullNewPlayersDialog() {
     '          document.getElementById("resultSection").style.display = "block";' +
     '          document.getElementById("resultMessage").innerText = "Sync failed: " + (err.message || err);' +
     '        })' +
-    '        .syncNewPlayersToActiveTab();' +
+    '        .syncNewPlayersToActiveTab(selTab);' +
     '    }' +
     '  </script>' +
     '</body></html>'
-  ).setWidth(460).setHeight(300);
+  ).setWidth(460).setHeight(320);
   SpreadsheetApp.getUi().showModalDialog(htmlOutput, "Pull New Players");
 }
 
@@ -1839,9 +1941,10 @@ function showPullNewPlayersDialog() {
 /**
  * Backend logic to sync new players from Master to active selection tab.
  */
-function syncNewPlayersToActiveTab() {
+function syncNewPlayersToActiveTab(targetTabName) {
   var ss = getSS();
-  var ws = ss.getActiveSheet();
+  var ws = targetTabName ? ss.getSheetByName(targetTabName) : ss.getActiveSheet();
+  if (!ws) throw new Error("Round tab '" + targetTabName + "' not found.");
   var forbiddenTabs = ["Presentation_Staging", "Players", "Fixtures", "Config", "Availability_Log", "Admins"];
   if (forbiddenTabs.indexOf(ws.getName()) > -1) {
     throw new Error("Please switch to an active round selection tab (e.g. 2025-10-04) first.");
@@ -1882,6 +1985,12 @@ function syncNewPlayersToActiveTab() {
     }
   });
 
+  // Update Roster Last Synced timestamp in G1 / H1
+  try {
+    ws.getRange("G1").setValue("Roster Last Synced:").setFontWeight("bold");
+    ws.getRange("H1").setValue(new Date()).setNumberFormat("dd/mm/yyyy hh:mm").setFontColor("#666666");
+  } catch (e) {}
+
   return "Sync Complete for tab '" + ws.getName() + "'.\n\n" + newPlayersAdded + " new player(s) pulled into Unknown Status list.";
 }
 
@@ -1903,7 +2012,7 @@ function showRecordInjuryDialog() {
     '  .card { background: #fdfdfd; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 12px; }' +
     '  .form-group { margin-bottom: 10px; }' +
     '  .form-label { font-weight: bold; font-size: 12px; color: #6A1B29; margin-bottom: 4px; display: block; }' +
-    '  input[type=text], input[type=date] { width: 100%; font-size: 13px; padding: 7px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }' +
+    '  select, input[type=text], input[type=date] { width: 100%; font-size: 13px; padding: 7px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; background: #fff; }' +
     '  .btn { padding: 9px 16px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; font-size: 13px; transition: all 0.2s; }' +
     '  .btn-primary { background: #6A1B29; color: white; }' +
     '  .btn-primary:hover { background: #52131e; }' +
@@ -1917,11 +2026,16 @@ function showRecordInjuryDialog() {
     '  <h3>Record Player Injury / Absence</h3>' +
     '  <p>Update player status to Injured in Master directory and mark them Unavailable on the active round.</p>' +
     '' +
-    '  <div id="inputSection">' +
+    '  <div id="loadingPlayers" style="text-align:center; padding:15px;">' +
+    '    <div class="spinner"></div>' +
+    '    <p style="font-size:12px; color:#666;">Loading players list...</p>' +
+    '  </div>' +
+    '' +
+    '  <div id="inputSection" style="display:none;">' +
     '    <div class="card">' +
     '      <div class="form-group">' +
-    '        <label class="form-label">Player Name or Profile ID</label>' +
-    '        <input type="text" id="query" placeholder="e.g. Jimi Kloot">' +
+    '        <label class="form-label">Select Player</label>' +
+    '        <select id="playerSelect"></select>' +
     '      </div>' +
     '      <div class="form-group">' +
     '        <label class="form-label">Injury / Absence Notes</label>' +
@@ -1951,11 +2065,30 @@ function showRecordInjuryDialog() {
     '  </div>' +
     '' +
     '  <script>' +
+    '    google.script.run' +
+    '      .withSuccessHandler(function(list) {' +
+    '        document.getElementById("loadingPlayers").style.display = "none";' +
+    '        var sel = document.getElementById("playerSelect");' +
+    '        sel.innerHTML = "";' +
+    '        list.forEach(function(p) {' +
+    '          var opt = document.createElement("option");' +
+    '          opt.value = p.profileId;' +
+    '          opt.innerText = p.name + (p.status !== "Active" ? " (" + p.status + ")" : "");' +
+    '          sel.appendChild(opt);' +
+    '        });' +
+    '        document.getElementById("inputSection").style.display = "block";' +
+    '      })' +
+    '      .withFailureHandler(function(err) {' +
+    '        document.getElementById("loadingPlayers").style.display = "none";' +
+    '        alert("Error loading players: " + err.message);' +
+    '      })' +
+    '      .getPlayersForDropdown();' +
+    '' +
     '    function submitInjury() {' +
-    '      var q = document.getElementById("query").value.trim();' +
+    '      var pId = document.getElementById("playerSelect").value;' +
     '      var n = document.getElementById("notes").value.trim();' +
     '      var d = document.getElementById("returnDate").value.trim();' +
-    '      if (!q) { alert("Please enter a player name or ID."); return; }' +
+    '      if (!pId) { alert("Please select a player."); return; }' +
     '      document.getElementById("inputSection").style.display = "none";' +
     '      document.getElementById("spinnerSection").style.display = "block";' +
     '      google.script.run' +
@@ -1969,11 +2102,11 @@ function showRecordInjuryDialog() {
     '          document.getElementById("resultSection").style.display = "block";' +
     '          document.getElementById("resultMessage").innerText = "Failed: " + (err.message || err);' +
     '        })' +
-    '        .recordPlayerInjury(q, n, d);' +
+    '        .recordPlayerInjury(pId, n, d);' +
     '    }' +
     '  </script>' +
     '</body></html>'
-  ).setWidth(460).setHeight(410);
+  ).setWidth(460).setHeight(420);
   SpreadsheetApp.getUi().showModalDialog(htmlOutput, "Record Injury / Absence");
 }
 
@@ -1989,14 +2122,14 @@ function recordPlayerInjury(query, notes, returnDate) {
     throw new Error("Players tab not found or empty.");
   }
 
-  var pData = playerSheet.getRange(2, 1, playerSheet.getLastRow() - 1, 6).getValues();
+  var pData = playerSheet.getRange(2, 1, playerSheet.getLastRow() - 1, playerSheet.getLastColumn()).getValues();
   var targetProfileId = "";
   var foundPlayerName = "";
 
   for (var i = 0; i < pData.length; i++) {
     var profileId = String(pData[i][0]).trim();
     var fName = pData[i][3] || (pData[i][1] + " " + pData[i][2]);
-    if (profileId.toLowerCase() === query.toLowerCase() || fName.toLowerCase().indexOf(query.toLowerCase()) > -1) {
+    if (profileId.toLowerCase() === String(query).toLowerCase() || fName.toLowerCase().indexOf(String(query).toLowerCase()) > -1) {
       targetProfileId = profileId;
       foundPlayerName = fName;
       var rowNum = 2 + i;
@@ -2038,7 +2171,7 @@ function showMarkInactiveDialog() {
     '  .card { background: #fdfdfd; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 12px; }' +
     '  .form-group { margin-bottom: 6px; }' +
     '  .form-label { font-weight: bold; font-size: 12px; color: #6A1B29; margin-bottom: 4px; display: block; }' +
-    '  input[type=text] { width: 100%; font-size: 13px; padding: 7px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }' +
+    '  select { width: 100%; font-size: 13px; padding: 7px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; background: #fff; }' +
     '  .btn { padding: 9px 16px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; font-size: 13px; transition: all 0.2s; }' +
     '  .btn-primary { background: #6A1B29; color: white; }' +
     '  .btn-primary:hover { background: #52131e; }' +
@@ -2052,11 +2185,16 @@ function showMarkInactiveDialog() {
     '  <h3>Mark Player as Inactive</h3>' +
     '  <p>Mark a player as Inactive in the Master directory (excluded from future availability callouts).</p>' +
     '' +
-    '  <div id="inputSection">' +
+    '  <div id="loadingPlayers" style="text-align:center; padding:15px;">' +
+    '    <div class="spinner"></div>' +
+    '    <p style="font-size:12px; color:#666;">Loading players list...</p>' +
+    '  </div>' +
+    '' +
+    '  <div id="inputSection" style="display:none;">' +
     '    <div class="card">' +
     '      <div class="form-group">' +
-    '        <label class="form-label">Player Name or Profile ID</label>' +
-    '        <input type="text" id="query" placeholder="e.g. Isaac Wicklein">' +
+    '        <label class="form-label">Select Player to Mark Inactive</label>' +
+    '        <select id="playerSelect"></select>' +
     '      </div>' +
     '    </div>' +
     '    <div class="actions">' +
@@ -2078,9 +2216,28 @@ function showMarkInactiveDialog() {
     '  </div>' +
     '' +
     '  <script>' +
+    '    google.script.run' +
+    '      .withSuccessHandler(function(list) {' +
+    '        document.getElementById("loadingPlayers").style.display = "none";' +
+    '        var sel = document.getElementById("playerSelect");' +
+    '        sel.innerHTML = "";' +
+    '        list.forEach(function(p) {' +
+    '          var opt = document.createElement("option");' +
+    '          opt.value = p.profileId;' +
+    '          opt.innerText = p.name + (p.status !== "Active" ? " (" + p.status + ")" : "");' +
+    '          sel.appendChild(opt);' +
+    '        });' +
+    '        document.getElementById("inputSection").style.display = "block";' +
+    '      })' +
+    '      .withFailureHandler(function(err) {' +
+    '        document.getElementById("loadingPlayers").style.display = "none";' +
+    '        alert("Error loading players: " + err.message);' +
+    '      })' +
+    '      .getPlayersForDropdown();' +
+    '' +
     '    function submitInactive() {' +
-    '      var q = document.getElementById("query").value.trim();' +
-    '      if (!q) { alert("Please enter a player name or ID."); return; }' +
+    '      var pId = document.getElementById("playerSelect").value;' +
+    '      if (!pId) { alert("Please select a player."); return; }' +
     '      document.getElementById("inputSection").style.display = "none";' +
     '      document.getElementById("spinnerSection").style.display = "block";' +
     '      google.script.run' +
@@ -2094,11 +2251,11 @@ function showMarkInactiveDialog() {
     '          document.getElementById("resultSection").style.display = "block";' +
     '          document.getElementById("resultMessage").innerText = "Failed: " + (err.message || err);' +
     '        })' +
-    '        .markPlayerInactive(q);' +
+    '        .markPlayerInactive(pId);' +
     '    }' +
     '  </script>' +
     '</body></html>'
-  ).setWidth(460).setHeight(310);
+  ).setWidth(460).setHeight(320);
   SpreadsheetApp.getUi().showModalDialog(htmlOutput, "Mark Player Inactive");
 }
 
@@ -2114,14 +2271,14 @@ function markPlayerInactive(query) {
     throw new Error("Players tab not found or empty.");
   }
 
-  var pData = playerSheet.getRange(2, 1, playerSheet.getLastRow() - 1, 4).getValues();
+  var pData = playerSheet.getRange(2, 1, playerSheet.getLastRow() - 1, playerSheet.getLastColumn()).getValues();
   var targetProfileId = "";
   var foundPlayerName = "";
 
   for (var i = 0; i < pData.length; i++) {
     var profileId = String(pData[i][0]).trim();
     var fName = pData[i][3] || (pData[i][1] + " " + pData[i][2]);
-    if (profileId.toLowerCase() === query.toLowerCase() || fName.toLowerCase().indexOf(query.toLowerCase()) > -1) {
+    if (profileId.toLowerCase() === String(query).toLowerCase() || fName.toLowerCase().indexOf(String(query).toLowerCase()) > -1) {
       targetProfileId = profileId;
       foundPlayerName = fName;
       playerSheet.getRange(2 + i, 7).setValue("Inactive");
