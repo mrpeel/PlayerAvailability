@@ -1830,6 +1830,31 @@ function getPlayersForDropdown() {
  * DIALOG 2: Pull new players modal dialog.
  */
 function showPullNewPlayersDialog() {
+  var ss = getSS();
+  var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log"];
+  var activeTab = ss ? ss.getActiveSheet().getName() : "";
+  var activeIsRound = nonRoundNames.indexOf(activeTab) === -1;
+  var roundTabs = [];
+  if (ss) {
+    ss.getSheets().forEach(function(s) {
+      var name = s.getName();
+      if (nonRoundNames.indexOf(name) === -1) roundTabs.push(name);
+    });
+  }
+
+  var optionsHtml = "";
+  if (roundTabs.length === 0) {
+    optionsHtml = '<option value="">No round selection tabs found</option>';
+  } else {
+    roundTabs.forEach(function(tab) {
+      var isSelected = (tab === activeTab || (activeIsRound && tab === activeTab)) ? " selected" : "";
+      var label = tab + (tab === activeTab ? " (Active Tab)" : "");
+      optionsHtml += '<option value="' + tab + '"' + isSelected + '>' + label + '</option>';
+    });
+  }
+
+  var disabledAttr = roundTabs.length === 0 ? " disabled" : "";
+
   var htmlOutput = HtmlService.createHtmlOutput(
     '<html><head>' +
     '<link rel="preconnect" href="https://fonts.googleapis.com">' +
@@ -1841,8 +1866,8 @@ function showPullNewPlayersDialog() {
     '  h3 { color: #6A1B29; margin-top: 0; margin-bottom: 6px; font-size: 16px; font-weight: 800; }' +
     '  p { font-size: 13px; color: #555; line-height: 1.4; margin: 0 0 12px; }' +
     '  .card { background: #fdfdfd; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 13px; color: #444; }' +
-    '  .form-group { margin-bottom: 10px; }' +
-    '  .form-label { font-weight: bold; font-size: 12px; color: #6A1B29; margin-bottom: 4px; display: block; }' +
+    '  .form-group { margin-bottom: 0; }' +
+    '  .form-label { font-weight: bold; font-size: 12px; color: #6A1B29; margin-bottom: 6px; display: block; }' +
     '  select { width: 100%; font-size: 13px; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; background: #fff; }' +
     '  .btn { padding: 9px 16px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; font-size: 13px; transition: all 0.2s; }' +
     '  .btn-primary { background: #6A1B29; color: white; }' +
@@ -1857,21 +1882,16 @@ function showPullNewPlayersDialog() {
     '  <h3>Pull New Players from Master</h3>' +
     '  <p>Scan the Master Players directory for new registrations and pull them into the Unknown status list on the selection tab.</p>' +
     '' +
-    '  <div id="loadingTabs" style="text-align:center; padding:15px;">' +
-    '    <div class="spinner"></div>' +
-    '    <p style="font-size:12px; color:#666;">Checking round tabs...</p>' +
-    '  </div>' +
-    '' +
-    '  <div id="inputSection" style="display:none;">' +
+    '  <div id="inputSection">' +
     '    <div class="card">' +
-    '      <div class="form-group" style="margin-bottom:0;">' +
+    '      <div class="form-group">' +
     '        <label class="form-label">Target Round Tab</label>' +
-    '        <select id="roundTabSelect"></select>' +
+    '        <select id="roundTabSelect">' + optionsHtml + '</select>' +
     '      </div>' +
     '    </div>' +
     '    <div class="actions">' +
     '      <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>' +
-    '      <button id="syncBtn" class="btn btn-primary" onclick="startSync()">Pull Players</button>' +
+    '      <button id="syncBtn" class="btn btn-primary" onclick="startSync()"' + disabledAttr + '>Pull Players</button>' +
     '    </div>' +
     '  </div>' +
     '' +
@@ -1888,34 +1908,9 @@ function showPullNewPlayersDialog() {
     '  </div>' +
     '' +
     '  <script>' +
-    '    google.script.run' +
-    '      .withSuccessHandler(function(ctx) {' +
-    '        document.getElementById("loadingTabs").style.display = "none";' +
-    '        var sel = document.getElementById("roundTabSelect");' +
-    '        sel.innerHTML = "";' +
-    '        if (!ctx.roundTabs || ctx.roundTabs.length === 0) {' +
-    '          document.getElementById("resultSection").style.display = "block";' +
-    '          document.getElementById("resultMessage").innerText = "No round selection tabs found.\\n\\nPlease initialise a round first via \"Initialise new round\".";' +
-    '          return;' +
-    '        }' +
-    '        ctx.roundTabs.forEach(function(tab) {' +
-    '          var opt = document.createElement("option");' +
-    '          opt.value = tab;' +
-    '          opt.innerText = tab + (tab === ctx.activeTab ? " (Active Tab)" : "");' +
-    '          if (tab === ctx.activeTab || (ctx.activeIsRound && tab === ctx.activeTab)) opt.selected = true;' +
-    '          sel.appendChild(opt);' +
-    '        });' +
-    '        document.getElementById("inputSection").style.display = "block";' +
-    '      })' +
-    '      .withFailureHandler(function(err) {' +
-    '        document.getElementById("loadingTabs").style.display = "none";' +
-    '        alert("Error loading tabs: " + err.message);' +
-    '      })' +
-    '      .getRoundTabsForDialog();' +
-    '' +
     '    function startSync() {' +
     '      var selTab = document.getElementById("roundTabSelect").value;' +
-    '      if (!selTab) { alert("Please select a round tab."); return; }' +
+    '      if (!selTab) { alert("Please select a round tab or initialise a round tab first."); return; }' +
     '      document.getElementById("inputSection").style.display = "none";' +
     '      document.getElementById("spinnerSection").style.display = "block";' +
     '      google.script.run' +
@@ -1999,6 +1994,17 @@ function syncNewPlayersToActiveTab(targetTabName) {
  * DIALOG 3: Record player injury/absence modal.
  */
 function showRecordInjuryDialog() {
+  var players = getPlayersForDropdown();
+  var playerOptionsHtml = "";
+  if (players.length === 0) {
+    playerOptionsHtml = '<option value="">No players found in Master</option>';
+  } else {
+    players.forEach(function(p) {
+      var tag = p.status !== "Active" ? " (" + p.status + ")" : "";
+      playerOptionsHtml += '<option value="' + p.profileId + '">' + p.name + tag + '</option>';
+    });
+  }
+
   var htmlOutput = HtmlService.createHtmlOutput(
     '<html><head>' +
     '<link rel="preconnect" href="https://fonts.googleapis.com">' +
@@ -2026,16 +2032,11 @@ function showRecordInjuryDialog() {
     '  <h3>Record Player Injury / Absence</h3>' +
     '  <p>Update player status to Injured in Master directory and mark them Unavailable on the active round.</p>' +
     '' +
-    '  <div id="loadingPlayers" style="text-align:center; padding:15px;">' +
-    '    <div class="spinner"></div>' +
-    '    <p style="font-size:12px; color:#666;">Loading players list...</p>' +
-    '  </div>' +
-    '' +
-    '  <div id="inputSection" style="display:none;">' +
+    '  <div id="inputSection">' +
     '    <div class="card">' +
     '      <div class="form-group">' +
     '        <label class="form-label">Select Player</label>' +
-    '        <select id="playerSelect"></select>' +
+    '        <select id="playerSelect">' + playerOptionsHtml + '</select>' +
     '      </div>' +
     '      <div class="form-group">' +
     '        <label class="form-label">Injury / Absence Notes</label>' +
@@ -2065,25 +2066,6 @@ function showRecordInjuryDialog() {
     '  </div>' +
     '' +
     '  <script>' +
-    '    google.script.run' +
-    '      .withSuccessHandler(function(list) {' +
-    '        document.getElementById("loadingPlayers").style.display = "none";' +
-    '        var sel = document.getElementById("playerSelect");' +
-    '        sel.innerHTML = "";' +
-    '        list.forEach(function(p) {' +
-    '          var opt = document.createElement("option");' +
-    '          opt.value = p.profileId;' +
-    '          opt.innerText = p.name + (p.status !== "Active" ? " (" + p.status + ")" : "");' +
-    '          sel.appendChild(opt);' +
-    '        });' +
-    '        document.getElementById("inputSection").style.display = "block";' +
-    '      })' +
-    '      .withFailureHandler(function(err) {' +
-    '        document.getElementById("loadingPlayers").style.display = "none";' +
-    '        alert("Error loading players: " + err.message);' +
-    '      })' +
-    '      .getPlayersForDropdown();' +
-    '' +
     '    function submitInjury() {' +
     '      var pId = document.getElementById("playerSelect").value;' +
     '      var n = document.getElementById("notes").value.trim();' +
@@ -2158,6 +2140,17 @@ function recordPlayerInjury(query, notes, returnDate) {
  * DIALOG 4: Mark player as inactive modal.
  */
 function showMarkInactiveDialog() {
+  var players = getPlayersForDropdown();
+  var playerOptionsHtml = "";
+  if (players.length === 0) {
+    playerOptionsHtml = '<option value="">No players found in Master</option>';
+  } else {
+    players.forEach(function(p) {
+      var tag = p.status !== "Active" ? " (" + p.status + ")" : "";
+      playerOptionsHtml += '<option value="' + p.profileId + '">' + p.name + tag + '</option>';
+    });
+  }
+
   var htmlOutput = HtmlService.createHtmlOutput(
     '<html><head>' +
     '<link rel="preconnect" href="https://fonts.googleapis.com">' +
@@ -2185,16 +2178,11 @@ function showMarkInactiveDialog() {
     '  <h3>Mark Player as Inactive</h3>' +
     '  <p>Mark a player as Inactive in the Master directory (excluded from future availability callouts).</p>' +
     '' +
-    '  <div id="loadingPlayers" style="text-align:center; padding:15px;">' +
-    '    <div class="spinner"></div>' +
-    '    <p style="font-size:12px; color:#666;">Loading players list...</p>' +
-    '  </div>' +
-    '' +
-    '  <div id="inputSection" style="display:none;">' +
+    '  <div id="inputSection">' +
     '    <div class="card">' +
     '      <div class="form-group">' +
     '        <label class="form-label">Select Player to Mark Inactive</label>' +
-    '        <select id="playerSelect"></select>' +
+    '        <select id="playerSelect">' + playerOptionsHtml + '</select>' +
     '      </div>' +
     '    </div>' +
     '    <div class="actions">' +
@@ -2216,25 +2204,6 @@ function showMarkInactiveDialog() {
     '  </div>' +
     '' +
     '  <script>' +
-    '    google.script.run' +
-    '      .withSuccessHandler(function(list) {' +
-    '        document.getElementById("loadingPlayers").style.display = "none";' +
-    '        var sel = document.getElementById("playerSelect");' +
-    '        sel.innerHTML = "";' +
-    '        list.forEach(function(p) {' +
-    '          var opt = document.createElement("option");' +
-    '          opt.value = p.profileId;' +
-    '          opt.innerText = p.name + (p.status !== "Active" ? " (" + p.status + ")" : "");' +
-    '          sel.appendChild(opt);' +
-    '        });' +
-    '        document.getElementById("inputSection").style.display = "block";' +
-    '      })' +
-    '      .withFailureHandler(function(err) {' +
-    '        document.getElementById("loadingPlayers").style.display = "none";' +
-    '        alert("Error loading players: " + err.message);' +
-    '      })' +
-    '      .getPlayersForDropdown();' +
-    '' +
     '    function submitInactive() {' +
     '      var pId = document.getElementById("playerSelect").value;' +
     '      if (!pId) { alert("Please select a player."); return; }' +
