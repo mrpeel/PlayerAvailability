@@ -2980,6 +2980,7 @@ function syncPresentationStagingToSlides(ss) {
       }
 
       // Match PHOTO_1 .. PHOTO_13 (1cm x 1cm / 28.35pt)
+      var transparentPngUrl = "https://upload.wikimedia.org/wikipedia/commons/c/ca/1x1.png";
       var photoMatch = tag.match(/^(?:.*_)?PHOTO_?(\d+)$/);
       if (photoMatch) {
         var photoNum = parseInt(photoMatch[1], 10);
@@ -2989,6 +2990,9 @@ function syncPresentationStagingToSlides(ss) {
             try {
               if (pPhoto.photoUrl) {
                 el.asImage().replace(pPhoto.photoUrl);
+              } else {
+                // Wipe previous round's headshot with 100% transparent image
+                el.asImage().replace(transparentPngUrl);
               }
             } catch (err) {
               Logger.log("Image replace warning for " + pPhoto.name + ": " + err.message);
