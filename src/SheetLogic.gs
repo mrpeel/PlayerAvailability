@@ -204,7 +204,7 @@ function deployVerticalRoundSheet(ss, dateStr) {
   // Col B Selection Dropdowns linked to team-specific dynamic pools in hidden Cols AA-CQ
   applySelectionValidationRules(ws);
 
-  // Setup Column U and Column V WhatsApp messaging
+  // Setup Column U and Column V WhatsApp messaging (Merged cards so Row 4 height is unaffected)
   setupWhatsAppMessageColumns(ws, targetDate);
 
   // Column Widths & Hide Technical ProfileID and Helper Columns
@@ -213,8 +213,8 @@ function deployVerticalRoundSheet(ss, dateStr) {
   ws.setColumnWidth(6, 80);  ws.setColumnWidth(7, 210); ws.setColumnWidth(8, 210); ws.setColumnWidth(9, 180); ws.setColumnWidth(10, 20);
   ws.setColumnWidth(11, 80); ws.setColumnWidth(12, 210); ws.setColumnWidth(13, 210); ws.setColumnWidth(14, 180); ws.setColumnWidth(15, 20);
   ws.setColumnWidth(16, 80); ws.setColumnWidth(17, 210); ws.setColumnWidth(18, 210); ws.setColumnWidth(19, 180); ws.setColumnWidth(20, 20);
-  ws.setColumnWidth(21, 210); // Col U (Availability WhatsApp Message)
-  ws.setColumnWidth(22, 210); // Col V (Wall of Shame WhatsApp Message)
+  ws.setColumnWidth(21, 350); // Col U (Availability Message)
+  ws.setColumnWidth(22, 350); // Col V (Wall of Shame Message)
   ws.setColumnWidth(23, 20);  // Col W (Spacer)
 
   ws.hideColumns(6);  // Col F (ProfileID)
@@ -1290,51 +1290,97 @@ function menuRefreshWhatsAppColumns() {
     return;
   }
   setupWhatsAppMessageColumns(ws);
-  ss.toast("WhatsApp messages in Columns U & V refreshed!", "LCC Selection", 3);
+  cleanConfigTabTemplates(ss);
+  ss.toast("WhatsApp message columns U & V refreshed with compact row height!", "LCC Selection", 3);
+}
+
+
+/**
+ * Cleans legacy WhatsApp template rows from Config tab.
+ */
+function cleanConfigTabTemplates(ss) {
+  try {
+    var s = ss || getSS();
+    if (!s) return;
+    var configSheet = s.getSheetByName("Config");
+    if (!configSheet) return;
+    var lastRow = configSheet.getLastRow();
+    if (lastRow >= 11) {
+      for (var r = 11; r <= lastRow; r++) {
+        var val = String(configSheet.getRange(r, 1).getValue());
+        if (val.indexOf("WHATSAPP") > -1 || val.indexOf("Availability Callout") > -1 || val.indexOf("Wall of Shame") > -1) {
+          configSheet.getRange(r, 1, lastRow - r + 1, configSheet.getLastColumn()).clear();
+          break;
+        }
+      }
+    }
+  } catch (e) {
+    Logger.log("cleanConfigTabTemplates warning: " + e.message);
+  }
 }
 
 
 /**
  * Sets up Column U and Column V on a round sheet for WhatsApp messages.
+ * Uses merged ranges U4:U20 and V4:V20 so text flows downward without increasing Row 4 height!
  */
 function setupWhatsAppMessageColumns(ws, dateStr) {
   if (!ws) return;
   var dStr = dateStr || ws.getName();
 
-  // Column U (Col 21) Header & Formula
-  ws.getRange("U3").setValue("Round " + dStr + " Availability WhatsApp Message")
+  // Column U (Col 21) Header & Merged Card
+  ws.getRange("U3").setValue(dStr + " Availability Request Message")
     .setFontWeight("bold")
     .setBackground(LCC_PALETTE.maroonBg)
     .setFontColor(LCC_PALETTE.maroonFg)
     .setHorizontalAlignment("center");
 
-  ws.getRange("U4").setFormula(
+  // Unmerge first if previously merged to allow clean formula assignment
+  try {
+    ws.getRange("U4:U20").breakApart();
+  } catch (e) {}
+
+  var uCard = ws.getRange("U4:U20");
+  uCard.merge();
+  uCard.setFormula(
     '="🏏 *LABURNUM CC ROUND AVAILABILITY* 🏏" & CHAR(10) & CHAR(10) & ' +
     '"Please submit your availability for the upcoming round (" & TEXT(B2, "yyyy-mm-dd") & "):" & CHAR(10) & ' +
-    '"https://availability.laburnumcc.com.au/?round=" & TEXT(B2, "yyyy-mm-dd")'
+    '"https://lcc-availability.web.app/?round=" & TEXT(B2, "yyyy-mm-dd")'
   ).setWrap(true).setVerticalAlignment("top");
 
-  // Column V (Col 22) Header & Formula
-  ws.getRange("V3").setValue("Round " + dStr + " Wall of Shame WhatsApp Message")
+  // Column V (Col 22) Header & Merged Card
+  ws.getRange("V3").setValue(dStr + " Wall of Shame Message")
     .setFontWeight("bold")
     .setBackground(LCC_PALETTE.maroonBg)
     .setFontColor(LCC_PALETTE.maroonFg)
     .setHorizontalAlignment("center");
 
-  ws.getRange("V4").setFormula(
+  try {
+    ws.getRange("V4:V20").breakApart();
+  } catch (e) {}
+
+  var vCard = ws.getRange("V4:V20");
+  vCard.merge();
+  vCard.setFormula(
     '=LCC_WALL_OF_SHAME(B2, COUNTA(G5:G) + COUNTA(L5:L), Q5:Q150)'
   ).setWrap(true).setVerticalAlignment("top");
 
-  // Set card styling
+  // Card Borders and Background Styling
   try {
     ws.getRange("U3:U20").setBorder(true, true, true, true, false, false, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
     ws.getRange("V3:V20").setBorder(true, true, true, true, false, false, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
-    ws.getRange("U4:U20").setBackground(LCC_PALETTE.zebraLight);
-    ws.getRange("V4:V20").setBackground(LCC_PALETTE.zebraLight);
+    uCard.setBackground(LCC_PALETTE.zebraLight);
+    vCard.setBackground(LCC_PALETTE.zebraLight);
   } catch (e) {}
 
-  ws.setColumnWidth(21, 210); // Col U (Availability WhatsApp Message)
-  ws.setColumnWidth(22, 210); // Col V (Wall of Shame WhatsApp Message)
+  // Explicitly reset Row 4 height to standard compact height (24px)
+  try {
+    ws.setRowHeight(4, 24);
+  } catch (e) {}
+
+  // Set wider column widths (350px each)
+  ws.setColumnWidth(21, 350); // Col U (Availability Message)
+  ws.setColumnWidth(22, 350); // Col V (Wall of Shame Message)
   ws.setColumnWidth(23, 20);  // Col W (Spacer)
 
   // Unhide Columns 21 & 22 if they were previously hidden

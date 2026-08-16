@@ -50,11 +50,11 @@ function createCoreDatabaseSheets(ss) {
   ]];
   playerSheet.getRange(1, 1, 1, 13).setValues(playerHeaders).setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.maroonBg).setFontColor(LCC_SETUP_PALETTE.maroonFg);
   
-  // 2. CONFIG TAB (Team configuration and WhatsApp message templates)
+  // 2. CONFIG TAB (Team configuration)
   var configSheet = ss.getSheetByName("Config") || ss.insertSheet("Config");
   configSheet.clear();
   
-  // Section 1: Team Configuration
+  // Team Configuration
   configSheet.getRange(1, 1, 1, 3).merge().setValue("TEAM CONFIGURATION").setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.maroonBg).setFontColor(LCC_SETUP_PALETTE.maroonFg);
   var teamHeaders = [["Internal Team Name", "Competition", "Play Cricket Team Name"]];
   configSheet.getRange(2, 1, 1, 3).setValues(teamHeaders).setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.zebraLight);
@@ -69,18 +69,6 @@ function createCoreDatabaseSheets(ss) {
   ];
   configSheet.getRange(3, 1, defaultTeams.length, 3).setValues(defaultTeams);
   configSheet.getRange(1, 1, 2 + defaultTeams.length, 3).setBorder(true, true, true, true, true, true, LCC_SETUP_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
-  
-  // Section 2: WhatsApp & System Templates
-  var templateStartRow = 4 + defaultTeams.length;
-  configSheet.getRange(templateStartRow, 1, 1, 2).merge().setValue("WHATSAPP & MESSAGE TEMPLATES").setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.maroonBg).setFontColor(LCC_SETUP_PALETTE.maroonFg);
-  configSheet.getRange(templateStartRow + 1, 1, 1, 2).setValues([["Template Name", "Template Text"]]).setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.zebraLight);
-  var defaultTemplates = [
-    ["Availability Callout", "🏏 *LCC ROUND AVAILABILITY* 🏏\nPlease submit your availability for this round: {url}"],
-    ["Wall of Shame", "🚨 *WALL OF SHAME* 🚨\nThe following players have not yet entered their availability: {players}"],
-    ["Selection Announcement", "🏏 *LABURNUM CC TEAMS - {date}* 🏏\n\n*1st XI vs {1st_opponent}* ({1st_venue}, {1st_format})\n{1st_team}\n\n*2nd XI vs {2nd_opponent}* ({2nd_venue}, {2nd_format})\n{2nd_team}\n\n*3rd XI vs {3rd_opponent}* ({3rd_venue}, {3rd_format})\n{3rd_team}\n\n*4th XI vs {4th_opponent}* ({4th_venue}, {4th_format})\n{4th_team}\n\n*5th XI vs {5th_opponent}* ({5th_venue}, {5th_format})\n{5th_team}"]
-  ];
-  configSheet.getRange(templateStartRow + 2, 1, defaultTemplates.length, 2).setValues(defaultTemplates);
-  configSheet.getRange(templateStartRow, 1, 2 + defaultTemplates.length, 2).setBorder(true, true, true, true, true, true, LCC_SETUP_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
   
   // 3. FIXTURES TAB (Game Date as PK, per-team Round, Format, Opponent, Venue)
   var fixSheet = ss.getSheetByName("Fixtures") || ss.insertSheet("Fixtures");

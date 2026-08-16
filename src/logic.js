@@ -669,11 +669,11 @@ function generateAvailabilityCalloutMessage(roundDate) {
 
   return "🏏 *LABURNUM CC ROUND AVAILABILITY* 🏏\n\n" +
     "Please submit your availability for the upcoming round (" + dateStr + "):\n" +
-    "https://availability.laburnumcc.com.au/?round=" + dateStr;
+    "https://lcc-availability.web.app/?round=" + dateStr;
 }
 
 /**
- * Builds the Wall of Shame WhatsApp message.
+ * Builds the Wall of Shame WhatsApp message with the updated template.
  * 
  * @param {string|Date} roundDate - e.g. "2025-10-18"
  * @param {number} declaredCount - number of players who have declared
@@ -694,12 +694,11 @@ function generateWallOfShameMessage(roundDate, declaredCount, unknownPlayerNames
 
   var nameListStr = names.length > 0 ? names.join(", ") : "None! Everyone has responded!";
 
-  return "✅ *Thanks to the " + numDeclared + " players who have already declared availability!*\n\n" +
-    "*🏏 LCC Selection: Final Overs to Respond 🏏*\n\n" +
-    "We need your availability so we can lock in the XIs.\n\n" +
-    "⏳ *Still outstanding:* " + nameListStr + "\n\n" +
-    "⚡ *Save your captain the headache and secure your spot in 10 seconds here:*\n" +
-    "https://availability.laburnumcc.com.au/?round=" + dateStr;
+  return "✅ Thanks to the " + numDeclared + " players who have confirmed\n\n" +
+    "🏏 Yet to Get off the Mark 🏏\n" +
+    "The following players currently won't be troubling the scorer this round: " + nameListStr + "\n\n" +
+    "⚡ Declare your availability in 10 seconds:\n" +
+    "https://lcc-availability.web.app/?round=" + dateStr;
 }
 
 // Node/Jest interop — Apps Script ignores this guard.

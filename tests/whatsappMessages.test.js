@@ -39,7 +39,7 @@ describe('WhatsApp Messages Generator', () => {
       const msg = generateAvailabilityCalloutMessage('2025-10-18');
       expect(msg).toContain('🏏 *LABURNUM CC ROUND AVAILABILITY* 🏏');
       expect(msg).toContain('upcoming round (2025-10-18):');
-      expect(msg).toContain('https://availability.laburnumcc.com.au/?round=2025-10-18');
+      expect(msg).toContain('https://lcc-availability.web.app/?round=2025-10-18');
     });
   });
 
@@ -53,12 +53,11 @@ describe('WhatsApp Messages Generator', () => {
       ];
       const msg = generateWallOfShameMessage('2025-10-18', 35, unknownList);
 
-      expect(msg).toContain('✅ *Thanks to the 35 players who have already declared availability!*');
-      expect(msg).toContain('*🏏 LCC Selection: Final Overs to Respond 🏏*');
-      expect(msg).toContain('We need your availability so we can lock in the XIs.');
-      expect(msg).toContain('⏳ *Still outstanding:* Liam W, Shahmeer H, Heath E, Daniel E');
-      expect(msg).toContain('⚡ *Save your captain the headache and secure your spot in 10 seconds here:*');
-      expect(msg).toContain('https://availability.laburnumcc.com.au/?round=2025-10-18');
+      expect(msg).toContain('✅ Thanks to the 35 players who have confirmed');
+      expect(msg).toContain('🏏 Yet to Get off the Mark 🏏');
+      expect(msg).toContain("The following players currently won't be troubling the scorer this round: Liam W, Shahmeer H, Heath E, Daniel E");
+      expect(msg).toContain('⚡ Declare your availability in 10 seconds:');
+      expect(msg).toContain('https://lcc-availability.web.app/?round=2025-10-18');
     });
 
     test('handles 2D array input from Google Sheets ranges', () => {
@@ -70,13 +69,13 @@ describe('WhatsApp Messages Generator', () => {
         ['Neil Kloot']
       ];
       const msg = generateWallOfShameMessage('2025-10-18', 42, sheetRange);
-      expect(msg).toContain('✅ *Thanks to the 42 players who have already declared availability!*');
-      expect(msg).toContain('⏳ *Still outstanding:* Liam W, Shahmeer H, Neil K');
+      expect(msg).toContain('✅ Thanks to the 42 players who have confirmed');
+      expect(msg).toContain("The following players currently won't be troubling the scorer this round: Liam W, Shahmeer H, Neil K");
     });
 
     test('handles zero unknown players gracefully', () => {
       const msg = generateWallOfShameMessage('2025-10-18', 65, []);
-      expect(msg).toContain('⏳ *Still outstanding:* None! Everyone has responded!');
+      expect(msg).toContain("The following players currently won't be troubling the scorer this round: None! Everyone has responded!");
     });
   });
 });
