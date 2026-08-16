@@ -1384,18 +1384,25 @@ function setupWhatsAppMessageColumns(ws, dateStr) {
 
 /**
  * Standard column width calculator for round selection tabs.
- * Reduced all column widths by an additional 20px for mobile/phone display.
+ * Action switchers 123px (-10px), Names & Notes 153px (-5px), Notes font size 9pt.
  */
 function applyRoundTabColumnWidths(ws) {
   if (!ws) return;
   ws.setColumnWidth(1, 110); ws.setColumnWidth(2, 190); ws.setColumnWidth(3, 20);
   ws.setColumnWidth(4, 190); ws.setColumnWidth(5, 20);
-  ws.setColumnWidth(6, 80);  ws.setColumnWidth(7, 158); ws.setColumnWidth(8, 158); ws.setColumnWidth(9, 133); ws.setColumnWidth(10, 20);
-  ws.setColumnWidth(11, 80); ws.setColumnWidth(12, 158); ws.setColumnWidth(13, 158); ws.setColumnWidth(14, 133); ws.setColumnWidth(15, 20);
-  ws.setColumnWidth(16, 80); ws.setColumnWidth(17, 158); ws.setColumnWidth(18, 158); ws.setColumnWidth(19, 133); ws.setColumnWidth(20, 20);
+  ws.setColumnWidth(6, 80);  ws.setColumnWidth(7, 153); ws.setColumnWidth(8, 153); ws.setColumnWidth(9, 123); ws.setColumnWidth(10, 20);
+  ws.setColumnWidth(11, 80); ws.setColumnWidth(12, 153); ws.setColumnWidth(13, 153); ws.setColumnWidth(14, 123); ws.setColumnWidth(15, 20);
+  ws.setColumnWidth(16, 80); ws.setColumnWidth(17, 153); ws.setColumnWidth(18, 153); ws.setColumnWidth(19, 123); ws.setColumnWidth(20, 20);
   ws.setColumnWidth(21, 330); // Col U (Availability Message)
   ws.setColumnWidth(22, 330); // Col V (Wall of Shame Message)
   ws.setColumnWidth(23, 20);  // Col W (Spacer)
+
+  // Format Notes values (Row 5 and below) with 9pt font
+  try {
+    ws.getRange("H5:H150").setFontSize(9);
+    ws.getRange("M5:M150").setFontSize(9);
+    ws.getRange("R5:R150").setFontSize(9);
+  } catch (e) {}
 }
 
 
