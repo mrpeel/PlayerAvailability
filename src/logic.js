@@ -696,7 +696,7 @@ function generateWallOfShameMessage(roundDate, declaredCount, unknownPlayerNames
 
   return "✅ Thanks to the " + numDeclared + " players who have confirmed\n\n" +
     "🏏 Yet to Get off the Mark 🏏\n" +
-    "The following players currently won't be troubling the scorer this round: " + nameListStr + "\n\n" +
+    "The following players currently won't be troubling the scorers this round: " + nameListStr + "\n\n" +
     "⚡ Declare your availability in 10 seconds:\n" +
     "https://lcc-availability.web.app/?round=" + dateStr;
 }

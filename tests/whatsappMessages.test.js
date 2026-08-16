@@ -55,7 +55,7 @@ describe('WhatsApp Messages Generator', () => {
 
       expect(msg).toContain('✅ Thanks to the 35 players who have confirmed');
       expect(msg).toContain('🏏 Yet to Get off the Mark 🏏');
-      expect(msg).toContain("The following players currently won't be troubling the scorer this round: Liam W, Shahmeer H, Heath E, Daniel E");
+      expect(msg).toContain("The following players currently won't be troubling the scorers this round: Liam W, Shahmeer H, Heath E, Daniel E");
       expect(msg).toContain('⚡ Declare your availability in 10 seconds:');
       expect(msg).toContain('https://lcc-availability.web.app/?round=2025-10-18');
     });
@@ -70,12 +70,12 @@ describe('WhatsApp Messages Generator', () => {
       ];
       const msg = generateWallOfShameMessage('2025-10-18', 42, sheetRange);
       expect(msg).toContain('✅ Thanks to the 42 players who have confirmed');
-      expect(msg).toContain("The following players currently won't be troubling the scorer this round: Liam W, Shahmeer H, Neil K");
+      expect(msg).toContain("The following players currently won't be troubling the scorers this round: Liam W, Shahmeer H, Neil K");
     });
 
     test('handles zero unknown players gracefully', () => {
       const msg = generateWallOfShameMessage('2025-10-18', 65, []);
-      expect(msg).toContain("The following players currently won't be troubling the scorer this round: None! Everyone has responded!");
+      expect(msg).toContain("The following players currently won't be troubling the scorers this round: None! Everyone has responded!");
     });
   });
 });

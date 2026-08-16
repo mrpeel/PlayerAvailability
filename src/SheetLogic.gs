@@ -1194,9 +1194,8 @@ function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu("🏏 LCC Selection")
     .addItem("Initialise new round", "showDatePickerDialog")
-    .addItem("Pull new players into round from Master Players list", "showPullNewPlayersDialog")
-    .addItem("Refresh WhatsApp message columns (Cols U & V)", "menuRefreshWhatsAppColumns")
     .addSeparator()
+    .addItem("Pull new players into round from Master Players list", "showPullNewPlayersDialog")
     .addItem("Mark player as inactive", "showMarkInactiveDialog")
     .addItem("Record player injury / absence", "showRecordInjuryDialog")
     .addSeparator()
