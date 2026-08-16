@@ -12,15 +12,15 @@ describe('WhatsApp Messages Generator', () => {
       expect(formatShortPlayerName('Aaron Alaimo')).toBe('Aaron A');
     });
 
-    test('preserves junior tags', () => {
-      expect(formatShortPlayerName('Shahmeer Hassaan (U16)')).toBe('Shahmeer H (U16)');
-      expect(formatShortPlayerName('Neddy Alaimo (U18)')).toBe('Neddy A (U18)');
-      expect(formatShortPlayerName('Ishan Mallick (u16)')).toBe('Ishan M (U16)');
+    test('strips junior / age group tags', () => {
+      expect(formatShortPlayerName('Shahmeer Hassaan (U16)')).toBe('Shahmeer H');
+      expect(formatShortPlayerName('Neddy Alaimo (U18)')).toBe('Neddy A');
+      expect(formatShortPlayerName('Ishan Mallick (u16)')).toBe('Ishan M');
     });
 
     test('handles single word names', () => {
       expect(formatShortPlayerName('Cher')).toBe('Cher');
-      expect(formatShortPlayerName('Madonna (U16)')).toBe('Madonna (U16)');
+      expect(formatShortPlayerName('Madonna (U16)')).toBe('Madonna');
     });
 
     test('handles multi-part last names', () => {
@@ -56,7 +56,7 @@ describe('WhatsApp Messages Generator', () => {
       expect(msg).toContain('✅ *Thanks to the 35 players who have already declared availability!*');
       expect(msg).toContain('*🏏 LCC Selection: Final Overs to Respond 🏏*');
       expect(msg).toContain('We need your availability so we can lock in the XIs.');
-      expect(msg).toContain('⏳ *Still outstanding:* Liam W, Shahmeer H (U16), Heath E (U18), Daniel E');
+      expect(msg).toContain('⏳ *Still outstanding:* Liam W, Shahmeer H, Heath E, Daniel E');
       expect(msg).toContain('⚡ *Save your captain the headache and secure your spot in 10 seconds here:*');
       expect(msg).toContain('https://availability.laburnumcc.com.au/?round=2025-10-18');
     });
@@ -71,7 +71,7 @@ describe('WhatsApp Messages Generator', () => {
       ];
       const msg = generateWallOfShameMessage('2025-10-18', 42, sheetRange);
       expect(msg).toContain('✅ *Thanks to the 42 players who have already declared availability!*');
-      expect(msg).toContain('⏳ *Still outstanding:* Liam W, Shahmeer H (U16), Neil K');
+      expect(msg).toContain('⏳ *Still outstanding:* Liam W, Shahmeer H, Neil K');
     });
 
     test('handles zero unknown players gracefully', () => {

@@ -634,29 +634,28 @@ function simulatePlayerAvailability(players, matchFormat, rng) {
 
 /**
  * Formats a full name to short name with last initial: "{First Name} {LastNameInitial}".
- * Preserves junior tags like "(U16)" or "(U18)" if present.
+ * Strips out any junior / age group tags (e.g. "(U16)", "(U18)").
  * 
  * @param {string} fullName - e.g. "Liam Wootten", "Shahmeer Hassaan (U16)"
- * @returns {string} - e.g. "Liam W", "Shahmeer H (U16)"
+ * @returns {string} - e.g. "Liam W", "Shahmeer H"
  */
 function formatShortPlayerName(fullName) {
   if (!fullName || typeof fullName !== "string") return "";
   var trimmed = fullName.trim();
   if (!trimmed) return "";
 
-  var tagMatch = trimmed.match(/\((U\d+)\)$/i);
-  var tag = tagMatch ? " (" + tagMatch[1].toUpperCase() + ")" : "";
-  var nameWithoutTag = tagMatch ? trimmed.replace(/\((U\d+)\)$/i, "").trim() : trimmed;
+  // Strip any parenthetical suffix (e.g. "(U16)", "(U18)", "(wk)", "(c)")
+  var cleanName = trimmed.replace(/\s*\([^)]*\)/g, "").trim();
 
-  var parts = nameWithoutTag.split(/\s+/);
+  var parts = cleanName.split(/\s+/);
   if (parts.length === 1) {
-    return parts[0] + tag;
+    return parts[0];
   }
   var firstName = parts[0];
   var lastName = parts.slice(1).join(" ");
   var lastInitial = lastName.charAt(0).toUpperCase();
 
-  return firstName + " " + lastInitial + tag;
+  return firstName + " " + lastInitial;
 }
 
 /**
