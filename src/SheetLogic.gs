@@ -2714,7 +2714,8 @@ function inspectSelectionSlides() {
     report += "Elements count: " + elements.length + "\n";
     elements.forEach(function(el, eIdx) {
       var type = el.getPageElementType();
-      var desc = "  [" + (eIdx + 1) + "] Type: " + type;
+      var pos = " (x: " + Math.round(el.getLeft()) + ", y: " + Math.round(el.getTop()) + ", w: " + Math.round(el.getWidth()) + ", h: " + Math.round(el.getHeight()) + ")";
+      var desc = "  [" + (eIdx + 1) + "] " + type + pos;
       if (type === SlidesApp.PageElementType.SHAPE) {
         var shape = el.asShape();
         if (shape.getText()) {
@@ -2725,15 +2726,15 @@ function inspectSelectionSlides() {
         var tbl = el.asTable();
         desc += " | Table (" + tbl.getNumRows() + "x" + tbl.getNumColumns() + ")";
         var cells = [];
-        for (var r = 0; r < Math.min(tbl.getNumRows(), 5); r++) {
+        for (var r = 0; r < tbl.getNumRows(); r++) {
           for (var c = 0; c < tbl.getNumColumns(); c++) {
             var ct = tbl.getCell(r, c).getText().asString().trim();
             if (ct) cells.push("[" + r + "," + c + "]: '" + ct + "'");
           }
         }
-        if (cells.length > 0) desc += " | Samples: " + cells.join(", ");
+        if (cells.length > 0) desc += " | Cells: " + cells.join(", ");
       } else if (type === SlidesApp.PageElementType.IMAGE) {
-        desc += " | Image element";
+        desc += " | Image";
       } else if (type === SlidesApp.PageElementType.GROUP) {
         desc += " | Group (" + el.asGroup().getChildren().length + " items)";
       }
