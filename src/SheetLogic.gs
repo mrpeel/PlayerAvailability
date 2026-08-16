@@ -73,8 +73,10 @@ function deployVerticalRoundSheet(ss, dateStr) {
       if (String(h).trim().toLowerCase() === "game date") dateColIdx = i;
     });
     if (dateColIdx !== -1) {
+      var targetNormalized = normalizeDateToYYYYMMDD(dateStr) || String(dateStr).trim();
       for (var fRow = 1; fRow < fValues.length; fRow++) {
-        if (String(fValues[fRow][dateColIdx]).trim() === dateStr) {
+        var rowDateNormalized = normalizeDateToYYYYMMDD(fValues[fRow][dateColIdx]) || String(fValues[fRow][dateColIdx]).trim();
+        if (rowDateNormalized === targetNormalized) {
           fixInfo = {};
           fHeaders.forEach(function(h, i) {
             fixInfo[String(h).trim().toLowerCase()] = fValues[fRow][i];
@@ -85,14 +87,13 @@ function deployVerticalRoundSheet(ss, dateStr) {
     }
   }
 
-  // Header Metadata
-  var initialRoundId = (fixInfo && (fixInfo["1st round"] || fixInfo["roundid"] || fixInfo["round"])) ? (fixInfo["1st round"] || fixInfo["roundid"] || fixInfo["round"]) : "";
-  ws.getRange("A1").setValue("Round ID:").setFontWeight("bold");
-  ws.getRange("B1").setValue(initialRoundId).setBackground(LCC_PALETTE.inputHighlight).setHorizontalAlignment("center").setFontWeight("bold");
+  // Header Metadata (Date is key, no global Round ID)
+  ws.getRange("A1").setValue("Match Date:").setFontWeight("bold");
+  ws.getRange("B1").setValue(targetDate).setNumberFormat("dd/mm/yyyy").setBackground(LCC_PALETTE.inputHighlight).setHorizontalAlignment("center").setFontWeight("bold");
   ws.getRange("G1").setValue("Roster Last Synced:").setFontWeight("bold");
   ws.getRange("H1").setValue(new Date()).setNumberFormat("dd/mm/yyyy hh:mm").setFontColor("#666666");
   ws.getRange("A2").setValue("Date").setFontWeight("bold");
-  ws.getRange("B2").setValue(targetDate).setNumberFormat("dd/mm/yyyy").setBackground(LCC_PALETTE.inputHighlight).setHorizontalAlignment("center").setFontWeight("bold");
+  ws.getRange("B2").setValue(targetDate).setNumberFormat("yyyy-mm-dd").setBackground(LCC_PALETTE.inputHighlight).setHorizontalAlignment("center").setFontWeight("bold");
 
   // Vertical Team Stack (Cols A & B)
   var grades = ["FIRST ELEVEN", "SECOND ELEVEN", "THIRD ELEVEN", "FOURTH ELEVEN", "FIFTH ELEVEN"];
@@ -106,26 +107,31 @@ function deployVerticalRoundSheet(ss, dateStr) {
     var ven = fixInfo ? (fixInfo[prefix + " venue"] || "") : "";
     var fmt = fixInfo ? (fixInfo[prefix + " format"] || "") : "";
 
-    var headerTitle = gName + (rnd ? " (" + rnd + ")" : "");
-    ws.getRange(currentTeamRow, 1, 1, 2).merge().setValue(headerTitle).setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
-    ws.getRange(currentTeamRow + 1, 1).setValue("Opponent:").setFontStyle("italic");
-    ws.getRange(currentTeamRow + 1, 2).setValue(opp);
-    ws.getRange(currentTeamRow + 2, 1).setValue("Venue:").setFontStyle("italic");
-    ws.getRange(currentTeamRow + 2, 2).setValue(ven);
-    ws.getRange(currentTeamRow + 3, 1).setValue("Format:").setFontStyle("italic");
-    ws.getRange(currentTeamRow + 3, 2).setValue(fmt);
+    // Team Banner
+    ws.getRange(currentTeamRow, 1, 1, 2).merge().setValue(gName).setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
+    
+    // 4 Metadata rows: Round, Opponent, Venue, Format
+    ws.getRange(currentTeamRow + 1, 1).setValue("Round:").setFontStyle("italic");
+    ws.getRange(currentTeamRow + 1, 2).setValue(rnd);
+    ws.getRange(currentTeamRow + 2, 1).setValue("Opponent:").setFontStyle("italic");
+    ws.getRange(currentTeamRow + 2, 2).setValue(opp);
+    ws.getRange(currentTeamRow + 3, 1).setValue("Venue:").setFontStyle("italic");
+    ws.getRange(currentTeamRow + 3, 2).setValue(ven);
+    ws.getRange(currentTeamRow + 4, 1).setValue("Format:").setFontStyle("italic");
+    ws.getRange(currentTeamRow + 4, 2).setValue(fmt);
 
+    // 13 Player Slot Rows (currentTeamRow + 5 to currentTeamRow + 17)
     var structure = [
       ["1. Captain", ""], ["2. VC", ""], ["3. WK", ""],
       ["4. Player", ""], ["5. Player", ""], ["6. Player", ""],
       ["7. Player", ""], ["8. Player", ""], ["9. Player", ""],
       ["10. Player", ""], ["11. Player", ""], ["12. Player", ""], ["13. Player", ""]
     ];
-    ws.getRange(currentTeamRow + 4, 1, 13, 2).setValues(structure);
-    ws.getRange(currentTeamRow + 4, 1, 13, 1).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
-    ws.getRange(currentTeamRow, 1, 17, 2).setBorder(true, true, true, true, true, true, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
+    ws.getRange(currentTeamRow + 5, 1, 13, 2).setValues(structure);
+    ws.getRange(currentTeamRow + 5, 1, 13, 1).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
+    ws.getRange(currentTeamRow, 1, 18, 2).setBorder(true, true, true, true, true, true, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
 
-    currentTeamRow += 18;
+    currentTeamRow += 19;
   });
 
   // Col D: Dynamic Virtual "Available for Selection" Pool
@@ -1237,7 +1243,7 @@ function applySelectionValidationRules(ws) {
     // Col D: Global unselected pool
     ws.getRange("D5").setFormula(`=IFERROR(FILTER(G5:G, G5:G<>"", COUNTIF(B:B, G5:G)=0), "")`);
 
-    var teamStarts = [8, 26, 44, 62, 80];
+    var teamStarts = [9, 28, 47, 66, 85];
     var maxCols = ws.getMaxColumns();
     if (maxCols < 95) {
       ws.insertColumnsAfter(maxCols, 95 - maxCols);
@@ -1255,7 +1261,7 @@ function applySelectionValidationRules(ws) {
         // Set helper header and dynamic formula
         ws.getRange(3, helperCol).setValue("SLOT_" + row);
         ws.getRange(5, helperCol).setFormula(
-          '=IFERROR(FILTER(G$5:G, (COUNTIF($B$8:$B$92, G$5:G)=0) + (G$5:G=B' + row + ')), "")'
+          '=IFERROR(FILTER(G$5:G, (COUNTIF($B$9:$B$97, G$5:G)=0) + (G$5:G=B' + row + ')), "")'
         );
 
         // Apply Data Validation to this specific slot
@@ -1501,10 +1507,10 @@ function syncPresentationStagingHub(ss, targetRoundName) {
       
       var frames = [
         { name: "FIRST ELEVEN", start: 4 }, 
-        { name: "SECOND ELEVEN", start: 22 }, 
-        { name: "THIRD ELEVEN", start: 40 }, 
-        { name: "FOURTH ELEVEN", start: 58 }, 
-        { name: "FIFTH ELEVEN", start: 76 }
+        { name: "SECOND ELEVEN", start: 23 }, 
+        { name: "THIRD ELEVEN", start: 42 }, 
+        { name: "FOURTH ELEVEN", start: 61 }, 
+        { name: "FIFTH ELEVEN", start: 80 }
       ];
       
       var slotRoles = [
@@ -1521,19 +1527,22 @@ function syncPresentationStagingHub(ss, targetRoundName) {
         // Team Banner
         sh.getRange(rowIdx, 1, 1, 4).merge().setValue(f.name).setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
         
-        // Metadata rows
-        sh.getRange(rowIdx + 1, 1).setValue("Opponent:").setFontStyle("italic");
+        // Metadata rows: Round, Opponent, Venue, Format
+        sh.getRange(rowIdx + 1, 1).setValue("Round:").setFontStyle("italic");
         sh.getRange(rowIdx + 1, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 1) + '"), "")');
         
-        sh.getRange(rowIdx + 2, 1).setValue("Venue:").setFontStyle("italic");
+        sh.getRange(rowIdx + 2, 1).setValue("Opponent:").setFontStyle("italic");
         sh.getRange(rowIdx + 2, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 2) + '"), "")');
         
-        sh.getRange(rowIdx + 3, 1).setValue("Format:").setFontStyle("italic");
+        sh.getRange(rowIdx + 3, 1).setValue("Venue:").setFontStyle("italic");
         sh.getRange(rowIdx + 3, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 3) + '"), "")');
         
-        // 13 Player Slot Rows
+        sh.getRange(rowIdx + 4, 1).setValue("Format:").setFontStyle("italic");
+        sh.getRange(rowIdx + 4, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 4) + '"), "")');
+        
+        // 13 Player Slot Rows (start + 5 to start + 17)
         for (var idx = 0; idx < 13; idx++) {
-          var currRow = rowIdx + 4 + idx; // 8..20, 26..38, etc.
+          var currRow = rowIdx + 5 + idx; // 9..21, 28..40, etc.
           // Col A: Slot Role
           sh.getRange(currRow, 1).setValue(slotRoles[idx]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
           
@@ -1547,7 +1556,8 @@ function syncPresentationStagingHub(ss, targetRoundName) {
           sh.getRange(currRow, 4).setFormula('=IFERROR(IF(B' + currRow + '="", "", IMAGE(INDEX(Players!$N$2:$N, MATCH(C' + currRow + ', Players!$A$2:$A, 0)))), "")');
         }
         
-        sh.getRange(rowIdx, 1, 17, 4).setBorder(true, true, true, true, true, true, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
+        // Set borders for this team frame (18 rows: 1 banner + 4 metadata + 13 slots)
+        sh.getRange(rowIdx, 1, 18, 4).setBorder(true, true, true, true, true, true, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
       });
       
       sh.setColumnWidth(1, 120); // Col A (Slot Role)
@@ -1558,7 +1568,7 @@ function syncPresentationStagingHub(ss, targetRoundName) {
       sh.hideColumns(3); // Hide Column C
       
       try {
-        sh.getRange(1, 1, 95, 4).setFontFamily("Hanken Grotesk");
+        sh.getRange(1, 1, 100, 4).setFontFamily("Hanken Grotesk");
       } catch (e) {}
     
     // Sync dropdown validation list in B1 with all round tabs
@@ -1616,11 +1626,6 @@ function syncPlayerHeadshots(ss) {
       var fileName = file.getName();
       var baseId = fileName.replace(/\.[^/.]+$/, "").trim().toLowerCase();
       var fileId = file.getId();
-
-      // Ensure file is publicly viewable by link so Sheets =IMAGE() can render it
-      try {
-        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      } catch (err) {}
 
       // Google CDN direct link
       var photoUrl = "https://lh3.googleusercontent.com/d/" + fileId;
