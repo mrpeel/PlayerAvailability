@@ -1505,11 +1505,11 @@ function syncPresentationStagingHub(ss, targetRoundName) {
     sh.getRange("B1").setValue("").setNumberFormat("@").setBackground(LCC_PALETTE.inputHighlight).setFontWeight("bold").setHorizontalAlignment("center");
       
       var frames = [
-        { name: "FIRST ELEVEN", start: 4, srcStart: 4, fixCol: "$B" }, 
-        { name: "SECOND ELEVEN", start: 23, srcStart: 22, fixCol: "$F" }, 
-        { name: "THIRD ELEVEN", start: 42, srcStart: 40, fixCol: "$J" }, 
-        { name: "FOURTH ELEVEN", start: 61, srcStart: 58, fixCol: "$N" }, 
-        { name: "FIFTH ELEVEN", start: 80, srcStart: 76, fixCol: "$R" }
+        { name: "FIRST ELEVEN", start: 4 }, 
+        { name: "SECOND ELEVEN", start: 23 }, 
+        { name: "THIRD ELEVEN", start: 42 }, 
+        { name: "FOURTH ELEVEN", start: 61 }, 
+        { name: "FIFTH ELEVEN", start: 80 }
       ];
       
       var slotRoles = [
@@ -1523,36 +1523,32 @@ function syncPresentationStagingHub(ss, targetRoundName) {
       
       frames.forEach(function(f) {
         var rowIdx = f.start;
-        var src = f.srcStart;
         
         // Team Banner
         sh.getRange(rowIdx, 1, 1, 4).merge().setValue(f.name).setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
         
-        // Metadata rows: Round (from Fixtures), Opponent, Venue, Format (from Round tab)
+        // Metadata rows: Round, Opponent, Venue, Format (Exact 1-to-1 match with Round sheet)
         sh.getRange(rowIdx + 1, 1).setValue("Round:").setFontStyle("italic");
-        sh.getRange(rowIdx + 1, 2).setFormula(
-          '=IFERROR(INDEX(Fixtures!' + f.fixCol + '$2:' + f.fixCol + ', MATCH(' + targetTabExpr + ', INDEX(TO_TEXT(Fixtures!$A$2:$A), 0), 0)), IFERROR(INDEX(Fixtures!' + f.fixCol + '$2:' + f.fixCol + ', MATCH(TEXT($B$1, "dd/mm/yyyy"), INDEX(TO_TEXT(Fixtures!$A$2:$A), 0), 0)), ""))'
-        );
+        sh.getRange(rowIdx + 1, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 1) + '"), "")');
         
         sh.getRange(rowIdx + 2, 1).setValue("Opponent:").setFontStyle("italic");
-        sh.getRange(rowIdx + 2, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (src + 1) + '"), "")');
+        sh.getRange(rowIdx + 2, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 2) + '"), "")');
         
         sh.getRange(rowIdx + 3, 1).setValue("Venue:").setFontStyle("italic");
-        sh.getRange(rowIdx + 3, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (src + 2) + '"), "")');
+        sh.getRange(rowIdx + 3, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 3) + '"), "")');
         
         sh.getRange(rowIdx + 4, 1).setValue("Format:").setFontStyle("italic");
-        sh.getRange(rowIdx + 4, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (src + 3) + '"), "")');
+        sh.getRange(rowIdx + 4, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 4) + '"), "")');
         
-        // 13 Player Slot Rows (start + 5 to start + 17) -> mapped to src + 4 + idx on Round sheet
+        // 13 Player Slot Rows (start + 5 to start + 17) -> Exact 1-to-1 match with Round sheet
         for (var idx = 0; idx < 13; idx++) {
-          var currRow = rowIdx + 5 + idx; // 9..21, 28..40, etc.
-          var srcRow = src + 4 + idx;     // 8..20, 26..38, etc.
+          var currRow = rowIdx + 5 + idx; // 9..21, 28..40, 47..59, 66..78, 85..97
           
           // Col A: Slot Role
           sh.getRange(currRow, 1).setValue(slotRoles[idx]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
           
           // Col B: Clean Player Name (Stripped of junior tags like (U16))
-          sh.getRange(currRow, 2).setFormula('=IFERROR(IF(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + srcRow + '")="", "", TRIM(REGEXREPLACE(TO_TEXT(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + srcRow + '")), "\\s*\\(.*?\\)", ""))), "")');
+          sh.getRange(currRow, 2).setFormula('=IFERROR(IF(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")="", "", TRIM(REGEXREPLACE(TO_TEXT(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")), "\\s*\\(.*?\\)", ""))), "")');
           
           // Col C: Dynamic Profile ID Lookup from Players tab (Hidden)
           sh.getRange(currRow, 3).setFormula('=IFERROR(IF(B' + currRow + '="", "", INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$D$2:$D, 0))), IFERROR(INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$B$2:$B & " " & Players!$C$2:$C, 0)), ""))');
