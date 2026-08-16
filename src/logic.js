@@ -632,6 +632,77 @@ function simulatePlayerAvailability(players, matchFormat, rng) {
   });
 }
 
+/**
+ * Formats a full name to short name with last initial: "{First Name} {LastNameInitial}".
+ * Preserves junior tags like "(U16)" or "(U18)" if present.
+ * 
+ * @param {string} fullName - e.g. "Liam Wootten", "Shahmeer Hassaan (U16)"
+ * @returns {string} - e.g. "Liam W", "Shahmeer H (U16)"
+ */
+function formatShortPlayerName(fullName) {
+  if (!fullName || typeof fullName !== "string") return "";
+  var trimmed = fullName.trim();
+  if (!trimmed) return "";
+
+  var tagMatch = trimmed.match(/\((U\d+)\)$/i);
+  var tag = tagMatch ? " (" + tagMatch[1].toUpperCase() + ")" : "";
+  var nameWithoutTag = tagMatch ? trimmed.replace(/\((U\d+)\)$/i, "").trim() : trimmed;
+
+  var parts = nameWithoutTag.split(/\s+/);
+  if (parts.length === 1) {
+    return parts[0] + tag;
+  }
+  var firstName = parts[0];
+  var lastName = parts.slice(1).join(" ");
+  var lastInitial = lastName.charAt(0).toUpperCase();
+
+  return firstName + " " + lastInitial + tag;
+}
+
+/**
+ * Builds the Initial Availability Callout WhatsApp message.
+ * 
+ * @param {string|Date} roundDate - e.g. "2025-10-18"
+ * @returns {string} Formatted WhatsApp message
+ */
+function generateAvailabilityCalloutMessage(roundDate) {
+  var dateStr = normalizeDateToYYYYMMDD(roundDate) || String(roundDate || "").trim();
+
+  return "🏏 *LABURNUM CC ROUND AVAILABILITY* 🏏\n\n" +
+    "Please submit your availability for the upcoming round (" + dateStr + "):\n" +
+    "https://availability.laburnumcc.com.au/?round=" + dateStr;
+}
+
+/**
+ * Builds the Wall of Shame WhatsApp message.
+ * 
+ * @param {string|Date} roundDate - e.g. "2025-10-18"
+ * @param {number} declaredCount - number of players who have declared
+ * @param {Array<string>} unknownPlayerNames - list of player names still outstanding
+ * @returns {string} Formatted WhatsApp message
+ */
+function generateWallOfShameMessage(roundDate, declaredCount, unknownPlayerNames) {
+  var dateStr = normalizeDateToYYYYMMDD(roundDate) || String(roundDate || "").trim();
+  var numDeclared = Number(declaredCount) || 0;
+
+  var names = [];
+  if (Array.isArray(unknownPlayerNames)) {
+    names = unknownPlayerNames.map(function(n) {
+      if (Array.isArray(n)) n = n[0];
+      return formatShortPlayerName(String(n || ""));
+    }).filter(function(n) { return n.length > 0; });
+  }
+
+  var nameListStr = names.length > 0 ? names.join(", ") : "None! Everyone has responded!";
+
+  return "✅ *Thanks to the " + numDeclared + " players who have already declared availability!*\n\n" +
+    "*🏏 LCC Selection: Final Overs to Respond 🏏*\n\n" +
+    "We need your availability so we can lock in the XIs.\n\n" +
+    "⏳ *Still outstanding:* " + nameListStr + "\n\n" +
+    "⚡ *Save your captain the headache and secure your spot in 10 seconds here:*\n" +
+    "https://availability.laburnumcc.com.au/?round=" + dateStr;
+}
+
 // Node/Jest interop — Apps Script ignores this guard.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -640,6 +711,7 @@ if (typeof module !== 'undefined' && module.exports) {
     findHouseholdPlayers,
     moveItemBetweenLists,
     formatNameWithJuniorTag,
+    formatShortPlayerName,
     pickFirstName,
     DEFAULT_TEAM_CONFIGS,
     parseCsvString,
@@ -649,7 +721,9 @@ if (typeof module !== 'undefined' && module.exports) {
     readTemplatesFromSheet,
     parseFixtureCsv,
     mergeFixturesIntoMatrix,
-    simulatePlayerAvailability
+    simulatePlayerAvailability,
+    generateAvailabilityCalloutMessage,
+    generateWallOfShameMessage
   };
 }
 

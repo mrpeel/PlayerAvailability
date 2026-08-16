@@ -201,20 +201,25 @@ function deployVerticalRoundSheet(ss, dateStr) {
   ws.getRange("N5:N150").setDataValidation(unavailRule);
   ws.getRange("S5:S150").setDataValidation(unknownRule);
 
-  // Col B Selection Dropdowns linked to team-specific dynamic pools in hidden Cols U-Y
+  // Col B Selection Dropdowns linked to team-specific dynamic pools in hidden Cols AA-CQ
   applySelectionValidationRules(ws);
+
+  // Setup Column U and Column V WhatsApp messaging
+  setupWhatsAppMessageColumns(ws, targetDate);
 
   // Column Widths & Hide Technical ProfileID and Helper Columns
   ws.setColumnWidth(1, 130); ws.setColumnWidth(2, 210); ws.setColumnWidth(3, 20);
   ws.setColumnWidth(4, 210); ws.setColumnWidth(5, 20);
   ws.setColumnWidth(6, 80);  ws.setColumnWidth(7, 210); ws.setColumnWidth(8, 210); ws.setColumnWidth(9, 180); ws.setColumnWidth(10, 20);
   ws.setColumnWidth(11, 80); ws.setColumnWidth(12, 210); ws.setColumnWidth(13, 210); ws.setColumnWidth(14, 180); ws.setColumnWidth(15, 20);
-  ws.setColumnWidth(16, 80); ws.setColumnWidth(17, 210); ws.setColumnWidth(18, 210); ws.setColumnWidth(19, 180);
+  ws.setColumnWidth(16, 80); ws.setColumnWidth(17, 210); ws.setColumnWidth(18, 210); ws.setColumnWidth(19, 180); ws.setColumnWidth(20, 20);
+  ws.setColumnWidth(21, 210); // Col U (Availability WhatsApp Message)
+  ws.setColumnWidth(22, 210); // Col V (Wall of Shame WhatsApp Message)
+  ws.setColumnWidth(23, 20);  // Col W (Spacer)
 
   ws.hideColumns(6);  // Col F (ProfileID)
   ws.hideColumns(11); // Col K (ProfileID)
   ws.hideColumns(16); // Col P (ProfileID)
-  ws.hideColumns(21, 5); // Cols U-Y (Team Pool Helpers)
 
   // Apply clean Hanken Grotesk font across round sheet
   try {
@@ -458,11 +463,8 @@ function getAdminData(phone, dateStrOrRoundNum) {
     unkWVals.forEach(function(r) { if (r[0]) unknownNames.push(String(r[0]).trim()); });
   }
 
-  var appUrl = "https://lcc-availability.web.app/?round=" + encodeURIComponent(targetDate);
-
-  var availMsg = "🏏 *LABURNUM CC ROUND AVAILABILITY* 🏏\n\nPlease submit your availability for the upcoming round (" + targetDate + "):\n" + appUrl;
-  var shameMsg = "🚨 *LCC WALL OF SHAME* 🚨\n\nThe following " + unknownNames.length + " player(s) have NOT yet submitted availability for " + targetDate + ":\n\n" +
-    (unknownNames.length > 0 ? unknownNames.map(function(n) { return "• " + n; }).join("\n") : "🎉 Everyone has submitted! Well done!");
+  var availMsg = generateAvailabilityCalloutMessage(targetDate);
+  var shameMsg = generateWallOfShameMessage(targetDate, availNames.length + unavailNames.length, unknownNames);
 
   return {
     status: "success",
@@ -1193,6 +1195,7 @@ function onOpen() {
   ui.createMenu("🏏 LCC Selection")
     .addItem("Initialise new round", "showDatePickerDialog")
     .addItem("Pull new players into round from Master Players list", "showPullNewPlayersDialog")
+    .addItem("Refresh WhatsApp message columns (Cols U & V)", "menuRefreshWhatsAppColumns")
     .addSeparator()
     .addItem("Mark player as inactive", "showMarkInactiveDialog")
     .addItem("Record player injury / absence", "showRecordInjuryDialog")
@@ -1201,7 +1204,7 @@ function onOpen() {
     .addItem("Import players from PlayHQ export", "showImportPlayHQDialog")
     .addToUi();
 
-  // Auto-sync selection validation rules on existing round sheets
+  // Auto-sync selection validation rules & WhatsApp columns on existing round sheets
   try {
     var ss = getSS();
     if (ss) {
@@ -1210,11 +1213,12 @@ function onOpen() {
       sheets.forEach(function(s) {
         if (nonRoundNames.indexOf(s.getName()) === -1) {
           applySelectionValidationRules(s);
+          setupWhatsAppMessageColumns(s);
         }
       });
     }
   } catch (e) {
-    Logger.log("onOpen auto-sync validation warning: " + e.message);
+    Logger.log("onOpen auto-sync warning: " + e.message);
   }
 }
 
@@ -1270,6 +1274,110 @@ function applySelectionValidationRules(ws) {
   } catch (err) {
     Logger.log("applySelectionValidationRules error: " + err.message);
   }
+}
+
+
+/**
+ * Menu action to refresh WhatsApp message columns on active sheet.
+ */
+function menuRefreshWhatsAppColumns() {
+  var ss = getSS();
+  if (!ss) return;
+  var ws = ss.getActiveSheet();
+  var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log"];
+  if (nonRoundNames.indexOf(ws.getName()) > -1) {
+    ss.toast("Please switch to an active round tab (e.g. 2025-10-18) first.", "LCC Selection", 4);
+    return;
+  }
+  setupWhatsAppMessageColumns(ws);
+  ss.toast("WhatsApp messages in Columns U & V refreshed!", "LCC Selection", 3);
+}
+
+
+/**
+ * Sets up Column U and Column V on a round sheet for WhatsApp messages.
+ */
+function setupWhatsAppMessageColumns(ws, dateStr) {
+  if (!ws) return;
+  var dStr = dateStr || ws.getName();
+
+  // Column U (Col 21) Header & Formula
+  ws.getRange("U3").setValue("Round " + dStr + " Availability WhatsApp Message")
+    .setFontWeight("bold")
+    .setBackground(LCC_PALETTE.maroonBg)
+    .setFontColor(LCC_PALETTE.maroonFg)
+    .setHorizontalAlignment("center");
+
+  ws.getRange("U4").setFormula(
+    '="🏏 *LABURNUM CC ROUND AVAILABILITY* 🏏" & CHAR(10) & CHAR(10) & ' +
+    '"Please submit your availability for the upcoming round (" & TEXT(B2, "yyyy-mm-dd") & "):" & CHAR(10) & ' +
+    '"https://availability.laburnumcc.com.au/?round=" & TEXT(B2, "yyyy-mm-dd")'
+  ).setWrap(true).setVerticalAlignment("top");
+
+  // Column V (Col 22) Header & Formula
+  ws.getRange("V3").setValue("Round " + dStr + " Wall of Shame WhatsApp Message")
+    .setFontWeight("bold")
+    .setBackground(LCC_PALETTE.maroonBg)
+    .setFontColor(LCC_PALETTE.maroonFg)
+    .setHorizontalAlignment("center");
+
+  ws.getRange("V4").setFormula(
+    '=LCC_WALL_OF_SHAME(B2, COUNTA(G5:G) + COUNTA(L5:L), Q5:Q150)'
+  ).setWrap(true).setVerticalAlignment("top");
+
+  // Set card styling
+  try {
+    ws.getRange("U3:U20").setBorder(true, true, true, true, false, false, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
+    ws.getRange("V3:V20").setBorder(true, true, true, true, false, false, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
+    ws.getRange("U4:U20").setBackground(LCC_PALETTE.zebraLight);
+    ws.getRange("V4:V20").setBackground(LCC_PALETTE.zebraLight);
+  } catch (e) {}
+
+  ws.setColumnWidth(21, 210); // Col U (Availability WhatsApp Message)
+  ws.setColumnWidth(22, 210); // Col V (Wall of Shame WhatsApp Message)
+  ws.setColumnWidth(23, 20);  // Col W (Spacer)
+
+  // Unhide Columns 21 & 22 if they were previously hidden
+  try {
+    ws.unhideColumn(ws.getRange("U1"));
+    ws.unhideColumn(ws.getRange("V1"));
+  } catch (e) {}
+}
+
+
+/**
+ * Custom function for Google Sheets to generate the Wall of Shame WhatsApp message.
+ *
+ * @param {Date|string} roundDate - The round date cell (e.g. B2)
+ * @param {number} declaredCount - Number of declared players (e.g. COUNTA(G5:G) + COUNTA(L5:L))
+ * @param {Array<Array<string>>} unknownRange - Range of unknown player names (e.g. Q5:Q150)
+ * @returns {string} Formatted WhatsApp message
+ * @customfunction
+ */
+function LCC_WALL_OF_SHAME(roundDate, declaredCount, unknownRange) {
+  var names = [];
+  if (Array.isArray(unknownRange)) {
+    unknownRange.forEach(function(row) {
+      if (Array.isArray(row)) {
+        if (row[0] && String(row[0]).trim()) names.push(String(row[0]).trim());
+      } else if (row && String(row).trim()) {
+        names.push(String(row).trim());
+      }
+    });
+  }
+  return generateWallOfShameMessage(roundDate, declaredCount, names);
+}
+
+
+/**
+ * Custom function for Google Sheets to generate the Initial Availability WhatsApp message.
+ *
+ * @param {Date|string} roundDate - The round date cell (e.g. B2)
+ * @returns {string} Formatted WhatsApp message
+ * @customfunction
+ */
+function LCC_AVAILABILITY_MESSAGE(roundDate) {
+  return generateAvailabilityCalloutMessage(roundDate);
 }
 
 
