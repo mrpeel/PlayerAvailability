@@ -1596,27 +1596,39 @@ function syncPresentationStagingHub(ss, targetRoundName) {
  * Scans the Google Drive headshots folder and syncs photo URLs into the Players tab (Col N: PhotoUrl).
  */
 function syncPlayerHeadshots(ss) {
+  var results = { folderFound: false, totalFiles: 0, matchedPlayers: 0, message: "" };
   try {
     var s = ss || getSS();
-    if (!s) return;
+    if (!s) return results;
     var folderId = getHeadshotFolderId();
-    if (!folderId) return;
+    if (!folderId) {
+      results.message = "HEADSHOT_FOLDER_ID is not configured in Script Properties.";
+      return results;
+    }
 
     var folder = DriveApp.getFolderById(folderId);
+    results.folderFound = true;
     var files = folder.getFiles();
     var photoMap = {};
     while (files.hasNext()) {
       var file = files.next();
+      results.totalFiles++;
       var fileName = file.getName();
-      var baseId = fileName.replace(/\.[^/.]+$/, "").trim();
+      var baseId = fileName.replace(/\.[^/.]+$/, "").trim().toLowerCase();
       var fileId = file.getId();
-      // Google CDN thumbnail endpoint for native =IMAGE() rendering
-      var photoUrl = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w500";
+
+      // Ensure file is publicly viewable by link so Sheets =IMAGE() can render it
+      try {
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (err) {}
+
+      // Google CDN direct link
+      var photoUrl = "https://lh3.googleusercontent.com/d/" + fileId;
       photoMap[baseId] = photoUrl;
     }
 
     var playerSheet = s.getSheetByName("Players");
-    if (!playerSheet) return;
+    if (!playerSheet) return results;
     
     // Ensure Col N Header is "PhotoUrl"
     playerSheet.getRange(1, 14).setValue("PhotoUrl").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg);
@@ -1626,15 +1638,19 @@ function syncPlayerHeadshots(ss) {
       var profileIds = playerSheet.getRange(2, 1, lastRow - 1, 1).getValues();
       var photoColValues = [];
       for (var r = 0; r < profileIds.length; r++) {
-        var pid = String(profileIds[r][0] || "").trim();
+        var pid = String(profileIds[r][0] || "").trim().toLowerCase();
         var url = photoMap[pid] || "";
+        if (url) results.matchedPlayers++;
         photoColValues.push([url]);
       }
       playerSheet.getRange(2, 14, photoColValues.length, 1).setValues(photoColValues);
     }
+    results.message = "Successfully synced " + results.matchedPlayers + " headshot(s) from Drive!";
   } catch (e) {
-    Logger.log("syncPlayerHeadshots warning: " + e.message);
+    results.message = "Error syncing headshots: " + e.message;
+    Logger.log("syncPlayerHeadshots error: " + e.message);
   }
+  return results;
 }
 
 
@@ -1644,9 +1660,11 @@ function syncPlayerHeadshots(ss) {
 function menuSyncPlayerHeadshots() {
   var ss = getSS();
   if (!ss) return;
-  syncPlayerHeadshots(ss);
+  var res = syncPlayerHeadshots(ss);
   syncPresentationStagingHub(ss);
-  ss.toast("Player headshots synced from Google Drive!", "LCC Selection", 4);
+  
+  var ui = SpreadsheetApp.getUi();
+  ui.alert("🏏 Headshot Sync", res.message + "\n\nFiles found in folder: " + res.totalFiles + "\nMatched players in database: " + res.matchedPlayers, ui.ButtonSet.OK);
 }
 
 
