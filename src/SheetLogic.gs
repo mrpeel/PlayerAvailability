@@ -1384,17 +1384,17 @@ function setupWhatsAppMessageColumns(ws, dateStr) {
 
 /**
  * Standard column width calculator for round selection tabs.
- * Reduced availability columns (G-I, L-N, Q-S) by 15% for mobile/phone display.
+ * Reduced all column widths by an additional 20px for mobile/phone display.
  */
 function applyRoundTabColumnWidths(ws) {
   if (!ws) return;
-  ws.setColumnWidth(1, 130); ws.setColumnWidth(2, 210); ws.setColumnWidth(3, 20);
-  ws.setColumnWidth(4, 210); ws.setColumnWidth(5, 20);
-  ws.setColumnWidth(6, 80);  ws.setColumnWidth(7, 178); ws.setColumnWidth(8, 178); ws.setColumnWidth(9, 153); ws.setColumnWidth(10, 20);
-  ws.setColumnWidth(11, 80); ws.setColumnWidth(12, 178); ws.setColumnWidth(13, 178); ws.setColumnWidth(14, 153); ws.setColumnWidth(15, 20);
-  ws.setColumnWidth(16, 80); ws.setColumnWidth(17, 178); ws.setColumnWidth(18, 178); ws.setColumnWidth(19, 153); ws.setColumnWidth(20, 20);
-  ws.setColumnWidth(21, 350); // Col U (Availability Message)
-  ws.setColumnWidth(22, 350); // Col V (Wall of Shame Message)
+  ws.setColumnWidth(1, 110); ws.setColumnWidth(2, 190); ws.setColumnWidth(3, 20);
+  ws.setColumnWidth(4, 190); ws.setColumnWidth(5, 20);
+  ws.setColumnWidth(6, 80);  ws.setColumnWidth(7, 158); ws.setColumnWidth(8, 158); ws.setColumnWidth(9, 133); ws.setColumnWidth(10, 20);
+  ws.setColumnWidth(11, 80); ws.setColumnWidth(12, 158); ws.setColumnWidth(13, 158); ws.setColumnWidth(14, 133); ws.setColumnWidth(15, 20);
+  ws.setColumnWidth(16, 80); ws.setColumnWidth(17, 158); ws.setColumnWidth(18, 158); ws.setColumnWidth(19, 133); ws.setColumnWidth(20, 20);
+  ws.setColumnWidth(21, 330); // Col U (Availability Message)
+  ws.setColumnWidth(22, 330); // Col V (Wall of Shame Message)
   ws.setColumnWidth(23, 20);  // Col W (Spacer)
 }
 
