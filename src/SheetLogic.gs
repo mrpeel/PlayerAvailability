@@ -1624,6 +1624,7 @@ function syncPlayerHeadshots(ss) {
     results.folderFound = true;
     var files = folder.getFiles();
     var photoMap = {};
+    var defaultPhotoUrl = "";
     while (files.hasNext()) {
       var file = files.next();
       results.totalFiles++;
@@ -1633,7 +1634,15 @@ function syncPlayerHeadshots(ss) {
 
       // Google CDN direct link
       var photoUrl = "https://lh3.googleusercontent.com/d/" + fileId;
-      photoMap[baseId] = photoUrl;
+      if (baseId === "default" || baseId === "transparent" || baseId === "placeholder" || baseId === "blank" || baseId === "none") {
+        defaultPhotoUrl = photoUrl;
+      } else {
+        photoMap[baseId] = photoUrl;
+      }
+    }
+
+    if (defaultPhotoUrl) {
+      PropertiesService.getScriptProperties().setProperty('DEFAULT_PHOTO_URL', defaultPhotoUrl);
     }
 
     var playerSheet = s.getSheetByName("Players");
@@ -2965,7 +2974,7 @@ function syncPresentationStagingToSlides(ss) {
     });
   });
 
-  var transparentPngUrl = "https://upload.wikimedia.org/wikipedia/commons/c/ca/1x1.png";
+  var transparentPngUrl = PropertiesService.getScriptProperties().getProperty('DEFAULT_PHOTO_URL') || "https://upload.wikimedia.org/wikipedia/commons/c/ca/1x1.png";
 
   // Update each team's slide using permanent Alt Text IDs & spatial fallbacks
   teamData.forEach(function(t) {
@@ -2973,42 +2982,20 @@ function syncPresentationStagingToSlides(ss) {
     var slide = slides[t.slideIdx];
     var elements = slide.getPageElements();
 
-    // 1. Direct text placeholder replacements (case-insensitive for all variations)
-    slide.replaceAllText("{{ROUND}}", t.round);
-    slide.replaceAllText("{{Round}}", t.round);
-    slide.replaceAllText("{{round}}", t.round);
-    slide.replaceAllText("{{OPPONENT}}", t.opponent);
-    slide.replaceAllText("{{Opponent}}", t.opponent);
-    slide.replaceAllText("{{opponent}}", t.opponent);
-    slide.replaceAllText("{{VENUE}}", t.venue);
-    slide.replaceAllText("{{Venue}}", t.venue);
-    slide.replaceAllText("{{venue}}", t.venue);
-    slide.replaceAllText("{{FORMAT}}", t.format);
-    slide.replaceAllText("{{Format}}", t.format);
-    slide.replaceAllText("{{format}}", t.format);
-
-    slide.replaceAllText("{{" + t.prefix + "_ROUND}}", t.round);
-    slide.replaceAllText("{{" + t.prefix + "_Round}}", t.round);
-    slide.replaceAllText("{{" + t.prefix + "_OPPONENT}}", t.opponent);
-    slide.replaceAllText("{{" + t.prefix + "_Opponent}}", t.opponent);
-    slide.replaceAllText("{{" + t.prefix + "_VENUE}}", t.venue);
-    slide.replaceAllText("{{" + t.prefix + "_Venue}}", t.venue);
-    slide.replaceAllText("{{" + t.prefix + "_FORMAT}}", t.format);
-    slide.replaceAllText("{{" + t.prefix + "_Format}}", t.format);
-
-    // 2. Element-by-element Tag Matching
+    // 1. Element-by-element Alt Text Tag Matching (No text replacement)
     var matchedPlayerTags = {};
     elements.forEach(function(el) {
       var tag = String(el.getTitle() || el.getDescription() || "").trim().toUpperCase();
       if (!tag) return;
 
-      if (tag === "ROUND" || tag === "{{" + t.prefix + "_ROUND}}" || tag === "{{ROUND}}") {
+      // Match info Alt Text tags
+      if (tag === t.prefix + "_ROUND" || tag === "ROUND") {
         if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.round);
-      } else if (tag === "OPPONENT" || tag === "{{" + t.prefix + "_OPPONENT}}" || tag === "{{OPPONENT}}") {
+      } else if (tag === t.prefix + "_OPPONENT" || tag === "OPPONENT") {
         if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.opponent);
-      } else if (tag === "VENUE" || tag === "{{" + t.prefix + "_VENUE}}" || tag === "{{VENUE}}") {
+      } else if (tag === t.prefix + "_VENUE" || tag === "VENUE") {
         if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.venue);
-      } else if (tag === "FORMAT" || tag === "{{" + t.prefix + "_FORMAT}}" || tag === "{{FORMAT}}") {
+      } else if (tag === t.prefix + "_FORMAT" || tag === "FORMAT") {
         if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.format);
       }
 
