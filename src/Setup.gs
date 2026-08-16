@@ -210,8 +210,8 @@ function buildPresentationStagingHub(ss) {
     for (var idx = 0; idx < 13; idx++) {
       var currRow = rowIdx + 5 + idx; // 9..21, 28..40, 47..59, 66..78, 85..97
       
-      // Col A: Slot Role
-      sh.getRange(currRow, 1).setValue(slotRoles[idx]).setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.zebraLight);
+      // Col A: Slot Role (Dynamically pulled from active round sheet)
+      sh.getRange(currRow, 1).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!A' + currRow + '"), "")').setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.zebraLight);
       
       // Col B: Clean Player Name (Stripped of junior tags like (U16))
       sh.getRange(currRow, 2).setFormula('=IFERROR(IF(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")="", "", TRIM(REGEXREPLACE(TO_TEXT(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")), "\\s*\\(.*?\\)", ""))), "")');

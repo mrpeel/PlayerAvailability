@@ -1266,11 +1266,30 @@ function applySelectionValidationRules(ws) {
     var startCol = 27; // Col AA (Col 27) through Col CQ (Col 91)
     var slotIndex = 0;
 
+    var roleOptions = [
+      "Player",
+      "Captain",
+      "VC",
+      "WK",
+      "VC & WK",
+      "Captain & WK",
+      "1. Captain",
+      "2. VC",
+      "3. WK"
+    ];
+    var roleRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(roleOptions, true)
+      .setAllowInvalid(true)
+      .build();
+
     teamStarts.forEach(function(startRow) {
       for (var s = 0; s < 13; s++) {
         var row = startRow + s;
         var helperCol = startCol + slotIndex;
         slotIndex++;
+
+        // Apply Role Data Validation to Column A
+        ws.getRange(row, 1).setDataValidation(roleRule);
 
         // Set helper header and dynamic formula (Alphabetical A-Z)
         ws.getRange(3, helperCol).setValue("SLOT_" + row);
@@ -1559,8 +1578,8 @@ function syncPresentationStagingHub(ss, targetRoundName) {
         for (var idx = 0; idx < 13; idx++) {
           var currRow = rowIdx + 5 + idx; // 9..21, 28..40, 47..59, 66..78, 85..97
           
-          // Col A: Slot Role
-          sh.getRange(currRow, 1).setValue(slotRoles[idx]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
+          // Col A: Slot Role (Dynamically pulled from active round sheet)
+          sh.getRange(currRow, 1).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!A' + currRow + '"), "")').setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
           
           // Col B: Clean Player Name (Stripped of junior tags like (U16))
           sh.getRange(currRow, 2).setFormula('=IFERROR(IF(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")="", "", TRIM(REGEXREPLACE(TO_TEXT(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")), "\\s*\\(.*?\\)", ""))), "")');
@@ -2903,18 +2922,28 @@ function menuAutoTagSlides() {
 
 /**
  * Formats a player name with presentation role tags: (C), (VC), (Wk).
+ * Supports dual roles (e.g. "VC & WK" -> "Neil Kloot (VC) (Wk)") and split keeping.
  */
 function formatPlayerPresentationName(name, role) {
-  if (!name || name.trim() === "") return "";
+  if (!name || typeof name !== "string" || name.trim() === "") return "";
   var cleanName = name.replace(/\s*\(.*?\)/g, "").trim();
-  var rLower = (role || "").toLowerCase();
+  var rLower = String(role || "").toLowerCase();
   
   var roleTags = [];
-  if (rLower.indexOf("captain") > -1 || rLower.indexOf("1. captain") > -1) {
+  
+  // 1. Captain (ensure not Vice Captain)
+  if ((rLower.indexOf("captain") > -1 || rLower.indexOf("(c)") > -1 || rLower.indexOf("1. captain") > -1) &&
+      rLower.indexOf("vice") === -1 && rLower.indexOf("vc") === -1) {
     roleTags.push("(C)");
-  } else if (rLower.indexOf("vc") > -1 || rLower.indexOf("vice") > -1) {
+  }
+  
+  // 2. Vice Captain
+  if (rLower.indexOf("vc") > -1 || rLower.indexOf("vice") > -1 || rLower.indexOf("(vc)") > -1 || rLower.indexOf("2. vc") > -1) {
     roleTags.push("(VC)");
-  } else if (rLower.indexOf("wk") > -1 || rLower.indexOf("keeper") > -1) {
+  }
+  
+  // 3. Wicket Keeper
+  if (rLower.indexOf("wk") > -1 || rLower.indexOf("keeper") > -1 || rLower.indexOf("(wk)") > -1 || rLower.indexOf("3. wk") > -1) {
     roleTags.push("(Wk)");
   }
   

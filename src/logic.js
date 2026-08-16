@@ -714,6 +714,43 @@ function stripJuniorTag(fullName) {
   return trimmed.replace(/\s*\([^)]*\)/g, "").trim();
 }
 
+/**
+ * Formats a player name with presentation role tags: (C), (VC), (Wk).
+ * Supports dual roles (e.g. "VC & WK" -> "Neil Kloot (VC) (Wk)") and split keeping.
+ *
+ * @param {string} name - Player full name
+ * @param {string} role - Slot role string
+ * @returns {string} - Formatted name with badges
+ */
+function formatPlayerPresentationName(name, role) {
+  if (!name || typeof name !== "string" || name.trim() === "") return "";
+  var cleanName = name.replace(/\s*\(.*?\)/g, "").trim();
+  var rLower = String(role || "").toLowerCase();
+  
+  var roleTags = [];
+  
+  // 1. Captain (ensure not Vice Captain)
+  if ((rLower.indexOf("captain") > -1 || rLower.indexOf("(c)") > -1 || rLower.indexOf("1. captain") > -1) &&
+      rLower.indexOf("vice") === -1 && rLower.indexOf("vc") === -1) {
+    roleTags.push("(C)");
+  }
+  
+  // 2. Vice Captain
+  if (rLower.indexOf("vc") > -1 || rLower.indexOf("vice") > -1 || rLower.indexOf("(vc)") > -1 || rLower.indexOf("2. vc") > -1) {
+    roleTags.push("(VC)");
+  }
+  
+  // 3. Wicket Keeper
+  if (rLower.indexOf("wk") > -1 || rLower.indexOf("keeper") > -1 || rLower.indexOf("(wk)") > -1 || rLower.indexOf("3. wk") > -1) {
+    roleTags.push("(Wk)");
+  }
+  
+  if (roleTags.length > 0) {
+    return cleanName + " " + roleTags.join(" ");
+  }
+  return cleanName;
+}
+
 // Node/Jest interop — Apps Script ignores this guard.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -725,6 +762,7 @@ if (typeof module !== 'undefined' && module.exports) {
     formatShortPlayerName,
     stripJuniorTag,
     pickFirstName,
+    formatPlayerPresentationName,
     DEFAULT_TEAM_CONFIGS,
     parseCsvString,
     formatTeamPrefix,
