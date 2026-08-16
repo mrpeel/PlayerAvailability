@@ -2855,6 +2855,30 @@ function menuAutoTagSlides() {
 
 
 /**
+ * Formats a player name with presentation role tags: (C), (VC), (Wk).
+ */
+function formatPlayerPresentationName(name, role) {
+  if (!name || name.trim() === "") return "";
+  var cleanName = name.replace(/\s*\(.*?\)/g, "").trim();
+  var rLower = (role || "").toLowerCase();
+  
+  var roleTags = [];
+  if (rLower.indexOf("captain") > -1 || rLower.indexOf("1. captain") > -1) {
+    roleTags.push("(C)");
+  } else if (rLower.indexOf("vc") > -1 || rLower.indexOf("vice") > -1) {
+    roleTags.push("(VC)");
+  } else if (rLower.indexOf("wk") > -1 || rLower.indexOf("keeper") > -1) {
+    roleTags.push("(Wk)");
+  }
+  
+  if (roleTags.length > 0) {
+    return cleanName + " " + roleTags.join(" ");
+  }
+  return cleanName;
+}
+
+
+/**
  * Synchronizes Presentation_Staging team rosters and metadata directly to Google Slides using permanent Alt Text IDs.
  */
 function syncPresentationStagingToSlides(ss) {
@@ -2949,20 +2973,23 @@ function syncPresentationStagingToSlides(ss) {
           var pInfo = t.players[pNum - 1];
           matchedPlayerTags[pNum] = true;
           if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) {
-            el.asShape().getText().setText(pInfo.name);
+            var formattedName = formatPlayerPresentationName(pInfo.name, pInfo.role);
+            el.asShape().getText().setText(formattedName);
           }
         }
       }
 
-      // Match PHOTO_1 .. PHOTO_13
+      // Match PHOTO_1 .. PHOTO_13 (1cm x 1cm / 28.35pt)
       var photoMatch = tag.match(/^(?:.*_)?PHOTO_?(\d+)$/);
       if (photoMatch) {
         var photoNum = parseInt(photoMatch[1], 10);
         if (photoNum >= 1 && photoNum <= t.players.length) {
           var pPhoto = t.players[photoNum - 1];
-          if (pPhoto.photoUrl && el.getPageElementType() === SlidesApp.PageElementType.IMAGE) {
+          if (el.getPageElementType() === SlidesApp.PageElementType.IMAGE) {
             try {
-              el.asImage().replace(pPhoto.photoUrl);
+              if (pPhoto.photoUrl) {
+                el.asImage().replace(pPhoto.photoUrl);
+              }
             } catch (err) {
               Logger.log("Image replace warning for " + pPhoto.name + ": " + err.message);
             }
@@ -2994,7 +3021,8 @@ function syncPresentationStagingToSlides(ss) {
         if (sIdx < t.players.length) {
           shpEl.setTitle("PLAYER_" + (sIdx + 1));
           shpEl.setDescription(t.prefix + "_PLAYER_" + (sIdx + 1));
-          shpEl.asShape().getText().setText(t.players[sIdx].name);
+          var formattedName = formatPlayerPresentationName(t.players[sIdx].name, t.players[sIdx].role);
+          shpEl.asShape().getText().setText(formattedName);
         }
       });
     }
