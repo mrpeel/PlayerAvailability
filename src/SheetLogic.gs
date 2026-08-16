@@ -3334,12 +3334,14 @@ function savePlayerHeadshot(profileId, base64Data) {
 
 
 /**
- * Opens the Player Photo Studio interactive modal dialog.
+ * Opens the Player Photo Studio interactive modal dialog with Google MediaPipe AI background removal.
  */
 function showPhotoStudioDialog() {
   var html = HtmlService.createHtmlOutput(
     '<!DOCTYPE html>' +
     '<html><head><base target="_top">' +
+    '<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>' +
+    '<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>' +
     '<style>' +
     '  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }' +
     '  body { padding: 20px; background: #fdfdfd; color: #222; }' +
@@ -3352,18 +3354,18 @@ function showPhotoStudioDialog() {
     '  select, input[type="text"] { width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; margin-bottom: 10px; }' +
     '  .drop-zone { border: 2px dashed #4d0012; border-radius: 8px; padding: 20px; text-align: center; background: #fff9e6; cursor: pointer; transition: all 0.2s; }' +
     '  .drop-zone:hover { background: #fff2cc; }' +
-    '  .canvas-container { position: relative; width: 100%; height: 220px; background: #eee; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; }' +
+    '  .canvas-container { position: relative; width: 100%; height: 220px; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 12px 12px; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; }' +
     '  canvas { max-width: 100%; max-height: 100%; }' +
     '  .preview-circle { width: 100px; height: 100px; border-radius: 50%; border: 3px solid #fac218; box-shadow: 0 2px 6px rgba(0,0,0,0.15); overflow: hidden; margin: 0 auto 10px; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 12px 12px; }' +
     '  .preview-circle img { width: 100%; height: 100%; object-fit: cover; }' +
     '  .controls { display: flex; gap: 8px; align-items: center; margin-top: 8px; }' +
-    '  .controls button { padding: 4px 10px; font-size: 12px; }' +
+    '  .controls button { padding: 6px 12px; font-size: 12px; font-weight: 600; }' +
     '  .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }' +
     '  button { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }' +
     '  .btn-primary { background: #4d0012; color: #fff; }' +
     '  .btn-primary:hover { background: #35000c; }' +
     '  .btn-secondary { background: #e0e0e0; color: #333; }' +
-    '  .btn-gold { background: #fac218; color: #4d0012; font-weight: bold; }' +
+    '  .btn-gold { background: #fac218; color: #4d0012; font-weight: bold; border: 1px solid #dfac13; }' +
     '  .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; }' +
     '  .badge-has { background: #e6f4ea; color: #137333; }' +
     '  .badge-none { background: #fce8e6; color: #c5221f; }' +
@@ -3382,25 +3384,25 @@ function showPhotoStudioDialog() {
     '    <div class="drop-zone" onclick="document.getElementById(\'fileInput\').click()">' +
     '      <div style="font-size: 24px; margin-bottom: 4px;">📷</div>' +
     '      <p style="font-size: 12px; font-weight: 600; color: #4d0012;">Click to Upload or Snap</p>' +
-    '      <p style="font-size: 10px; color: #777;">PNG, JPG, HEIC supported</p>' +
+    '      <p style="font-size: 10px; color: #777;">PNG, JPG supported</p>' +
     '    </div>' +
     '    <input type="file" id="fileInput" accept="image/*" style="display:none;" onchange="handleFile(this.files[0])">' +
     '  </div>' +
     '  <div class="card">' +
-    '    <h3>3. Crop & Preview</h3>' +
+    '    <h3>3. Crop & AI Cutout</h3>' +
     '    <div class="canvas-container">' +
     '      <canvas id="cropCanvas"></canvas>' +
     '    </div>' +
     '    <div class="controls">' +
     '      <label style="margin:0; font-size:11px;">Zoom:</label>' +
     '      <input type="range" id="zoomSlider" min="0.5" max="3" step="0.05" value="1" oninput="drawCanvas()" style="flex:1;">' +
-    '      <button class="btn-secondary" onclick="removeBackground()" title="Remove background with transparent key">🪄 Cutout BG</button>' +
+    '      <button class="btn-gold" id="bgBtn" onclick="removeBackground()" title="AI Human Portrait Background Removal">🪄 AI Cutout BG</button>' +
     '    </div>' +
     '    <div style="text-align: center; margin-top: 10px;">' +
     '      <div class="preview-circle">' +
     '        <img id="previewImg" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">' +
     '      </div>' +
-    '      <span style="font-size: 11px; color: #666;">Circle Avatar Output (400x400 PNG)</span>' +
+    '      <span style="font-size: 11px; color: #666;">Circle Avatar Output (400×400 Transparent PNG)</span>' +
     '    </div>' +
     '  </div>' +
     '</div>' +
@@ -3413,10 +3415,14 @@ function showPhotoStudioDialog() {
     '  var rawImg = new Image();' +
     '  var imgLoaded = false;' +
     '  var scale = 1;' +
-    '  var posX = 0, posY = 0;' +
-    '  var isDragging = false, startX = 0, startY = 0;' +
     '  var canvas = document.getElementById("cropCanvas");' +
     '  var ctx = canvas.getContext("2d");' +
+    '  var selfieSegmentation = null;' +
+    '  try {' +
+    '    selfieSegmentation = new SelfieSegmentation({ locateFile: function(f) { return "https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/" + f; } });' +
+    '    selfieSegmentation.setOptions({ modelSelection: 1 });' +
+    '    selfieSegmentation.onResults(onSegmentationResults);' +
+    '  } catch (e) { console.warn("MediaPipe init error:", e); }' +
     '  google.script.run.withSuccessHandler(function(list) {' +
     '    playersData = list;' +
     '    var sel = document.getElementById("playerSelect");' +
@@ -3448,8 +3454,6 @@ function showPhotoStudioDialog() {
     '        imgLoaded = true;' +
     '        canvas.width = 400;' +
     '        canvas.height = 400;' +
-    '        posX = canvas.width / 2;' +
-    '        posY = canvas.height / 2;' +
     '        scale = 1;' +
     '        document.getElementById("zoomSlider").value = 1;' +
     '        drawCanvas();' +
@@ -3465,30 +3469,61 @@ function showPhotoStudioDialog() {
     '    ctx.clearRect(0, 0, canvas.width, canvas.height);' +
     '    var w = rawImg.width * scale;' +
     '    var h = rawImg.height * scale;' +
-    '    ctx.drawImage(rawImg, posX - w / 2, posY - h / 2, w, h);' +
+    '    ctx.drawImage(rawImg, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);' +
     '    updatePreview();' +
     '  }' +
     '  function updatePreview() {' +
-    '    var outCanvas = document.createElement("canvas");' +
-    '    outCanvas.width = 400; outCanvas.height = 400;' +
-    '    var outCtx = outCanvas.getContext("2d");' +
-    '    outCtx.drawImage(canvas, 0, 0);' +
-    '    document.getElementById("previewImg").src = outCanvas.toDataURL("image/png");' +
+    '    document.getElementById("previewImg").src = canvas.toDataURL("image/png");' +
     '  }' +
     '  function removeBackground() {' +
     '    if (!imgLoaded) return;' +
+    '    var btn = document.getElementById("bgBtn");' +
+    '    btn.innerText = "⏳ Processing AI...";' +
+    '    btn.disabled = true;' +
+    '    var tempCanvas = document.createElement("canvas");' +
+    '    tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;' +
+    '    var tempCtx = tempCanvas.getContext("2d");' +
+    '    var w = rawImg.width * scale;' +
+    '    var h = rawImg.height * scale;' +
+    '    tempCtx.drawImage(rawImg, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);' +
+    '    if (selfieSegmentation) {' +
+    '      selfieSegmentation.send({ image: tempCanvas }).catch(function(err) {' +
+    '        console.error(err);' +
+    '        fallbackCutout();' +
+    '      });' +
+    '    } else {' +
+    '      fallbackCutout();' +
+    '    }' +
+    '  }' +
+    '  function onSegmentationResults(results) {' +
+    '    var w = canvas.width, h = canvas.height;' +
+    '    ctx.save();' +
+    '    ctx.clearRect(0, 0, w, h);' +
+    '    ctx.drawImage(results.segmentationMask, 0, 0, w, h);' +
+    '    ctx.globalCompositeOperation = "source-in";' +
+    '    var sw = rawImg.width * scale;' +
+    '    var sh = rawImg.height * scale;' +
+    '    ctx.drawImage(rawImg, (w - sw) / 2, (h - sh) / 2, sw, sh);' +
+    '    ctx.restore();' +
+    '    updatePreview();' +
+    '    var btn = document.getElementById("bgBtn");' +
+    '    btn.innerText = "✨ Cutout Done!";' +
+    '    btn.disabled = false;' +
+    '  }' +
+    '  function fallbackCutout() {' +
     '    var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);' +
     '    var data = imgData.data;' +
     '    var cornerR = data[0], cornerG = data[1], cornerB = data[2];' +
     '    for (var i = 0; i < data.length; i += 4) {' +
     '      var r = data[i], g = data[i+1], b = data[i+2];' +
     '      var diff = Math.abs(r - cornerR) + Math.abs(g - cornerG) + Math.abs(b - cornerB);' +
-    '      if (diff < 60) {' +
-    '        data[i+3] = 0;' +
-    '      }' +
+    '      if (diff < 75) data[i+3] = 0;' +
     '    }' +
     '    ctx.putImageData(imgData, 0, 0);' +
     '    updatePreview();' +
+    '    var btn = document.getElementById("bgBtn");' +
+    '    btn.innerText = "🪄 AI Cutout BG";' +
+    '    btn.disabled = false;' +
     '  }' +
     '  function checkReady() {' +
     '    var pid = document.getElementById("playerSelect").value;' +

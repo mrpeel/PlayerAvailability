@@ -7,6 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
   <style>
     :root {
       --maroon: #4d0012;
@@ -155,20 +157,64 @@
       document.getElementById("previewImg").src = canvas.toDataURL("image/png");
     }
 
+    var selfieSegmentation = null;
+    try {
+      selfieSegmentation = new SelfieSegmentation({ locateFile: function(f) { return "https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/" + f; } });
+      selfieSegmentation.setOptions({ modelSelection: 1 });
+      selfieSegmentation.onResults(onSegmentationResults);
+    } catch (e) { console.warn("MediaPipe init error:", e); }
+
     function removeBackground() {
       if (!imgLoaded) return;
+      var btn = document.querySelector(".slider-row button");
+      btn.innerText = "⏳ AI Working...";
+      btn.disabled = true;
+      var tempCanvas = document.createElement("canvas");
+      tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;
+      var tempCtx = tempCanvas.getContext("2d");
+      var w = rawImg.width * scale;
+      var h = rawImg.height * scale;
+      tempCtx.drawImage(rawImg, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+      if (selfieSegmentation) {
+        selfieSegmentation.send({ image: tempCanvas }).catch(function(err) {
+          console.error(err);
+          fallbackCutout();
+        });
+      } else {
+        fallbackCutout();
+      }
+    }
+
+    function onSegmentationResults(results) {
+      var w = canvas.width, h = canvas.height;
+      ctx.save();
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(results.segmentationMask, 0, 0, w, h);
+      ctx.globalCompositeOperation = "source-in";
+      var sw = rawImg.width * scale;
+      var sh = rawImg.height * scale;
+      ctx.drawImage(rawImg, (w - sw) / 2, (h - sh) / 2, sw, sh);
+      ctx.restore();
+      updatePreview();
+      var btn = document.querySelector(".slider-row button");
+      btn.innerText = "✨ Cutout Done!";
+      btn.disabled = false;
+    }
+
+    function fallbackCutout() {
       var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       var data = imgData.data;
       var cornerR = data[0], cornerG = data[1], cornerB = data[2];
       for (var i = 0; i < data.length; i += 4) {
         var r = data[i], g = data[i+1], b = data[i+2];
         var diff = Math.abs(r - cornerR) + Math.abs(g - cornerG) + Math.abs(b - cornerB);
-        if (diff < 60) {
-          data[i+3] = 0;
-        }
+        if (diff < 75) data[i+3] = 0;
       }
       ctx.putImageData(imgData, 0, 0);
       updatePreview();
+      var btn = document.querySelector(".slider-row button");
+      btn.innerText = "🪄 AI Cutout BG";
+      btn.disabled = false;
     }
 
     function checkReady() {
