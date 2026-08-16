@@ -1197,6 +1197,8 @@ function onOpen() {
     .addItem("Mark player as inactive", "showMarkInactiveDialog")
     .addSeparator()
     .addItem("Sync player headshots from Google Drive", "menuSyncPlayerHeadshots")
+    .addItem("Sync to Google Slides presentation", "menuSyncToGoogleSlides")
+    .addItem("Inspect Google Slides layout", "menuInspectSlidesLayout")
     .addSeparator()
     .addItem("Import fixtures from PlayHQ export", "showImportFixturesDialog")
     .addItem("Import players from PlayHQ export", "showImportPlayHQDialog")
@@ -2677,27 +2679,193 @@ function markPlayerInactive(query) {
  * Diagnostic: prints the URL of the spreadsheet the script is using.
  * Run this from the editor to confirm you're looking at the right sheet.
  */
-function showSheetUrl() {
-  var ss = getSS();
-  if (!ss) {
-    Logger.log("ERROR: No spreadsheet found. Run setupInitialSystem first.");
-    return;
-  }
-  Logger.log("Sheet URL: " + ss.getUrl());
-  return ss.getUrl();
+/**
+ * ============================================================================
+ * SECTION 11: GOOGLE SLIDES PRESENTATION AUTOMATION
+ * ============================================================================
+ */
+
+/**
+ * Helper to get the Google Slides presentation ID.
+ */
+function getSlidesPresentationId() {
+  return PropertiesService.getScriptProperties().getProperty('SLIDES_PRESENTATION_ID') || '1Ma1zQiu7n8jnu34xueC2wTUHf3AsmNW-FPM_EuJFHtM';
 }
 
 
 /**
- * Diagnostic: tests photo lookup for a specific profile ID.
- * Run from the editor to verify a specific player's photo.
+ * Diagnostically inspects the Google Slides structure, elements, and placeholders.
  */
-function testPhotoLookup() {
-  var profileId = "ENTER_PROFILE_ID_HERE";  // Replace with a real profile ID
-  var url = getPlayerPhotoUrl(profileId);
-  if (url) {
-    Logger.log("Photo URL for " + profileId + ": " + url);
-  } else {
-    Logger.log("No photo found for " + profileId);
+function inspectSelectionSlides() {
+  var presId = getSlidesPresentationId();
+  if (!presId) {
+    throw new Error("SLIDES_PRESENTATION_ID is not configured.");
+  }
+  
+  var pres = SlidesApp.openById(presId);
+  var slides = pres.getSlides();
+  var report = "Google Slides Inspection Report\n";
+  report += "Presentation: " + pres.getName() + "\n";
+  report += "Total Slides: " + slides.length + "\n\n";
+
+  slides.forEach(function(slide, sIdx) {
+    report += "=== SLIDE " + (sIdx + 1) + " (ID: " + slide.getObjectId() + ") ===\n";
+    var elements = slide.getPageElements();
+    report += "Elements count: " + elements.length + "\n";
+    elements.forEach(function(el, eIdx) {
+      var type = el.getPageElementType();
+      var desc = "  [" + (eIdx + 1) + "] Type: " + type;
+      if (type === SlidesApp.PageElementType.SHAPE) {
+        var shape = el.asShape();
+        if (shape.getText()) {
+          var t = shape.getText().asString().trim();
+          desc += " | Text: '" + t.replace(/\n/g, " ↵ ") + "'";
+        }
+      } else if (type === SlidesApp.PageElementType.TABLE) {
+        var tbl = el.asTable();
+        desc += " | Table (" + tbl.getNumRows() + "x" + tbl.getNumColumns() + ")";
+        var cells = [];
+        for (var r = 0; r < Math.min(tbl.getNumRows(), 5); r++) {
+          for (var c = 0; c < tbl.getNumColumns(); c++) {
+            var ct = tbl.getCell(r, c).getText().asString().trim();
+            if (ct) cells.push("[" + r + "," + c + "]: '" + ct + "'");
+          }
+        }
+        if (cells.length > 0) desc += " | Samples: " + cells.join(", ");
+      } else if (type === SlidesApp.PageElementType.IMAGE) {
+        desc += " | Image element";
+      } else if (type === SlidesApp.PageElementType.GROUP) {
+        desc += " | Group (" + el.asGroup().getChildren().length + " items)";
+      }
+      report += desc + "\n";
+    });
+    report += "\n";
+  });
+
+  return report;
+}
+
+
+/**
+ * Menu action to run inspection and show in a modal dialog.
+ */
+function menuInspectSlidesLayout() {
+  try {
+    var report = inspectSelectionSlides();
+    var html = HtmlService.createHtmlOutput(
+      '<pre style="font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; height: 420px; overflow-y: scroll; background: #f9f9f9; padding: 12px; border: 1px solid #ccc; border-radius: 4px;">' +
+      report.replace(/</g, '&lt;').replace(/>/g, '&gt;') +
+      '</pre>' +
+      '<div style="text-align: right; margin-top: 10px;"><button style="background: #4d0012; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="google.script.host.close()">Close</button></div>'
+    ).setWidth(650).setHeight(520);
+    SpreadsheetApp.getUi().showModalDialog(html, "📊 Google Slides Inspection");
+  } catch (e) {
+    SpreadsheetApp.getUi().alert("Google Slides Inspection Error", e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+
+/**
+ * Synchronizes Presentation_Staging team rosters and metadata directly to Google Slides.
+ */
+function syncPresentationStagingToSlides(ss) {
+  var s = ss || getSS();
+  if (!s) return { success: false, message: "Spreadsheet not found." };
+  
+  var presId = getSlidesPresentationId();
+  if (!presId) return { success: false, message: "SLIDES_PRESENTATION_ID is not configured." };
+
+  var staging = s.getSheetByName("Presentation_Staging");
+  if (!staging) return { success: false, message: "Presentation_Staging tab not found." };
+
+  var pres = SlidesApp.openById(presId);
+  var slides = pres.getSlides();
+
+  // Read data for all 5 teams from Presentation_Staging
+  var frames = [
+    { name: "FIRST ELEVEN", prefix: "1ST", start: 4 }, 
+    { name: "SECOND ELEVEN", prefix: "2ND", start: 23 }, 
+    { name: "THIRD ELEVEN", prefix: "3RD", start: 42 }, 
+    { name: "FOURTH ELEVEN", prefix: "4TH", start: 61 }, 
+    { name: "FIFTH ELEVEN", prefix: "5TH", start: 80 }
+  ];
+
+  var teamData = [];
+  frames.forEach(function(f) {
+    var roundVal = String(staging.getRange(f.start + 1, 2).getValue() || "").trim();
+    var oppVal = String(staging.getRange(f.start + 2, 2).getValue() || "").trim();
+    var venVal = String(staging.getRange(f.start + 3, 2).getValue() || "").trim();
+    var fmtVal = String(staging.getRange(f.start + 4, 2).getValue() || "").trim();
+    
+    var players = [];
+    for (var p = 0; p < 13; p++) {
+      var pRow = f.start + 5 + p;
+      var role = String(staging.getRange(pRow, 1).getValue() || "").trim();
+      var name = String(staging.getRange(pRow, 2).getValue() || "").trim();
+      var profileId = String(staging.getRange(pRow, 3).getValue() || "").trim();
+      players.push({ role: role, name: name, profileId: profileId });
+    }
+
+    teamData.push({
+      teamName: f.name,
+      prefix: f.prefix,
+      round: roundVal,
+      opponent: oppVal,
+      venue: venVal,
+      format: fmtVal,
+      players: players
+    });
+  });
+
+  // Global replacement tags across presentation (e.g. {{1ST_ROUND}}, {{1ST_PLAYER_1}}...)
+  teamData.forEach(function(t) {
+    pres.replaceAllText("{{" + t.prefix + "_ROUND}}", t.round);
+    pres.replaceAllText("{{" + t.prefix + "_OPPONENT}}", t.opponent);
+    pres.replaceAllText("{{" + t.prefix + "_VENUE}}", t.venue);
+    pres.replaceAllText("{{" + t.prefix + "_FORMAT}}", t.format);
+
+    for (var i = 0; i < t.players.length; i++) {
+      pres.replaceAllText("{{" + t.prefix + "_PLAYER_" + (i + 1) + "}}", t.players[i].name);
+      pres.replaceAllText("{{" + t.prefix + "_ROLE_" + (i + 1) + "}}", t.players[i].role);
+    }
+  });
+
+  // Per-slide contextual replacement (Slide 1 = 1st XI, Slide 2 = 2nd XI...)
+  slides.forEach(function(slide, sIdx) {
+    if (sIdx < teamData.length) {
+      var t = teamData[sIdx];
+      slide.replaceAllText("{{ROUND}}", t.round);
+      slide.replaceAllText("{{OPPONENT}}", t.opponent);
+      slide.replaceAllText("{{VENUE}}", t.venue);
+      slide.replaceAllText("{{FORMAT}}", t.format);
+      slide.replaceAllText("{{TEAM_NAME}}", t.teamName);
+
+      for (var i = 0; i < t.players.length; i++) {
+        slide.replaceAllText("{{PLAYER_" + (i + 1) + "}}", t.players[i].name);
+        slide.replaceAllText("{{ROLE_" + (i + 1) + "}}", t.players[i].role);
+      }
+    }
+  });
+
+  return { success: true, message: "Successfully synced all 5 teams to Google Slides deck!" };
+}
+
+
+/**
+ * Menu action to synchronize Presentation_Staging to Google Slides.
+ */
+function menuSyncToGoogleSlides() {
+  var ss = getSS();
+  if (!ss) return;
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var res = syncPresentationStagingToSlides(ss);
+    if (res.success) {
+      ui.alert("🏏 Google Slides Synced", res.message + "\n\nPresentation URL:\nhttps://docs.google.com/presentation/d/" + getSlidesPresentationId() + "/edit", ui.ButtonSet.OK);
+    } else {
+      ui.alert("Sync Warning", res.message, ui.ButtonSet.OK);
+    }
+  } catch (err) {
+    ui.alert("Google Slides Sync Error", err.message, ui.ButtonSet.OK);
   }
 }
