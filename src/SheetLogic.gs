@@ -136,7 +136,7 @@ function deployVerticalRoundSheet(ss, dateStr) {
   // Col D: Dynamic Virtual "Available for Selection" Pool
   ws.getRange("D3").setValue("AVAILABLE FOR SELECTION").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
   ws.getRange("D4").setValue("(Dynamic Unselected Pool)").setFontStyle("italic").setFontColor("#666666");
-  ws.getRange("D5").setFormula(`=IFERROR(FILTER(G5:G, G5:G<>"", COUNTIF(B:B, G5:G)=0), "")`);
+  ws.getRange("D5").setFormula(`=IFERROR(SORT(FILTER(G5:G, G5:G<>"", COUNTIF(B:B, G5:G)=0)), "")`);
   ws.getRange("D3:D150").setBorder(true, true, true, true, false, false, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
 
   // Extract Global Profiles and Populate Hard Snapshot Registries
@@ -1239,8 +1239,8 @@ function onOpen() {
 function applySelectionValidationRules(ws) {
   if (!ws) return;
   try {
-    // Col D: Global unselected pool
-    ws.getRange("D5").setFormula(`=IFERROR(FILTER(G5:G, G5:G<>"", COUNTIF(B:B, G5:G)=0), "")`);
+    // Col D: Global unselected pool (Alphabetical)
+    ws.getRange("D5").setFormula(`=IFERROR(SORT(FILTER(G5:G, G5:G<>"", COUNTIF(B:B, G5:G)=0)), "")`);
 
     var teamStarts = [9, 28, 47, 66, 85];
     var maxCols = ws.getMaxColumns();
@@ -1257,10 +1257,10 @@ function applySelectionValidationRules(ws) {
         var helperCol = startCol + slotIndex;
         slotIndex++;
 
-        // Set helper header and dynamic formula
+        // Set helper header and dynamic formula (Alphabetical A-Z)
         ws.getRange(3, helperCol).setValue("SLOT_" + row);
         ws.getRange(5, helperCol).setFormula(
-          '=IFERROR(FILTER(G$5:G, (COUNTIF($B$9:$B$97, G$5:G)=0) + (G$5:G=B' + row + ')), "")'
+          '=IFERROR(SORT(FILTER(G$5:G, (COUNTIF($B$9:$B$97, G$5:G)=0) + (G$5:G=B' + row + '))), "")'
         );
 
         // Apply Data Validation to this specific slot
