@@ -1482,7 +1482,7 @@ function LCC_PLAYER_PHOTO_URL(profileId) {
  * Fully builds or updates the Presentation_Staging sheet layout, formulas, and dropdown.
  *
  * @param {Spreadsheet} ss - Bound SpreadsheetApp instance
- * @param {string} [targetRoundName] - Optional round name to select in A2
+ * @param {string} [targetRoundName] - Optional round name to select in B1
  */
 function syncPresentationStagingHub(ss, targetRoundName) {
   try {
@@ -1490,20 +1490,14 @@ function syncPresentationStagingHub(ss, targetRoundName) {
     if (!s) return;
     var sh = s.getSheetByName("Presentation_Staging") || s.insertSheet("Presentation_Staging");
     
-    // Check if A1 needs updating to "Active round to present" or layout rebuild
+    // Check if A1 needs updating to "Round to present" or layout rebuild
     var currentA1 = String(sh.getRange("A1").getValue()).trim();
-    if (currentA1 !== "Active round to present" || sh.getLastRow() < 80) {
+    if (currentA1 !== "Round to present" || sh.getRange("B1").getDataValidation() === null || sh.getLastRow() < 80) {
       sh.clear();
       
-      // Header and Selection Controls
-      sh.getRange("A1").setValue("Active round to present").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
-      sh.getRange("A2").setValue("").setBackground(LCC_PALETTE.inputHighlight).setFontWeight("bold").setHorizontalAlignment("center");
-      
-      sh.getRange("B1").setValue("Team Selection Presentation Hub").setFontWeight("bold").setFontColor(LCC_PALETTE.maroonBg);
-      sh.getRange("B2").setValue("Select round from dropdown in A2").setFontStyle("italic").setFontColor("#666666");
-      
-      sh.getRange("C2").setValue("Profile ID").setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight).setHorizontalAlignment("center");
-      sh.getRange("D2").setValue("Photo").setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight).setHorizontalAlignment("center");
+      // Row 1: Header and Selection Controls
+      sh.getRange("A1").setValue("Round to present").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
+      sh.getRange("B1").setValue("").setNumberFormat("@").setBackground(LCC_PALETTE.inputHighlight).setFontWeight("bold").setHorizontalAlignment("center");
       
       var frames = [
         { name: "FIRST ELEVEN", start: 4 }, 
@@ -1520,6 +1514,8 @@ function syncPresentationStagingHub(ss, targetRoundName) {
         "10. Player", "11. Player", "12. Player", "13. Player"
       ];
       
+      var targetTabExpr = 'IF(ISNUMBER($B$1), TEXT($B$1, "yyyy-mm-dd"), TO_TEXT($B$1))';
+      
       frames.forEach(function(f) {
         var rowIdx = f.start;
         // Team Banner
@@ -1527,13 +1523,13 @@ function syncPresentationStagingHub(ss, targetRoundName) {
         
         // Metadata rows
         sh.getRange(rowIdx + 1, 1).setValue("Opponent:").setFontStyle("italic");
-        sh.getRange(rowIdx + 1, 2).setFormula('=IFERROR(INDIRECT("\'" & $A$2 & "\'!B' + (rowIdx + 1) + '"), "")');
+        sh.getRange(rowIdx + 1, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 1) + '"), "")');
         
         sh.getRange(rowIdx + 2, 1).setValue("Venue:").setFontStyle("italic");
-        sh.getRange(rowIdx + 2, 2).setFormula('=IFERROR(INDIRECT("\'" & $A$2 & "\'!B' + (rowIdx + 2) + '"), "")');
+        sh.getRange(rowIdx + 2, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 2) + '"), "")');
         
         sh.getRange(rowIdx + 3, 1).setValue("Format:").setFontStyle("italic");
-        sh.getRange(rowIdx + 3, 2).setFormula('=IFERROR(INDIRECT("\'" & $A$2 & "\'!B' + (rowIdx + 3) + '"), "")');
+        sh.getRange(rowIdx + 3, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 3) + '"), "")');
         
         // 13 Player Slot Rows
         for (var idx = 0; idx < 13; idx++) {
@@ -1542,9 +1538,9 @@ function syncPresentationStagingHub(ss, targetRoundName) {
           sh.getRange(currRow, 1).setValue(slotRoles[idx]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
           
           // Col B: Clean Player Name (Stripped of junior tags like (U16))
-          sh.getRange(currRow, 2).setFormula('=IFERROR(IF(INDIRECT("\'" & $A$2 & "\'!B' + currRow + '")="", "", TRIM(REGEXREPLACE(INDIRECT("\'" & $A$2 & "\'!B' + currRow + '"), "\\s*\\(.*?\\)", ""))), "")');
+          sh.getRange(currRow, 2).setFormula('=IFERROR(IF(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")="", "", TRIM(REGEXREPLACE(TO_TEXT(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")), "\\s*\\(.*?\\)", ""))), "")');
           
-          // Col C: Dynamic Profile ID Lookup from Players tab
+          // Col C: Dynamic Profile ID Lookup from Players tab (Hidden)
           sh.getRange(currRow, 3).setFormula('=IFERROR(IF(B' + currRow + '="", "", INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$D$2:$D, 0))), IFERROR(INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$B$2:$B & " " & Players!$C$2:$C, 0)), ""))');
           
           // Col D: Dynamic Headshot Image from Drive
@@ -1555,16 +1551,18 @@ function syncPresentationStagingHub(ss, targetRoundName) {
       });
       
       sh.setColumnWidth(1, 120); // Col A (Slot Role)
-      sh.setColumnWidth(2, 190); // Col B (Clean Player Name)
-      sh.setColumnWidth(3, 100); // Col C (Profile ID)
+      sh.setColumnWidth(2, 210); // Col B (Clean Player Name)
+      sh.setColumnWidth(3, 20);  // Col C (Hidden Profile ID)
       sh.setColumnWidth(4, 100); // Col D (Photo)
+      
+      sh.hideColumns(3); // Hide Column C
       
       try {
         sh.getRange(1, 1, 95, 4).setFontFamily("Hanken Grotesk");
       } catch (e) {}
     }
     
-    // Sync dropdown validation list in A2 with all round tabs
+    // Sync dropdown validation list in B1 with all round tabs
     var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log"];
     var sheets = s.getSheets();
     var roundNames = [];
@@ -1580,13 +1578,13 @@ function syncPresentationStagingHub(ss, targetRoundName) {
         .requireValueInList(roundNames, true)
         .setAllowInvalid(true)
         .build();
-      sh.getRange("A2").setDataValidation(rule);
+      sh.getRange("B1").setDataValidation(rule);
       
-      var curVal = String(sh.getRange("A2").getValue()).trim();
+      var curVal = String(sh.getRange("B1").getValue()).trim();
       if (targetRoundName) {
-        sh.getRange("A2").setValue(targetRoundName);
+        sh.getRange("B1").setValue(targetRoundName);
       } else if (!curVal || roundNames.indexOf(curVal) === -1) {
-        sh.getRange("A2").setValue(roundNames[0]);
+        sh.getRange("B1").setValue(roundNames[0]);
       }
     }
   } catch (err) {

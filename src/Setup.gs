@@ -166,15 +166,9 @@ function buildPresentationStagingHub(ss) {
   var sh = ss.getSheetByName("Presentation_Staging") || ss.insertSheet("Presentation_Staging");
   sh.clear();
   
-  // Row 1 & 2: Header and Dropdown Selection
-  sh.getRange("A1").setValue("Active round to present").setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.maroonBg).setFontColor(LCC_SETUP_PALETTE.maroonFg).setHorizontalAlignment("center");
-  sh.getRange("A2").setValue("").setBackground(LCC_SETUP_PALETTE.inputHighlight).setFontWeight("bold").setHorizontalAlignment("center");
-  
-  sh.getRange("B1").setValue("Team Selection Presentation Hub").setFontWeight("bold").setFontColor(LCC_SETUP_PALETTE.maroonBg);
-  sh.getRange("B2").setValue("Select round from dropdown in A2").setFontStyle("italic").setFontColor("#666666");
-  
-  sh.getRange("C2").setValue("Profile ID").setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.zebraLight).setHorizontalAlignment("center");
-  sh.getRange("D2").setValue("Photo").setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.zebraLight).setHorizontalAlignment("center");
+  // Row 1: Header and Dropdown Selection
+  sh.getRange("A1").setValue("Round to present").setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.maroonBg).setFontColor(LCC_SETUP_PALETTE.maroonFg).setHorizontalAlignment("center");
+  sh.getRange("B1").setValue("").setNumberFormat("@").setBackground(LCC_SETUP_PALETTE.inputHighlight).setFontWeight("bold").setHorizontalAlignment("center");
   
   var frames = [
     { name: "FIRST ELEVEN", start: 4 }, 
@@ -191,20 +185,22 @@ function buildPresentationStagingHub(ss) {
     "10. Player", "11. Player", "12. Player", "13. Player"
   ];
   
+  var targetTabExpr = 'IF(ISNUMBER($B$1), TEXT($B$1, "yyyy-mm-dd"), TO_TEXT($B$1))';
+  
   frames.forEach(function(f) {
     var rowIdx = f.start;
-    // Team Banner
+    // Team Banner (Cols A to D)
     sh.getRange(rowIdx, 1, 1, 4).merge().setValue(f.name).setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.maroonBg).setFontColor(LCC_SETUP_PALETTE.maroonFg).setHorizontalAlignment("center");
     
     // Metadata rows
     sh.getRange(rowIdx + 1, 1).setValue("Opponent:").setFontStyle("italic");
-    sh.getRange(rowIdx + 1, 2).setFormula('=IFERROR(INDIRECT("\'" & $A$2 & "\'!B' + (rowIdx + 1) + '"), "")');
+    sh.getRange(rowIdx + 1, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 1) + '"), "")');
     
     sh.getRange(rowIdx + 2, 1).setValue("Venue:").setFontStyle("italic");
-    sh.getRange(rowIdx + 2, 2).setFormula('=IFERROR(INDIRECT("\'" & $A$2 & "\'!B' + (rowIdx + 2) + '"), "")');
+    sh.getRange(rowIdx + 2, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 2) + '"), "")');
     
     sh.getRange(rowIdx + 3, 1).setValue("Format:").setFontStyle("italic");
-    sh.getRange(rowIdx + 3, 2).setFormula('=IFERROR(INDIRECT("\'" & $A$2 & "\'!B' + (rowIdx + 3) + '"), "")');
+    sh.getRange(rowIdx + 3, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 3) + '"), "")');
     
     // 13 Player Slot Rows
     for (var idx = 0; idx < 13; idx++) {
@@ -213,9 +209,9 @@ function buildPresentationStagingHub(ss) {
       sh.getRange(currRow, 1).setValue(slotRoles[idx]).setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.zebraLight);
       
       // Col B: Clean Player Name (Stripped of junior tags like (U16))
-      sh.getRange(currRow, 2).setFormula('=IFERROR(IF(INDIRECT("\'" & $A$2 & "\'!B' + currRow + '")="", "", TRIM(REGEXREPLACE(INDIRECT("\'" & $A$2 & "\'!B' + currRow + '"), "\\s*\\(.*?\\)", ""))), "")');
+      sh.getRange(currRow, 2).setFormula('=IFERROR(IF(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")="", "", TRIM(REGEXREPLACE(TO_TEXT(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")), "\\s*\\(.*?\\)", ""))), "")');
       
-      // Col C: Dynamic Profile ID Lookup from Players tab
+      // Col C: Dynamic Profile ID Lookup from Players tab (Hidden)
       sh.getRange(currRow, 3).setFormula('=IFERROR(IF(B' + currRow + '="", "", INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$D$2:$D, 0))), IFERROR(INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$B$2:$B & " " & Players!$C$2:$C, 0)), ""))');
       
       // Col D: Dynamic Headshot Image from Drive
@@ -227,9 +223,11 @@ function buildPresentationStagingHub(ss) {
   });
   
   sh.setColumnWidth(1, 120); // Col A (Slot Role)
-  sh.setColumnWidth(2, 190); // Col B (Clean Player Name)
-  sh.setColumnWidth(3, 100); // Col C (Profile ID)
+  sh.setColumnWidth(2, 210); // Col B (Clean Player Name)
+  sh.setColumnWidth(3, 20);  // Col C (Hidden Profile ID)
   sh.setColumnWidth(4, 100); // Col D (Photo)
+  
+  sh.hideColumns(3); // Hide Column C (Profile ID)
   
   try {
     sh.getRange(1, 1, 95, 4).setFontFamily("Hanken Grotesk");
