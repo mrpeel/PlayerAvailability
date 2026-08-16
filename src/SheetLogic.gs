@@ -2768,6 +2768,28 @@ function menuInspectSlidesLayout() {
 
 
 /**
+ * Helper to sort slide elements into 2 vertical columns (Left: 1..6, Right: 7..12).
+ */
+function sortElementsTwoColumns(elements) {
+  var leftCol = [];
+  var rightCol = [];
+  
+  elements.forEach(function(el) {
+    if (el.getLeft() < 360) {
+      leftCol.push(el);
+    } else {
+      rightCol.push(el);
+    }
+  });
+
+  leftCol.sort(function(a, b) { return a.getTop() - b.getTop(); });
+  rightCol.sort(function(a, b) { return a.getTop() - b.getTop(); });
+
+  return leftCol.concat(rightCol);
+}
+
+
+/**
  * Automatically assigns permanent Alt Text IDs (PLAYER_1..13, PHOTO_1..13, ROUND, etc.) to slide elements.
  */
 function autoTagSlideElements(ss) {
@@ -2792,42 +2814,41 @@ function autoTagSlideElements(ss) {
     var elements = slide.getPageElements();
 
     var textShapes = [];
-    var imageElements = [];
+    var avatarImages = [];
 
     elements.forEach(function(el) {
       var type = el.getPageElementType();
       if (type === SlidesApp.PageElementType.SHAPE) {
         var shp = el.asShape();
         var txt = shp.getText() ? shp.getText().asString().trim() : "";
-        if (txt.toLowerCase() !== f.name.toLowerCase() && txt.toLowerCase() !== "first eleven" && txt.toLowerCase() !== "second eleven" && txt.toLowerCase() !== "third eleven" && txt.toLowerCase() !== "fourth eleven" && txt.toLowerCase() !== "fifth eleven") {
+        if (txt.toLowerCase() !== f.name.toLowerCase() &&
+            txt.toLowerCase().indexOf("first eleven") === -1 &&
+            txt.toLowerCase().indexOf("second eleven") === -1 &&
+            txt.toLowerCase().indexOf("third eleven") === -1 &&
+            txt.toLowerCase().indexOf("fourth eleven") === -1 &&
+            txt.toLowerCase().indexOf("fifth eleven") === -1 &&
+            txt.indexOf("{{") === -1 &&
+            shp.getTop() < 420) {
           textShapes.push(el);
         }
       } else if (type === SlidesApp.PageElementType.IMAGE) {
-        imageElements.push(el);
+        // Only small avatar images, exclude large central club crest
+        if (el.getWidth() < 120 && el.getHeight() < 120) {
+          avatarImages.push(el);
+        }
       }
     });
 
-    // Sort shapes spatially (top-to-bottom, left-to-right)
-    textShapes.sort(function(a, b) {
-      var diffY = a.getTop() - b.getTop();
-      if (Math.abs(diffY) > 20) return diffY;
-      return a.getLeft() - b.getLeft();
-    });
+    var sortedShapes = sortElementsTwoColumns(textShapes);
+    var sortedImages = sortElementsTwoColumns(avatarImages);
 
-    // Sort images spatially (top-to-bottom, left-to-right)
-    imageElements.sort(function(a, b) {
-      var diffY = a.getTop() - b.getTop();
-      if (Math.abs(diffY) > 20) return diffY;
-      return a.getLeft() - b.getLeft();
-    });
-
-    textShapes.forEach(function(shp, idx) {
+    sortedShapes.forEach(function(shp, idx) {
       shp.setTitle("PLAYER_" + (idx + 1));
       shp.setDescription(f.prefix + "_PLAYER_" + (idx + 1));
       taggedCount++;
     });
 
-    imageElements.forEach(function(img, idx) {
+    sortedImages.forEach(function(img, idx) {
       img.setTitle("PHOTO_" + (idx + 1));
       img.setDescription(f.prefix + "_PHOTO_" + (idx + 1));
       taggedCount++;
@@ -2944,12 +2965,38 @@ function syncPresentationStagingToSlides(ss) {
     });
   });
 
-  // Update each team's slide using permanent Alt Text IDs
+  var transparentPngUrl = "https://upload.wikimedia.org/wikipedia/commons/c/ca/1x1.png";
+
+  // Update each team's slide using permanent Alt Text IDs & spatial fallbacks
   teamData.forEach(function(t) {
     if (t.slideIdx >= slides.length) return;
     var slide = slides[t.slideIdx];
     var elements = slide.getPageElements();
 
+    // 1. Direct text placeholder replacements (case-insensitive for all variations)
+    slide.replaceAllText("{{ROUND}}", t.round);
+    slide.replaceAllText("{{Round}}", t.round);
+    slide.replaceAllText("{{round}}", t.round);
+    slide.replaceAllText("{{OPPONENT}}", t.opponent);
+    slide.replaceAllText("{{Opponent}}", t.opponent);
+    slide.replaceAllText("{{opponent}}", t.opponent);
+    slide.replaceAllText("{{VENUE}}", t.venue);
+    slide.replaceAllText("{{Venue}}", t.venue);
+    slide.replaceAllText("{{venue}}", t.venue);
+    slide.replaceAllText("{{FORMAT}}", t.format);
+    slide.replaceAllText("{{Format}}", t.format);
+    slide.replaceAllText("{{format}}", t.format);
+
+    slide.replaceAllText("{{" + t.prefix + "_ROUND}}", t.round);
+    slide.replaceAllText("{{" + t.prefix + "_Round}}", t.round);
+    slide.replaceAllText("{{" + t.prefix + "_OPPONENT}}", t.opponent);
+    slide.replaceAllText("{{" + t.prefix + "_Opponent}}", t.opponent);
+    slide.replaceAllText("{{" + t.prefix + "_VENUE}}", t.venue);
+    slide.replaceAllText("{{" + t.prefix + "_Venue}}", t.venue);
+    slide.replaceAllText("{{" + t.prefix + "_FORMAT}}", t.format);
+    slide.replaceAllText("{{" + t.prefix + "_Format}}", t.format);
+
+    // 2. Element-by-element Tag Matching
     var matchedPlayerTags = {};
     elements.forEach(function(el) {
       var tag = String(el.getTitle() || el.getDescription() || "").trim().toUpperCase();
@@ -2979,8 +3026,7 @@ function syncPresentationStagingToSlides(ss) {
         }
       }
 
-      // Match PHOTO_1 .. PHOTO_13 (1cm x 1cm / 28.35pt)
-      var transparentPngUrl = "https://upload.wikimedia.org/wikipedia/commons/c/ca/1x1.png";
+      // Match PHOTO_1 .. PHOTO_13
       var photoMatch = tag.match(/^(?:.*_)?PHOTO_?(\d+)$/);
       if (photoMatch) {
         var photoNum = parseInt(photoMatch[1], 10);
@@ -2991,7 +3037,6 @@ function syncPresentationStagingToSlides(ss) {
               if (pPhoto.photoUrl) {
                 el.asImage().replace(pPhoto.photoUrl);
               } else {
-                // Wipe previous round's headshot with 100% transparent image
                 el.asImage().replace(transparentPngUrl);
               }
             } catch (err) {
@@ -3002,26 +3047,39 @@ function syncPresentationStagingToSlides(ss) {
       }
     });
 
-    // Fallback: If no Alt Text IDs were manually set yet, auto-assign and populate spatially
-    if (Object.keys(matchedPlayerTags).length === 0) {
-      var textShapes = [];
-      elements.forEach(function(el) {
-        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) {
-          var shp = el.asShape();
-          var txt = shp.getText() ? shp.getText().asString().trim() : "";
-          if (txt.toLowerCase() !== t.teamName.toLowerCase() && txt.toLowerCase() !== "first eleven" && txt.toLowerCase() !== "second eleven" && txt.toLowerCase() !== "third eleven" && txt.toLowerCase() !== "fourth eleven" && txt.toLowerCase() !== "fifth eleven") {
-            textShapes.push(el);
-          }
+    // 3. Fallback: Spatial two-column matching for player text shapes and avatar images
+    var textShapes = [];
+    var avatarImages = [];
+
+    elements.forEach(function(el) {
+      var type = el.getPageElementType();
+      if (type === SlidesApp.PageElementType.SHAPE) {
+        var shp = el.asShape();
+        var txt = shp.getText() ? shp.getText().asString().trim() : "";
+        if (txt.toLowerCase() !== t.teamName.toLowerCase() &&
+            txt.toLowerCase().indexOf("first eleven") === -1 &&
+            txt.toLowerCase().indexOf("second eleven") === -1 &&
+            txt.toLowerCase().indexOf("third eleven") === -1 &&
+            txt.toLowerCase().indexOf("fourth eleven") === -1 &&
+            txt.toLowerCase().indexOf("fifth eleven") === -1 &&
+            txt.indexOf("{{") === -1 &&
+            shp.getTop() < 420) {
+          textShapes.push(el);
         }
-      });
+      } else if (type === SlidesApp.PageElementType.IMAGE) {
+        // Exclude central Club Crest (width/height < 120)
+        if (el.getWidth() < 120 && el.getHeight() < 120) {
+          avatarImages.push(el);
+        }
+      }
+    });
 
-      textShapes.sort(function(a, b) {
-        var diffY = a.getTop() - b.getTop();
-        if (Math.abs(diffY) > 20) return diffY;
-        return a.getLeft() - b.getLeft();
-      });
+    var sortedShapes = sortElementsTwoColumns(textShapes);
+    var sortedImages = sortElementsTwoColumns(avatarImages);
 
-      textShapes.forEach(function(shpEl, sIdx) {
+    // Apply player names if not already set by Alt text
+    if (Object.keys(matchedPlayerTags).length === 0) {
+      sortedShapes.forEach(function(shpEl, sIdx) {
         if (sIdx < t.players.length) {
           shpEl.setTitle("PLAYER_" + (sIdx + 1));
           shpEl.setDescription(t.prefix + "_PLAYER_" + (sIdx + 1));
@@ -3031,7 +3089,25 @@ function syncPresentationStagingToSlides(ss) {
       });
     }
 
-    // Update any 2x4 Match Info Tables (T20 slides or fixture summary tables)
+    // Apply player headshots or transparent fallback for all avatars
+    sortedImages.forEach(function(imgEl, sIdx) {
+      if (sIdx < t.players.length) {
+        imgEl.setTitle("PHOTO_" + (sIdx + 1));
+        imgEl.setDescription(t.prefix + "_PHOTO_" + (sIdx + 1));
+        var pPhoto = t.players[sIdx];
+        try {
+          if (pPhoto && pPhoto.photoUrl) {
+            imgEl.asImage().replace(pPhoto.photoUrl);
+          } else {
+            imgEl.asImage().replace(transparentPngUrl);
+          }
+        } catch (imgErr) {
+          Logger.log("Avatar replace warning for slot " + (sIdx + 1) + ": " + imgErr.message);
+        }
+      }
+    });
+
+    // 4. Update any 2x4 Match Info Tables (T20 slides or fixture summary tables)
     elements.forEach(function(el) {
       if (el.getPageElementType() === SlidesApp.PageElementType.TABLE) {
         var tbl = el.asTable();
