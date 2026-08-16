@@ -1,4 +1,29 @@
-const { formatNameWithJuniorTag, pickFirstName } = require('../src/logic.js');
+const { formatNameWithJuniorTag, pickFirstName, stripJuniorTag } = require('../src/logic.js');
+
+describe('stripJuniorTag()', () => {
+  test('strips U16 suffix', () => {
+    expect(stripJuniorTag('Shahmeer Hassaan (U16)')).toBe('Shahmeer Hassaan');
+  });
+
+  test('strips U18 suffix', () => {
+    expect(stripJuniorTag('Heath Elias (U18)')).toBe('Heath Elias');
+  });
+
+  test('strips U14 suffix', () => {
+    expect(stripJuniorTag('Johnny Doe (U14)')).toBe('Johnny Doe');
+  });
+
+  test('leaves names without suffix unchanged', () => {
+    expect(stripJuniorTag('Liam Wootten')).toBe('Liam Wootten');
+    expect(stripJuniorTag('Neil Kloot')).toBe('Neil Kloot');
+  });
+
+  test('handles blank or non-string input safely', () => {
+    expect(stripJuniorTag('')).toBe('');
+    expect(stripJuniorTag(null)).toBe('');
+    expect(stripJuniorTag(undefined)).toBe('');
+  });
+});
 
 describe('formatNameWithJuniorTag()', () => {
   test('blank JuniorLevel returns no suffix', () => {

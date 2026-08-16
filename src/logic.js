@@ -701,6 +701,19 @@ function generateWallOfShameMessage(roundDate, declaredCount, unknownPlayerNames
     "https://lcc-availability.web.app/?round=" + dateStr;
 }
 
+/**
+ * Strips junior / age group tags (e.g. "(U16)", "(U18)", "(wk)", "(c)") from player name.
+ * 
+ * @param {string} fullName - e.g. "Shahmeer Hassaan (U16)", "Heath Elias (U18)"
+ * @returns {string} - e.g. "Shahmeer Hassaan", "Heath Elias"
+ */
+function stripJuniorTag(fullName) {
+  if (!fullName || typeof fullName !== "string") return "";
+  var trimmed = fullName.trim();
+  if (!trimmed) return "";
+  return trimmed.replace(/\s*\([^)]*\)/g, "").trim();
+}
+
 // Node/Jest interop — Apps Script ignores this guard.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -710,6 +723,7 @@ if (typeof module !== 'undefined' && module.exports) {
     moveItemBetweenLists,
     formatNameWithJuniorTag,
     formatShortPlayerName,
+    stripJuniorTag,
     pickFirstName,
     DEFAULT_TEAM_CONFIGS,
     parseCsvString,

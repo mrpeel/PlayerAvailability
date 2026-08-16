@@ -219,8 +219,8 @@ function deployVerticalRoundSheet(ss, dateStr) {
     ws.getRange(1, 1, Math.min(ws.getMaxRows(), 150), Math.min(ws.getMaxColumns(), 26)).setFontFamily("Hanken Grotesk");
   } catch (e) {}
 
-  var staging = ss.getSheetByName("Presentation_Staging");
-  if (staging) staging.getRange("B1").setValue(sheetName);
+  // Sync Presentation Staging Hub with this newly deployed round
+  syncPresentationStagingHub(ss, sheetName);
 
   ss.setActiveSheet(ws);
   return "Selection tab '" + sheetName + "' initialised successfully!\n\nSpreadsheet has switched to the new round tab.";
@@ -1209,6 +1209,9 @@ function onOpen() {
           applyRoundTabColumnWidths(s);
         }
       });
+
+      // Auto-sync Presentation Staging Hub dropdown and formatting
+      syncPresentationStagingHub(ss);
     }
   } catch (e) {
     Logger.log("onOpen auto-sync warning: " + e.message);
@@ -1450,13 +1453,157 @@ function LCC_AVAILABILITY_MESSAGE(roundDate) {
 
 
 /**
+ * Custom function for Google Sheets to clean player names and strip junior tags for presentation.
+ *
+ * @param {string} name - The player name cell
+ * @returns {string} Clean player name without junior tags
+ * @customfunction
+ */
+function LCC_CLEAN_PLAYER_NAME(name) {
+  if (!name) return "";
+  return stripJuniorTag(String(name));
+}
+
+
+/**
+ * Custom function for Google Sheets to retrieve public photo thumbnail URL from Google Drive.
+ *
+ * @param {string} profileId - Player profile ID (e.g. PL-001)
+ * @returns {string} Public Drive thumbnail URL
+ * @customfunction
+ */
+function LCC_PLAYER_PHOTO_URL(profileId) {
+  if (!profileId) return "";
+  return getPlayerPhotoUrl(String(profileId).trim());
+}
+
+
+/**
+ * Fully builds or updates the Presentation_Staging sheet layout, formulas, and dropdown.
+ *
+ * @param {Spreadsheet} ss - Bound SpreadsheetApp instance
+ * @param {string} [targetRoundName] - Optional round name to select in A2
+ */
+function syncPresentationStagingHub(ss, targetRoundName) {
+  try {
+    var s = ss || getSS();
+    if (!s) return;
+    var sh = s.getSheetByName("Presentation_Staging") || s.insertSheet("Presentation_Staging");
+    
+    // Check if A1 needs updating to "Active round to present" or layout rebuild
+    var currentA1 = String(sh.getRange("A1").getValue()).trim();
+    if (currentA1 !== "Active round to present" || sh.getLastRow() < 80) {
+      sh.clear();
+      
+      // Header and Selection Controls
+      sh.getRange("A1").setValue("Active round to present").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
+      sh.getRange("A2").setValue("").setBackground(LCC_PALETTE.inputHighlight).setFontWeight("bold").setHorizontalAlignment("center");
+      
+      sh.getRange("B1").setValue("Team Selection Presentation Hub").setFontWeight("bold").setFontColor(LCC_PALETTE.maroonBg);
+      sh.getRange("B2").setValue("Select round from dropdown in A2").setFontStyle("italic").setFontColor("#666666");
+      
+      sh.getRange("C2").setValue("Profile ID").setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight).setHorizontalAlignment("center");
+      sh.getRange("D2").setValue("Photo").setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight).setHorizontalAlignment("center");
+      
+      var frames = [
+        { name: "FIRST ELEVEN", start: 4 }, 
+        { name: "SECOND ELEVEN", start: 22 }, 
+        { name: "THIRD ELEVEN", start: 40 }, 
+        { name: "FOURTH ELEVEN", start: 58 }, 
+        { name: "FIFTH ELEVEN", start: 76 }
+      ];
+      
+      var slotRoles = [
+        "1. Captain", "2. VC", "3. WK",
+        "4. Player", "5. Player", "6. Player",
+        "7. Player", "8. Player", "9. Player",
+        "10. Player", "11. Player", "12. Player", "13. Player"
+      ];
+      
+      frames.forEach(function(f) {
+        var rowIdx = f.start;
+        // Team Banner
+        sh.getRange(rowIdx, 1, 1, 4).merge().setValue(f.name).setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
+        
+        // Metadata rows
+        sh.getRange(rowIdx + 1, 1).setValue("Opponent:").setFontStyle("italic");
+        sh.getRange(rowIdx + 1, 2).setFormula('=IFERROR(INDIRECT("\'" & $A$2 & "\'!B' + (rowIdx + 1) + '"), "")');
+        
+        sh.getRange(rowIdx + 2, 1).setValue("Venue:").setFontStyle("italic");
+        sh.getRange(rowIdx + 2, 2).setFormula('=IFERROR(INDIRECT("\'" & $A$2 & "\'!B' + (rowIdx + 2) + '"), "")');
+        
+        sh.getRange(rowIdx + 3, 1).setValue("Format:").setFontStyle("italic");
+        sh.getRange(rowIdx + 3, 2).setFormula('=IFERROR(INDIRECT("\'" & $A$2 & "\'!B' + (rowIdx + 3) + '"), "")');
+        
+        // 13 Player Slot Rows
+        for (var idx = 0; idx < 13; idx++) {
+          var currRow = rowIdx + 4 + idx; // 8..20, 26..38, etc.
+          // Col A: Slot Role
+          sh.getRange(currRow, 1).setValue(slotRoles[idx]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
+          
+          // Col B: Clean Player Name (Stripped of junior tags like (U16))
+          sh.getRange(currRow, 2).setFormula('=IFERROR(IF(INDIRECT("\'" & $A$2 & "\'!B' + currRow + '")="", "", TRIM(REGEXREPLACE(INDIRECT("\'" & $A$2 & "\'!B' + currRow + '"), "\\s*\\(.*?\\)", ""))), "")');
+          
+          // Col C: Dynamic Profile ID Lookup from Players tab
+          sh.getRange(currRow, 3).setFormula('=IFERROR(IF(B' + currRow + '="", "", INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$D$2:$D, 0))), IFERROR(INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$B$2:$B & " " & Players!$C$2:$C, 0)), ""))');
+          
+          // Col D: Dynamic Headshot Image from Drive
+          sh.getRange(currRow, 4).setFormula('=IFERROR(IF(C' + currRow + '="", "", IMAGE(LCC_PLAYER_PHOTO_URL(C' + currRow + '))), "")');
+        }
+        
+        sh.getRange(rowIdx, 1, 17, 4).setBorder(true, true, true, true, true, true, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
+      });
+      
+      sh.setColumnWidth(1, 120); // Col A (Slot Role)
+      sh.setColumnWidth(2, 190); // Col B (Clean Player Name)
+      sh.setColumnWidth(3, 100); // Col C (Profile ID)
+      sh.setColumnWidth(4, 100); // Col D (Photo)
+      
+      try {
+        sh.getRange(1, 1, 95, 4).setFontFamily("Hanken Grotesk");
+      } catch (e) {}
+    }
+    
+    // Sync dropdown validation list in A2 with all round tabs
+    var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log"];
+    var sheets = s.getSheets();
+    var roundNames = [];
+    sheets.forEach(function(ws) {
+      var name = ws.getName();
+      if (nonRoundNames.indexOf(name) === -1) {
+        roundNames.push(name);
+      }
+    });
+    
+    if (roundNames.length > 0) {
+      var rule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(roundNames, true)
+        .setAllowInvalid(true)
+        .build();
+      sh.getRange("A2").setDataValidation(rule);
+      
+      var curVal = String(sh.getRange("A2").getValue()).trim();
+      if (targetRoundName) {
+        sh.getRange("A2").setValue(targetRoundName);
+      } else if (!curVal || roundNames.indexOf(curVal) === -1) {
+        sh.getRange("A2").setValue(roundNames[0]);
+      }
+    }
+  } catch (err) {
+    Logger.log("syncPresentationStagingHub error: " + err.message);
+  }
+}
+
+
+/**
  * Menu action to re-apply standard column widths across all tabs.
  */
 function menuResetColumnWidths() {
   var ss = getSS();
   if (!ss) return;
   applyAllStandardColumnWidths(ss);
-  ss.toast("Standard column widths applied across all database tabs.", "LCC Selection Engine", 4);
+  syncPresentationStagingHub(ss);
+  ss.toast("Standard column widths and Presentation Staging Hub refreshed.", "LCC Selection Engine", 4);
 }
 
 
