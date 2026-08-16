@@ -87,13 +87,12 @@ function deployVerticalRoundSheet(ss, dateStr) {
     }
   }
 
-  // Header Metadata (Date is key, no global Round ID)
+  // Header Metadata (Date is key, clean single Match Date header)
   ws.getRange("A1").setValue("Match Date:").setFontWeight("bold");
   ws.getRange("B1").setValue(targetDate).setNumberFormat("dd/mm/yyyy").setBackground(LCC_PALETTE.inputHighlight).setHorizontalAlignment("center").setFontWeight("bold");
+  ws.getRange("A2:B2").clear();
   ws.getRange("G1").setValue("Roster Last Synced:").setFontWeight("bold");
   ws.getRange("H1").setValue(new Date()).setNumberFormat("dd/mm/yyyy hh:mm").setFontColor("#666666");
-  ws.getRange("A2").setValue("Date").setFontWeight("bold");
-  ws.getRange("B2").setValue(targetDate).setNumberFormat("yyyy-mm-dd").setBackground(LCC_PALETTE.inputHighlight).setHorizontalAlignment("center").setFontWeight("bold");
 
   // Vertical Team Stack (Cols A & B)
   var grades = ["FIRST ELEVEN", "SECOND ELEVEN", "THIRD ELEVEN", "FOURTH ELEVEN", "FIFTH ELEVEN"];
@@ -1348,8 +1347,8 @@ function setupWhatsAppMessageColumns(ws, dateStr) {
   uCard.merge();
   uCard.setFormula(
     '="🏏 *LABURNUM CC ROUND AVAILABILITY* 🏏" & CHAR(10) & CHAR(10) & ' +
-    '"Please submit your availability for the upcoming round (" & TEXT(B2, "yyyy-mm-dd") & "):" & CHAR(10) & ' +
-    '"https://lcc-availability.web.app/?round=" & TEXT(B2, "yyyy-mm-dd")'
+    '"Please submit your availability for the upcoming round (" & TEXT(B1, "yyyy-mm-dd") & "):" & CHAR(10) & ' +
+    '"https://lcc-availability.web.app/?round=" & TEXT(B1, "yyyy-mm-dd")'
   ).setWrap(true).setVerticalAlignment("top");
 
   // Column V (Col 22) Header & Merged Card
@@ -1366,7 +1365,7 @@ function setupWhatsAppMessageColumns(ws, dateStr) {
   var vCard = ws.getRange("V4:V20");
   vCard.merge();
   vCard.setFormula(
-    '=LCC_WALL_OF_SHAME(B2, COUNTA(G5:G) + COUNTA(L5:L), Q5:Q150)'
+    '=LCC_WALL_OF_SHAME(B1, COUNTA(G5:G) + COUNTA(L5:L), Q5:Q150)'
   ).setWrap(true).setVerticalAlignment("top");
 
   // Card Borders and Background Styling
