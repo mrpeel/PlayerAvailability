@@ -3344,47 +3344,46 @@ function showPhotoStudioDialog() {
     '<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>' +
     '<style>' +
     '  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }' +
-    '  body { padding: 20px; background: #fdfdfd; color: #222; }' +
-    '  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 2px solid #4d0012; padding-bottom: 10px; }' +
-    '  .header h2 { color: #4d0012; font-size: 18px; font-weight: 700; }' +
-    '  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }' +
-    '  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }' +
-    '  .card h3 { font-size: 14px; font-weight: 600; color: #4d0012; margin-bottom: 10px; }' +
-    '  label { font-size: 12px; font-weight: 600; color: #555; display: block; margin-bottom: 4px; }' +
-    '  select, input[type="text"] { width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; margin-bottom: 10px; }' +
-    '  .drop-zone { border: 2px dashed #4d0012; border-radius: 8px; padding: 20px; text-align: center; background: #fff9e6; cursor: pointer; transition: all 0.2s; }' +
+    '  body { padding: 14px 18px; background: #fafafa; color: #222; overflow-y: hidden; }' +
+    '  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }' +
+    '  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }' +
+    '  .card h3 { font-size: 13px; font-weight: 700; color: #4d0012; margin-bottom: 8px; }' +
+    '  label { font-size: 11px; font-weight: 600; color: #555; display: block; margin-bottom: 3px; }' +
+    '  select, input[type="text"] { width: 100%; padding: 7px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; margin-bottom: 8px; }' +
+    '  .drop-zone { border: 2px dashed #4d0012; border-radius: 8px; padding: 16px; text-align: center; background: #fff9e6; cursor: pointer; transition: all 0.2s; }' +
     '  .drop-zone:hover { background: #fff2cc; }' +
-    '  .canvas-container { position: relative; width: 100%; height: 220px; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 12px 12px; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; }' +
+    '  .canvas-container { position: relative; width: 100%; height: 210px; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 12px 12px; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; }' +
     '  canvas { max-width: 100%; max-height: 100%; }' +
-    '  .preview-circle { width: 100px; height: 100px; border-radius: 50%; border: 3px solid #fac218; box-shadow: 0 2px 6px rgba(0,0,0,0.15); overflow: hidden; margin: 0 auto 10px; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 12px 12px; }' +
+    '  .preview-circle { width: 85px; height: 85px; border-radius: 50%; border: 3px solid #fac218; box-shadow: 0 2px 6px rgba(0,0,0,0.15); overflow: hidden; margin: 0 auto 6px; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 12px 12px; }' +
     '  .preview-circle img { width: 100%; height: 100%; object-fit: cover; }' +
     '  .controls { display: flex; gap: 8px; align-items: center; margin-top: 8px; }' +
-    '  .controls button { padding: 6px 12px; font-size: 12px; font-weight: 600; }' +
-    '  .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }' +
+    '  .controls button { padding: 5px 10px; font-size: 11px; font-weight: 600; border-radius: 5px; }' +
+    '  .actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; padding-top: 8px; border-top: 1px solid #eee; }' +
     '  button { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }' +
     '  .btn-primary { background: #4d0012; color: #fff; }' +
     '  .btn-primary:hover { background: #35000c; }' +
+    '  .btn-primary:disabled { background: #ccc; cursor: not-allowed; }' +
     '  .btn-secondary { background: #e0e0e0; color: #333; }' +
     '  .btn-gold { background: #fac218; color: #4d0012; font-weight: bold; border: 1px solid #dfac13; }' +
     '  .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; }' +
     '  .badge-has { background: #e6f4ea; color: #137333; }' +
     '  .badge-none { background: #fce8e6; color: #c5221f; }' +
+    '  .toast { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; }' +
+    '  .toast-success { background: #e6f4ea; color: #137333; border: 1px solid #ceead6; }' +
+    '  .toast-error { background: #fce8e6; color: #c5221f; border: 1px solid #fad2cf; }' +
     '</style>' +
     '</head><body>' +
-    '<div class="header">' +
-    '  <h2>📸 Player Photo Studio</h2>' +
-    '</div>' +
     '<div class="grid">' +
     '  <div class="card">' +
     '    <h3>1. Select Player</h3>' +
     '    <label for="playerSelect">Player:</label>' +
     '    <select id="playerSelect" onchange="onPlayerChange()"><option value="">Loading players...</option></select>' +
-    '    <div id="playerStatus" style="font-size: 12px; margin-bottom: 12px;"></div>' +
+    '    <div id="playerStatus" style="font-size: 11px; margin-bottom: 8px;"></div>' +
     '    <h3>2. Choose Photo</h3>' +
     '    <div class="drop-zone" onclick="document.getElementById(\'fileInput\').click()">' +
-    '      <div style="font-size: 24px; margin-bottom: 4px;">📷</div>' +
+    '      <div style="font-size: 22px; margin-bottom: 2px;">📷</div>' +
     '      <p style="font-size: 12px; font-weight: 600; color: #4d0012;">Click to Upload or Snap</p>' +
-    '      <p style="font-size: 10px; color: #777;">PNG, JPG supported</p>' +
+    '      <p style="font-size: 10px; color: #777;">PNG or JPG</p>' +
     '    </div>' +
     '    <input type="file" id="fileInput" accept="image/*" style="display:none;" onchange="handleFile(this.files[0])">' +
     '  </div>' +
@@ -3398,17 +3397,20 @@ function showPhotoStudioDialog() {
     '      <input type="range" id="zoomSlider" min="0.5" max="3" step="0.05" value="1" oninput="drawCanvas()" style="flex:1;">' +
     '      <button class="btn-gold" id="bgBtn" onclick="removeBackground()" title="AI Human Portrait Background Removal">🪄 AI Cutout BG</button>' +
     '    </div>' +
-    '    <div style="text-align: center; margin-top: 10px;">' +
+    '    <div style="text-align: center; margin-top: 6px;">' +
     '      <div class="preview-circle">' +
     '        <img id="previewImg" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">' +
     '      </div>' +
-    '      <span style="font-size: 11px; color: #666;">Circle Avatar Output (400×400 Transparent PNG)</span>' +
+    '      <span style="font-size: 10px; color: #666;">Circle Avatar Output (400×400 Transparent PNG)</span>' +
     '    </div>' +
     '  </div>' +
     '</div>' +
     '<div class="actions">' +
-    '  <button class="btn-secondary" onclick="google.script.host.close()">Close</button>' +
-    '  <button class="btn-primary" id="saveBtn" onclick="savePhoto()" disabled>💾 Save to Player Profile</button>' +
+    '  <div id="inlineFeedback"></div>' +
+    '  <div style="display:flex; gap:10px;">' +
+    '    <button class="btn-secondary" onclick="google.script.host.close()">Close</button>' +
+    '    <button class="btn-primary" id="saveBtn" onclick="savePhoto()" disabled>💾 Save to Player Profile</button>' +
+    '  </div>' +
     '</div>' +
     '<script>' +
     '  var playersData = [];' +
@@ -3533,21 +3535,23 @@ function showPhotoStudioDialog() {
     '    var pid = document.getElementById("playerSelect").value;' +
     '    if (!pid || !imgLoaded) return;' +
     '    var btn = document.getElementById("saveBtn");' +
+    '    var fb = document.getElementById("inlineFeedback");' +
     '    btn.disabled = true;' +
-    '    btn.innerText = "⏳ Uploading to Drive...";' +
+    '    btn.innerText = "⏳ Saving...";' +
+    '    fb.innerHTML = "";' +
     '    var base64 = canvas.toDataURL("image/png");' +
     '    google.script.run.withSuccessHandler(function(res) {' +
     '      btn.innerText = "✅ Saved!";' +
-    '      alert("Photo saved successfully to Google Drive!");' +
-    '      google.script.host.close();' +
+    '      fb.innerHTML = "<span class=\'toast toast-success\'>✅ Saved to Google Drive!</span>";' +
+    '      setTimeout(function() { google.script.host.close(); }, 1200);' +
     '    }).withFailureHandler(function(err) {' +
     '      btn.disabled = false;' +
     '      btn.innerText = "💾 Save to Player Profile";' +
-    '      alert("Upload error: " + err.message);' +
+    '      fb.innerHTML = "<span class=\'toast toast-error\'>❌ " + err.message + "</span>";' +
     '    }).savePlayerHeadshot(pid, base64);' +
     '  }' +
     '</script>' +
     '</body></html>'
-  ).setWidth(680).setHeight(560);
+  ).setWidth(740).setHeight(500);
   SpreadsheetApp.getUi().showModalDialog(html, "📸 Player Photo Studio");
 }
