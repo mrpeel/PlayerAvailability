@@ -208,14 +208,7 @@ function deployVerticalRoundSheet(ss, dateStr) {
   setupWhatsAppMessageColumns(ws, targetDate);
 
   // Column Widths & Hide Technical ProfileID and Helper Columns
-  ws.setColumnWidth(1, 130); ws.setColumnWidth(2, 210); ws.setColumnWidth(3, 20);
-  ws.setColumnWidth(4, 210); ws.setColumnWidth(5, 20);
-  ws.setColumnWidth(6, 80);  ws.setColumnWidth(7, 210); ws.setColumnWidth(8, 210); ws.setColumnWidth(9, 180); ws.setColumnWidth(10, 20);
-  ws.setColumnWidth(11, 80); ws.setColumnWidth(12, 210); ws.setColumnWidth(13, 210); ws.setColumnWidth(14, 180); ws.setColumnWidth(15, 20);
-  ws.setColumnWidth(16, 80); ws.setColumnWidth(17, 210); ws.setColumnWidth(18, 210); ws.setColumnWidth(19, 180); ws.setColumnWidth(20, 20);
-  ws.setColumnWidth(21, 350); // Col U (Availability Message)
-  ws.setColumnWidth(22, 350); // Col V (Wall of Shame Message)
-  ws.setColumnWidth(23, 20);  // Col W (Spacer)
+  applyRoundTabColumnWidths(ws);
 
   ws.hideColumns(6);  // Col F (ProfileID)
   ws.hideColumns(11); // Col K (ProfileID)
@@ -1213,6 +1206,7 @@ function onOpen() {
         if (nonRoundNames.indexOf(s.getName()) === -1) {
           applySelectionValidationRules(s);
           setupWhatsAppMessageColumns(s);
+          applyRoundTabColumnWidths(s);
         }
       });
     }
@@ -1377,16 +1371,31 @@ function setupWhatsAppMessageColumns(ws, dateStr) {
     ws.setRowHeight(4, 24);
   } catch (e) {}
 
-  // Set wider column widths (350px each)
-  ws.setColumnWidth(21, 350); // Col U (Availability Message)
-  ws.setColumnWidth(22, 350); // Col V (Wall of Shame Message)
-  ws.setColumnWidth(23, 20);  // Col W (Spacer)
+  // Apply column widths
+  applyRoundTabColumnWidths(ws);
 
   // Unhide Columns 21 & 22 if they were previously hidden
   try {
     ws.unhideColumn(ws.getRange("U1"));
     ws.unhideColumn(ws.getRange("V1"));
   } catch (e) {}
+}
+
+
+/**
+ * Standard column width calculator for round selection tabs.
+ * Reduced availability columns (G-I, L-N, Q-S) by 15% for mobile/phone display.
+ */
+function applyRoundTabColumnWidths(ws) {
+  if (!ws) return;
+  ws.setColumnWidth(1, 130); ws.setColumnWidth(2, 210); ws.setColumnWidth(3, 20);
+  ws.setColumnWidth(4, 210); ws.setColumnWidth(5, 20);
+  ws.setColumnWidth(6, 80);  ws.setColumnWidth(7, 178); ws.setColumnWidth(8, 178); ws.setColumnWidth(9, 153); ws.setColumnWidth(10, 20);
+  ws.setColumnWidth(11, 80); ws.setColumnWidth(12, 178); ws.setColumnWidth(13, 178); ws.setColumnWidth(14, 153); ws.setColumnWidth(15, 20);
+  ws.setColumnWidth(16, 80); ws.setColumnWidth(17, 178); ws.setColumnWidth(18, 178); ws.setColumnWidth(19, 153); ws.setColumnWidth(20, 20);
+  ws.setColumnWidth(21, 350); // Col U (Availability Message)
+  ws.setColumnWidth(22, 350); // Col V (Wall of Shame Message)
+  ws.setColumnWidth(23, 20);  // Col W (Spacer)
 }
 
 
