@@ -751,6 +751,65 @@ function formatPlayerPresentationName(name, role) {
   return cleanName;
 }
 
+/**
+ * Formats combined round and opponent text for presentation.
+ * e.g. "Round 1: LCC 1st XI vs Mitcham - 2nd XI"
+ *
+ * @param {string} round - Round number or name (e.g. "1" or "Round 1")
+ * @param {string} prefix - Team prefix (e.g. "1ST", "2ND")
+ * @param {string} opponent - Opponent team name
+ * @returns {string}
+ */
+function formatRoundOpponent(round, prefix, opponent) {
+  var rStr = String(round || "").trim();
+  if (rStr && !/^round/i.test(rStr) && /^\d+/.test(rStr)) {
+    rStr = "Round " + rStr;
+  }
+  
+  var xiLabel = "LCC 1st XI";
+  var pLower = String(prefix || "").toLowerCase();
+  if (pLower.indexOf("1") > -1) xiLabel = "LCC 1st XI";
+  else if (pLower.indexOf("2") > -1) xiLabel = "LCC 2nd XI";
+  else if (pLower.indexOf("3") > -1) xiLabel = "LCC 3rd XI";
+  else if (pLower.indexOf("4") > -1) xiLabel = "LCC 4th XI";
+  else if (pLower.indexOf("5") > -1) xiLabel = "LCC 5th XI";
+  
+  var oppStr = String(opponent || "").trim();
+  if (rStr && oppStr) {
+    return rStr + ": " + xiLabel + " vs " + oppStr;
+  } else if (oppStr) {
+    return xiLabel + " vs " + oppStr;
+  } else if (rStr) {
+    return rStr + ": " + xiLabel;
+  }
+  return xiLabel;
+}
+
+/**
+ * Formats combined format and venue text for presentation.
+ * e.g. "Two Day game at Kalang Park"
+ *
+ * @param {string} format - Match format (e.g. "Two Day", "One Day", "T20")
+ * @param {string} venue - Ground name (e.g. "Kalang Park")
+ * @returns {string}
+ */
+function formatFormatVenue(format, venue) {
+  var fStr = String(format || "").trim();
+  var vStr = String(venue || "").trim();
+  
+  if (fStr && vStr) {
+    if (/game|match/i.test(fStr)) {
+      return fStr + " at " + vStr;
+    }
+    return fStr + " game at " + vStr;
+  } else if (vStr) {
+    return "at " + vStr;
+  } else if (fStr) {
+    return /game|match/i.test(fStr) ? fStr : (fStr + " game");
+  }
+  return "";
+}
+
 // Node/Jest interop — Apps Script ignores this guard.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -763,6 +822,8 @@ if (typeof module !== 'undefined' && module.exports) {
     stripJuniorTag,
     pickFirstName,
     formatPlayerPresentationName,
+    formatRoundOpponent,
+    formatFormatVenue,
     DEFAULT_TEAM_CONFIGS,
     parseCsvString,
     formatTeamPrefix,

@@ -2955,6 +2955,58 @@ function formatPlayerPresentationName(name, role) {
 
 
 /**
+ * Formats combined round and opponent text for presentation.
+ * e.g. "Round 1: LCC 1st XI vs Mitcham - 2nd XI"
+ */
+function formatRoundOpponent(round, prefix, opponent) {
+  var rStr = String(round || "").trim();
+  if (rStr && !/^round/i.test(rStr) && /^\d+/.test(rStr)) {
+    rStr = "Round " + rStr;
+  }
+  
+  var xiLabel = "LCC 1st XI";
+  var pLower = String(prefix || "").toLowerCase();
+  if (pLower.indexOf("1") > -1) xiLabel = "LCC 1st XI";
+  else if (pLower.indexOf("2") > -1) xiLabel = "LCC 2nd XI";
+  else if (pLower.indexOf("3") > -1) xiLabel = "LCC 3rd XI";
+  else if (pLower.indexOf("4") > -1) xiLabel = "LCC 4th XI";
+  else if (pLower.indexOf("5") > -1) xiLabel = "LCC 5th XI";
+  
+  var oppStr = String(opponent || "").trim();
+  if (rStr && oppStr) {
+    return rStr + ": " + xiLabel + " vs " + oppStr;
+  } else if (oppStr) {
+    return xiLabel + " vs " + oppStr;
+  } else if (rStr) {
+    return rStr + ": " + xiLabel;
+  }
+  return xiLabel;
+}
+
+
+/**
+ * Formats combined format and venue text for presentation.
+ * e.g. "Two Day game at Kalang Park"
+ */
+function formatFormatVenue(format, venue) {
+  var fStr = String(format || "").trim();
+  var vStr = String(venue || "").trim();
+  
+  if (fStr && vStr) {
+    if (/game|match/i.test(fStr)) {
+      return fStr + " at " + vStr;
+    }
+    return fStr + " game at " + vStr;
+  } else if (vStr) {
+    return "at " + vStr;
+  } else if (fStr) {
+    return /game|match/i.test(fStr) ? fStr : (fStr + " game");
+  }
+  return "";
+}
+
+
+/**
  * Helper to retrieve a Google Drive image Blob directly in memory, bypassing HTTP URLs.
  */
 function getDriveImageBlob(urlOrId) {
@@ -3063,14 +3115,23 @@ function syncPresentationStagingToSlides(ss) {
     var slide = slides[t.slideIdx];
     var elements = slide.getPageElements();
 
+    var roundOpponentText = formatRoundOpponent(t.round, t.prefix, t.opponent);
+    var formatVenueText = formatFormatVenue(t.format, t.venue);
+
     // 1. Element-by-element Alt Text Tag Matching (No text replacement)
     var matchedPlayerTags = {};
     elements.forEach(function(el) {
       var tag = String(el.getTitle() || el.getDescription() || "").trim().toUpperCase();
       if (!tag) return;
 
-      // Match info Alt Text tags
-      if (tag === t.prefix + "_ROUND" || tag === "ROUND") {
+      // Match concatenated match tags (e.g. 1ST_ROUND_OPPONENT, 1ST_FORMAT_VENUE)
+      if (tag === t.prefix + "_ROUND_OPPONENT" || tag === "ROUND_OPPONENT") {
+        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(roundOpponentText);
+      } else if (tag === t.prefix + "_FORMAT_VENUE" || tag === "FORMAT_VENUE") {
+        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(formatVenueText);
+      }
+      // Match individual info Alt Text tags
+      else if (tag === t.prefix + "_ROUND" || tag === "ROUND") {
         if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.round);
       } else if (tag === t.prefix + "_OPPONENT" || tag === "OPPONENT") {
         if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.opponent);
