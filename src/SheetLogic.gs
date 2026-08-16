@@ -1644,7 +1644,12 @@ function syncPlayerHeadshots(ss) {
       var baseId = fileName.replace(/\.[^/.]+$/, "").trim().toLowerCase();
       var fileId = file.getId();
 
-      // Google CDN direct link
+      // Ensure file has public link view sharing so browser/CDN works
+      try {
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (shareErr) {}
+
+      // Google direct link
       var photoUrl = "https://lh3.googleusercontent.com/d/" + fileId;
       if (baseId === "default" || baseId === "transparent" || baseId === "placeholder" || baseId === "blank" || baseId === "none") {
         defaultPhotoUrl = photoUrl;
@@ -2921,6 +2926,30 @@ function formatPlayerPresentationName(name, role) {
 
 
 /**
+ * Helper to retrieve a Google Drive image Blob directly in memory, bypassing HTTP URLs.
+ */
+function getDriveImageBlob(urlOrId) {
+  if (!urlOrId) return null;
+  var fileId = "";
+  var str = String(urlOrId);
+  var m = str.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) {
+    fileId = m[1];
+  } else if (str.indexOf("http") === -1 && str.length >= 20) {
+    fileId = str;
+  }
+  if (fileId) {
+    try {
+      return DriveApp.getFileById(fileId).getBlob();
+    } catch (e) {
+      Logger.log("getDriveImageBlob error for " + fileId + ": " + e.message);
+    }
+  }
+  return null;
+}
+
+
+/**
  * Synchronizes Presentation_Staging team rosters and metadata directly to Google Slides using permanent Alt Text IDs.
  */
 function syncPresentationStagingToSlides(ss) {
@@ -2986,7 +3015,18 @@ function syncPresentationStagingToSlides(ss) {
     });
   });
 
-  var transparentPngUrl = PropertiesService.getScriptProperties().getProperty('DEFAULT_PHOTO_URL') || "https://upload.wikimedia.org/wikipedia/commons/c/ca/1x1.png";
+  var defaultBlob = null;
+  var defaultPhotoUrl = PropertiesService.getScriptProperties().getProperty('DEFAULT_PHOTO_URL') || "";
+  if (defaultPhotoUrl) {
+    defaultBlob = getDriveImageBlob(defaultPhotoUrl);
+  }
+  if (!defaultBlob) {
+    try {
+      defaultBlob = UrlFetchApp.fetch("https://upload.wikimedia.org/wikipedia/commons/c/ca/1x1.png").getBlob();
+    } catch (e) {
+      Logger.log("Fallback 1x1 fetch error: " + e.message);
+    }
+  }
 
   // Update each team's slide using permanent Alt Text IDs & spatial fallbacks
   teamData.forEach(function(t) {
@@ -3033,10 +3073,10 @@ function syncPresentationStagingToSlides(ss) {
           var pPhoto = t.players[photoNum - 1];
           if (el.getPageElementType() === SlidesApp.PageElementType.IMAGE) {
             try {
-              if (pPhoto.photoUrl) {
-                el.asImage().replace(pPhoto.photoUrl);
-              } else {
-                el.asImage().replace(transparentPngUrl);
+              var blob = (pPhoto && pPhoto.photoUrl) ? getDriveImageBlob(pPhoto.photoUrl) : null;
+              if (!blob) blob = defaultBlob;
+              if (blob) {
+                el.asImage().replace(blob);
               }
             } catch (err) {
               Logger.log("Image replace warning for " + pPhoto.name + ": " + err.message);
@@ -3095,10 +3135,10 @@ function syncPresentationStagingToSlides(ss) {
         imgEl.setDescription(t.prefix + "_PHOTO_" + (sIdx + 1));
         var pPhoto = t.players[sIdx];
         try {
-          if (pPhoto && pPhoto.photoUrl) {
-            imgEl.asImage().replace(pPhoto.photoUrl);
-          } else {
-            imgEl.asImage().replace(transparentPngUrl);
+          var blob = (pPhoto && pPhoto.photoUrl) ? getDriveImageBlob(pPhoto.photoUrl) : null;
+          if (!blob) blob = defaultBlob;
+          if (blob) {
+            imgEl.asImage().replace(blob);
           }
         } catch (imgErr) {
           Logger.log("Avatar replace warning for slot " + (sIdx + 1) + ": " + imgErr.message);
@@ -3305,8 +3345,11 @@ function savePlayerHeadshot(profileId, base64Data) {
     existingJpg.next().setTrashed(true);
   }
 
-  // Create new transparent PNG
+  // Create new transparent PNG with public sharing
   var newFile = folder.createFile(blob);
+  try {
+    newFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (shareErr) {}
   var fileId = newFile.getId();
   var photoUrl = "https://lh3.googleusercontent.com/d/" + fileId;
 
