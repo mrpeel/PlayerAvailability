@@ -3344,7 +3344,7 @@ function showPhotoStudioDialog() {
     '<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>' +
     '<style>' +
     '  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }' +
-    '  body { padding: 14px 18px; background: #fafafa; color: #222; overflow-y: hidden; }' +
+    '  body { padding: 14px 18px; background: #fafafa; color: #222; overflow-y: hidden; user-select: none; }' +
     '  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }' +
     '  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }' +
     '  .card h3 { font-size: 13px; font-weight: 700; color: #4d0012; margin-bottom: 8px; }' +
@@ -3352,13 +3352,13 @@ function showPhotoStudioDialog() {
     '  select, input[type="text"] { width: 100%; padding: 7px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; margin-bottom: 8px; }' +
     '  .drop-zone { border: 2px dashed #4d0012; border-radius: 8px; padding: 16px; text-align: center; background: #fff9e6; cursor: pointer; transition: all 0.2s; }' +
     '  .drop-zone:hover { background: #fff2cc; }' +
-    '  .canvas-container { position: relative; width: 100%; height: 210px; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 12px 12px; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; }' +
-    '  canvas { max-width: 100%; max-height: 100%; }' +
-    '  .preview-circle { width: 85px; height: 85px; border-radius: 50%; border: 3px solid #fac218; box-shadow: 0 2px 6px rgba(0,0,0,0.15); overflow: hidden; margin: 0 auto 6px; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 12px 12px; }' +
+    '  .canvas-container { position: relative; width: 100%; height: 210px; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 12px 12px; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd; }' +
+    '  canvas { max-width: 100%; max-height: 100%; cursor: grab; }' +
+    '  .preview-circle { width: 80px; height: 80px; border-radius: 50%; border: 3px solid #fac218; box-shadow: 0 2px 6px rgba(0,0,0,0.15); overflow: hidden; margin: 0 auto 4px; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 12px 12px; }' +
     '  .preview-circle img { width: 100%; height: 100%; object-fit: cover; }' +
-    '  .controls { display: flex; gap: 8px; align-items: center; margin-top: 8px; }' +
-    '  .controls button { padding: 5px 10px; font-size: 11px; font-weight: 600; border-radius: 5px; }' +
-    '  .actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; padding-top: 8px; border-top: 1px solid #eee; }' +
+    '  .controls { display: flex; gap: 8px; align-items: center; margin-top: 6px; }' +
+    '  .controls button { padding: 5px 10px; font-size: 11px; font-weight: 600; border-radius: 5px; cursor: pointer; }' +
+    '  .actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee; }' +
     '  button { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }' +
     '  .btn-primary { background: #4d0012; color: #fff; }' +
     '  .btn-primary:hover { background: #35000c; }' +
@@ -3388,16 +3388,17 @@ function showPhotoStudioDialog() {
     '    <input type="file" id="fileInput" accept="image/*" style="display:none;" onchange="handleFile(this.files[0])">' +
     '  </div>' +
     '  <div class="card">' +
-    '    <h3>3. Crop & AI Cutout</h3>' +
+    '    <h3>3. Position & AI Cutout</h3>' +
     '    <div class="canvas-container">' +
-    '      <canvas id="cropCanvas"></canvas>' +
+    '      <canvas id="cropCanvas" width="400" height="400"></canvas>' +
     '    </div>' +
+    '    <div style="font-size: 10px; color: #777; margin-top: 4px; text-align: center;">🖐️ Drag photo to center face • Scroll/Slider to zoom</div>' +
     '    <div class="controls">' +
     '      <label style="margin:0; font-size:11px;">Zoom:</label>' +
-    '      <input type="range" id="zoomSlider" min="0.5" max="3" step="0.05" value="1" oninput="drawCanvas()" style="flex:1;">' +
+    '      <input type="range" id="zoomSlider" min="0.5" max="3.5" step="0.02" value="1" oninput="drawCanvas()" style="flex:1;">' +
     '      <button class="btn-gold" id="bgBtn" onclick="removeBackground()" title="AI Human Portrait Background Removal">🪄 AI Cutout BG</button>' +
     '    </div>' +
-    '    <div style="text-align: center; margin-top: 6px;">' +
+    '    <div style="text-align: center; margin-top: 4px;">' +
     '      <div class="preview-circle">' +
     '        <img id="previewImg" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">' +
     '      </div>' +
@@ -3416,7 +3417,12 @@ function showPhotoStudioDialog() {
     '  var playersData = [];' +
     '  var rawImg = new Image();' +
     '  var imgLoaded = false;' +
-    '  var scale = 1;' +
+    '  var baseScale = 1;' +
+    '  var zoomMultiplier = 1;' +
+    '  var panX = 0, panY = 0;' +
+    '  var isDragging = false;' +
+    '  var startMouseX = 0, startMouseY = 0;' +
+    '  var startPanX = 0, startPanY = 0;' +
     '  var canvas = document.getElementById("cropCanvas");' +
     '  var ctx = canvas.getContext("2d");' +
     '  var selfieSegmentation = null;' +
@@ -3454,9 +3460,9 @@ function showPhotoStudioDialog() {
     '    reader.onload = function(e) {' +
     '      rawImg.onload = function() {' +
     '        imgLoaded = true;' +
-    '        canvas.width = 400;' +
-    '        canvas.height = 400;' +
-    '        scale = 1;' +
+    '        baseScale = 400 / Math.max(rawImg.width, rawImg.height);' +
+    '        zoomMultiplier = 1;' +
+    '        panX = 0; panY = 0;' +
     '        document.getElementById("zoomSlider").value = 1;' +
     '        drawCanvas();' +
     '        checkReady();' +
@@ -3467,27 +3473,70 @@ function showPhotoStudioDialog() {
     '  }' +
     '  function drawCanvas() {' +
     '    if (!imgLoaded) return;' +
-    '    scale = parseFloat(document.getElementById("zoomSlider").value);' +
+    '    zoomMultiplier = parseFloat(document.getElementById("zoomSlider").value);' +
+    '    var curScale = baseScale * zoomMultiplier;' +
+    '    var w = rawImg.width * curScale;' +
+    '    var h = rawImg.height * curScale;' +
+    '    var cx = 200 + panX;' +
+    '    var cy = 200 + panY;' +
     '    ctx.clearRect(0, 0, canvas.width, canvas.height);' +
-    '    var w = rawImg.width * scale;' +
-    '    var h = rawImg.height * scale;' +
-    '    ctx.drawImage(rawImg, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);' +
+    '    ctx.drawImage(rawImg, cx - w / 2, cy - h / 2, w, h);' +
     '    updatePreview();' +
     '  }' +
+    '  canvas.addEventListener("mousedown", function(e) {' +
+    '    if (!imgLoaded) return;' +
+    '    isDragging = true;' +
+    '    startMouseX = e.clientX; startMouseY = e.clientY;' +
+    '    startPanX = panX; startPanY = panY;' +
+    '    canvas.style.cursor = "grabbing";' +
+    '  });' +
+    '  window.addEventListener("mousemove", function(e) {' +
+    '    if (!isDragging) return;' +
+    '    panX = startPanX + (e.clientX - startMouseX);' +
+    '    panY = startPanY + (e.clientY - startMouseY);' +
+    '    drawCanvas();' +
+    '  });' +
+    '  window.addEventListener("mouseup", function() {' +
+    '    if (isDragging) { isDragging = false; canvas.style.cursor = "grab"; }' +
+    '  });' +
+    '  canvas.addEventListener("touchstart", function(e) {' +
+    '    if (!imgLoaded || e.touches.length !== 1) return;' +
+    '    isDragging = true;' +
+    '    startMouseX = e.touches[0].clientX; startMouseY = e.touches[0].clientY;' +
+    '    startPanX = panX; startPanY = panY;' +
+    '  }, { passive: true });' +
+    '  window.addEventListener("touchmove", function(e) {' +
+    '    if (!isDragging || e.touches.length !== 1) return;' +
+    '    panX = startPanX + (e.touches[0].clientX - startMouseX);' +
+    '    panY = startPanY + (e.touches[0].clientY - startMouseY);' +
+    '    drawCanvas();' +
+    '  }, { passive: true });' +
+    '  window.addEventListener("touchend", function() { isDragging = false; });' +
+    '  canvas.addEventListener("wheel", function(e) {' +
+    '    if (!imgLoaded) return;' +
+    '    e.preventDefault();' +
+    '    var slider = document.getElementById("zoomSlider");' +
+    '    var val = parseFloat(slider.value) + (e.deltaY < 0 ? 0.08 : -0.08);' +
+    '    slider.value = Math.max(0.5, Math.min(3.5, val));' +
+    '    drawCanvas();' +
+    '  }, { passive: false });' +
     '  function updatePreview() {' +
     '    document.getElementById("previewImg").src = canvas.toDataURL("image/png");' +
     '  }' +
     '  function removeBackground() {' +
     '    if (!imgLoaded) return;' +
     '    var btn = document.getElementById("bgBtn");' +
-    '    btn.innerText = "⏳ Processing AI...";' +
+    '    btn.innerText = "⏳ AI Working...";' +
     '    btn.disabled = true;' +
     '    var tempCanvas = document.createElement("canvas");' +
-    '    tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;' +
+    '    tempCanvas.width = 400; tempCanvas.height = 400;' +
     '    var tempCtx = tempCanvas.getContext("2d");' +
-    '    var w = rawImg.width * scale;' +
-    '    var h = rawImg.height * scale;' +
-    '    tempCtx.drawImage(rawImg, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);' +
+    '    var curScale = baseScale * zoomMultiplier;' +
+    '    var w = rawImg.width * curScale;' +
+    '    var h = rawImg.height * curScale;' +
+    '    var cx = 200 + panX;' +
+    '    var cy = 200 + panY;' +
+    '    tempCtx.drawImage(rawImg, cx - w / 2, cy - h / 2, w, h);' +
     '    if (selfieSegmentation) {' +
     '      selfieSegmentation.send({ image: tempCanvas }).catch(function(err) {' +
     '        console.error(err);' +
@@ -3503,13 +3552,16 @@ function showPhotoStudioDialog() {
     '    ctx.clearRect(0, 0, w, h);' +
     '    ctx.drawImage(results.segmentationMask, 0, 0, w, h);' +
     '    ctx.globalCompositeOperation = "source-in";' +
-    '    var sw = rawImg.width * scale;' +
-    '    var sh = rawImg.height * scale;' +
-    '    ctx.drawImage(rawImg, (w - sw) / 2, (h - sh) / 2, sw, sh);' +
+    '    var curScale = baseScale * zoomMultiplier;' +
+    '    var sw = rawImg.width * curScale;' +
+    '    var sh = rawImg.height * curScale;' +
+    '    var cx = 200 + panX;' +
+    '    var cy = 200 + panY;' +
+    '    ctx.drawImage(rawImg, cx - sw / 2, cy - sh / 2, sw, sh);' +
     '    ctx.restore();' +
     '    updatePreview();' +
     '    var btn = document.getElementById("bgBtn");' +
-    '    btn.innerText = "✨ Cutout Done!";' +
+    '    btn.innerText = "✨ AI Cutout Done!";' +
     '    btn.disabled = false;' +
     '  }' +
     '  function fallbackCutout() {' +

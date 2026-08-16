@@ -98,9 +98,12 @@
     var GAS_EXEC_URL = "https://script.google.com/macros/s/AKfycbxBl5Uhn6GucAIsvcDYpANfyN1aF3qXuooP1kEzwzH0LY_RnmkjLUjtfoOz8T-0uHNxbQ/exec";
     var rawImg = new Image();
     var imgLoaded = false;
-    var scale = 1;
-    var canvas = document.getElementById("cropCanvas");
-    var ctx = canvas.getContext("2d");
+    var baseScale = 1;
+    var zoomMultiplier = 1;
+    var panX = 0, panY = 0;
+    var isDragging = false;
+    var startMouseX = 0, startMouseY = 0;
+    var startPanX = 0, startPanY = 0;
 
     // Fetch players list
     fetch(GAS_EXEC_URL, {
@@ -130,9 +133,9 @@
       reader.onload = function(e) {
         rawImg.onload = function() {
           imgLoaded = true;
-          canvas.width = 400;
-          canvas.height = 400;
-          scale = 1;
+          baseScale = 400 / Math.max(rawImg.width, rawImg.height);
+          zoomMultiplier = 1;
+          panX = 0; panY = 0;
           document.getElementById("zoomSlider").value = 1;
           document.getElementById("cropSection").style.display = "block";
           drawCanvas();
@@ -145,13 +148,47 @@
 
     function drawCanvas() {
       if (!imgLoaded) return;
-      scale = parseFloat(document.getElementById("zoomSlider").value);
+      zoomMultiplier = parseFloat(document.getElementById("zoomSlider").value);
+      var curScale = baseScale * zoomMultiplier;
+      var w = rawImg.width * curScale;
+      var h = rawImg.height * curScale;
+      var cx = 200 + panX;
+      var cy = 200 + panY;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      var w = rawImg.width * scale;
-      var h = rawImg.height * scale;
-      ctx.drawImage(rawImg, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+      ctx.drawImage(rawImg, cx - w / 2, cy - h / 2, w, h);
       updatePreview();
     }
+
+    canvas.addEventListener("mousedown", function(e) {
+      if (!imgLoaded) return;
+      isDragging = true;
+      startMouseX = e.clientX; startMouseY = e.clientY;
+      startPanX = panX; startPanY = panY;
+      canvas.style.cursor = "grabbing";
+    });
+    window.addEventListener("mousemove", function(e) {
+      if (!isDragging) return;
+      panX = startPanX + (e.clientX - startMouseX);
+      panY = startPanY + (e.clientY - startMouseY);
+      drawCanvas();
+    });
+    window.addEventListener("mouseup", function() {
+      if (isDragging) { isDragging = false; canvas.style.cursor = "grab"; }
+    });
+
+    canvas.addEventListener("touchstart", function(e) {
+      if (!imgLoaded || e.touches.length !== 1) return;
+      isDragging = true;
+      startMouseX = e.touches[0].clientX; startMouseY = e.touches[0].clientY;
+      startPanX = panX; startPanY = panY;
+    }, { passive: true });
+    window.addEventListener("touchmove", function(e) {
+      if (!isDragging || e.touches.length !== 1) return;
+      panX = startPanX + (e.touches[0].clientX - startMouseX);
+      panY = startPanY + (e.touches[0].clientY - startMouseY);
+      drawCanvas();
+    }, { passive: true });
+    window.addEventListener("touchend", function() { isDragging = false; });
 
     function updatePreview() {
       document.getElementById("previewImg").src = canvas.toDataURL("image/png");
@@ -170,11 +207,14 @@
       btn.innerText = "⏳ AI Working...";
       btn.disabled = true;
       var tempCanvas = document.createElement("canvas");
-      tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;
+      tempCanvas.width = 400; tempCanvas.height = 400;
       var tempCtx = tempCanvas.getContext("2d");
-      var w = rawImg.width * scale;
-      var h = rawImg.height * scale;
-      tempCtx.drawImage(rawImg, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+      var curScale = baseScale * zoomMultiplier;
+      var w = rawImg.width * curScale;
+      var h = rawImg.height * curScale;
+      var cx = 200 + panX;
+      var cy = 200 + panY;
+      tempCtx.drawImage(rawImg, cx - w / 2, cy - h / 2, w, h);
       if (selfieSegmentation) {
         selfieSegmentation.send({ image: tempCanvas }).catch(function(err) {
           console.error(err);
@@ -191,13 +231,16 @@
       ctx.clearRect(0, 0, w, h);
       ctx.drawImage(results.segmentationMask, 0, 0, w, h);
       ctx.globalCompositeOperation = "source-in";
-      var sw = rawImg.width * scale;
-      var sh = rawImg.height * scale;
-      ctx.drawImage(rawImg, (w - sw) / 2, (h - sh) / 2, sw, sh);
+      var curScale = baseScale * zoomMultiplier;
+      var sw = rawImg.width * curScale;
+      var sh = rawImg.height * curScale;
+      var cx = 200 + panX;
+      var cy = 200 + panY;
+      ctx.drawImage(rawImg, cx - sw / 2, cy - sh / 2, sw, sh);
       ctx.restore();
       updatePreview();
       var btn = document.querySelector(".slider-row button");
-      btn.innerText = "✨ Cutout Done!";
+      btn.innerText = "✨ AI Cutout Done!";
       btn.disabled = false;
     }
 
