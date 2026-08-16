@@ -176,18 +176,18 @@ function deployVerticalRoundSheet(ss, dateStr) {
 
   // List 2: Available for Round (Cols F-I)
   ws.getRange("F3:I3").merge().setValue("AVAILABLE FOR ROUND").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
-  ws.getRange("F4:I4").setValues([["Profile ID", "Player Name", "Notes Context", "Action Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
+  ws.getRange("F4:I4").setValues([["Profile ID", "Player Name", "Notes Context", "Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
 
   // List 3: Unavailable for Round (Cols K-N)
   ws.getRange("K3:N3").merge().setValue("UNAVAILABLE FOR ROUND").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
-  ws.getRange("K4:N4").setValues([["Profile ID", "Player Name", "Exemption Notes", "Action Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
+  ws.getRange("K4:N4").setValues([["Profile ID", "Player Name", "Exemption Notes", "Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
   if (unavailableSnapshot.length > 0) {
     ws.getRange(5, 11, unavailableSnapshot.length, 4).setValues(unavailableSnapshot);
   }
 
   // List 4: Unknown Status Pool Ledger (Cols P-S)
   ws.getRange("P3:S3").merge().setValue("UNKNOWN AVAILABILITY STATUS").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
-  ws.getRange("P4:S4").setValues([["Profile ID", "Player Name", "Notes Context", "Action Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
+  ws.getRange("P4:S4").setValues([["Profile ID", "Player Name", "Notes Context", "Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
   if (unknownSnapshot.length > 0) {
     ws.getRange(5, 16, unknownSnapshot.length, 4).setValues(unknownSnapshot);
   }
@@ -1384,18 +1384,25 @@ function setupWhatsAppMessageColumns(ws, dateStr) {
 
 /**
  * Standard column width calculator for round selection tabs.
- * Action switchers 106px (-2px), Notes 143px (-5px), Names 153px, Notes font size 9pt.
+ * Switchers 96px, Notes 143px, Names 153px, Notes font size 9pt.
  */
 function applyRoundTabColumnWidths(ws) {
   if (!ws) return;
   ws.setColumnWidth(1, 110); ws.setColumnWidth(2, 190); ws.setColumnWidth(3, 20);
   ws.setColumnWidth(4, 190); ws.setColumnWidth(5, 20);
-  ws.setColumnWidth(6, 80);  ws.setColumnWidth(7, 153); ws.setColumnWidth(8, 143); ws.setColumnWidth(9, 106); ws.setColumnWidth(10, 20);
-  ws.setColumnWidth(11, 80); ws.setColumnWidth(12, 153); ws.setColumnWidth(13, 143); ws.setColumnWidth(14, 106); ws.setColumnWidth(15, 20);
-  ws.setColumnWidth(16, 80); ws.setColumnWidth(17, 153); ws.setColumnWidth(18, 143); ws.setColumnWidth(19, 106); ws.setColumnWidth(20, 20);
+  ws.setColumnWidth(6, 80);  ws.setColumnWidth(7, 153); ws.setColumnWidth(8, 143); ws.setColumnWidth(9, 96); ws.setColumnWidth(10, 20);
+  ws.setColumnWidth(11, 80); ws.setColumnWidth(12, 153); ws.setColumnWidth(13, 143); ws.setColumnWidth(14, 96); ws.setColumnWidth(15, 20);
+  ws.setColumnWidth(16, 80); ws.setColumnWidth(17, 153); ws.setColumnWidth(18, 143); ws.setColumnWidth(19, 96); ws.setColumnWidth(20, 20);
   ws.setColumnWidth(21, 330); // Col U (Availability Message)
   ws.setColumnWidth(22, 330); // Col V (Wall of Shame Message)
   ws.setColumnWidth(23, 20);  // Col W (Spacer)
+
+  // Update header text to "Switcher" if existing
+  try {
+    if (String(ws.getRange("I4").getValue()).indexOf("Switcher") > -1) ws.getRange("I4").setValue("Switcher");
+    if (String(ws.getRange("N4").getValue()).indexOf("Switcher") > -1) ws.getRange("N4").setValue("Switcher");
+    if (String(ws.getRange("S4").getValue()).indexOf("Switcher") > -1) ws.getRange("S4").setValue("Switcher");
+  } catch (e) {}
 
   // Format Notes values (Row 5 and below) with 9pt font
   try {
