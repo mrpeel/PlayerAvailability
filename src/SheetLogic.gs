@@ -1198,6 +1198,7 @@ function onOpen() {
     .addSeparator()
     .addItem("Sync player headshots from Google Drive", "menuSyncPlayerHeadshots")
     .addItem("Sync to Google Slides presentation", "menuSyncToGoogleSlides")
+    .addItem("Assign permanent IDs to Google Slides elements", "menuAutoTagSlides")
     .addItem("Inspect Google Slides layout", "menuInspectSlidesLayout")
     .addSeparator()
     .addItem("Import fixtures from PlayHQ export", "showImportFixturesDialog")
@@ -2767,7 +2768,94 @@ function menuInspectSlidesLayout() {
 
 
 /**
- * Synchronizes Presentation_Staging team rosters and metadata directly to Google Slides.
+ * Automatically assigns permanent Alt Text IDs (PLAYER_1..13, PHOTO_1..13, ROUND, etc.) to slide elements.
+ */
+function autoTagSlideElements(ss) {
+  var presId = getSlidesPresentationId();
+  if (!presId) throw new Error("SLIDES_PRESENTATION_ID is not configured.");
+
+  var pres = SlidesApp.openById(presId);
+  var slides = pres.getSlides();
+
+  var frames = [
+    { name: "FIRST ELEVEN", prefix: "1ST", slideIdx: 1 }, 
+    { name: "SECOND ELEVEN", prefix: "2ND", slideIdx: 2 }, 
+    { name: "THIRD ELEVEN", prefix: "3RD", slideIdx: 3 }, 
+    { name: "FOURTH ELEVEN", prefix: "4TH", slideIdx: 4 }, 
+    { name: "FIFTH ELEVEN", prefix: "5TH", slideIdx: 5 }
+  ];
+
+  var taggedCount = 0;
+  frames.forEach(function(f) {
+    if (f.slideIdx >= slides.length) return;
+    var slide = slides[f.slideIdx];
+    var elements = slide.getPageElements();
+
+    var textShapes = [];
+    var imageElements = [];
+
+    elements.forEach(function(el) {
+      var type = el.getPageElementType();
+      if (type === SlidesApp.PageElementType.SHAPE) {
+        var shp = el.asShape();
+        var txt = shp.getText() ? shp.getText().asString().trim() : "";
+        if (txt.toLowerCase() !== f.name.toLowerCase() && txt.toLowerCase() !== "first eleven" && txt.toLowerCase() !== "second eleven" && txt.toLowerCase() !== "third eleven" && txt.toLowerCase() !== "fourth eleven" && txt.toLowerCase() !== "fifth eleven") {
+          textShapes.push(el);
+        }
+      } else if (type === SlidesApp.PageElementType.IMAGE) {
+        imageElements.push(el);
+      }
+    });
+
+    // Sort shapes spatially (top-to-bottom, left-to-right)
+    textShapes.sort(function(a, b) {
+      var diffY = a.getTop() - b.getTop();
+      if (Math.abs(diffY) > 20) return diffY;
+      return a.getLeft() - b.getLeft();
+    });
+
+    // Sort images spatially (top-to-bottom, left-to-right)
+    imageElements.sort(function(a, b) {
+      var diffY = a.getTop() - b.getTop();
+      if (Math.abs(diffY) > 20) return diffY;
+      return a.getLeft() - b.getLeft();
+    });
+
+    textShapes.forEach(function(shp, idx) {
+      shp.setTitle("PLAYER_" + (idx + 1));
+      shp.setDescription(f.prefix + "_PLAYER_" + (idx + 1));
+      taggedCount++;
+    });
+
+    imageElements.forEach(function(img, idx) {
+      img.setTitle("PHOTO_" + (idx + 1));
+      img.setDescription(f.prefix + "_PHOTO_" + (idx + 1));
+      taggedCount++;
+    });
+  });
+
+  return "Successfully assigned permanent Alt Text IDs to " + taggedCount + " elements across team slides!";
+}
+
+
+/**
+ * Menu action to automatically assign permanent IDs to slide elements.
+ */
+function menuAutoTagSlides() {
+  var ss = getSS();
+  if (!ss) return;
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var res = autoTagSlideElements(ss);
+    ui.alert("🏏 Slide Element IDs Assigned", res + "\n\nAll text boxes and photo cards now have permanent IDs (PLAYER_1..13, PHOTO_1..13) that persist across all rounds!", ui.ButtonSet.OK);
+  } catch (err) {
+    ui.alert("Auto-Tag Error", err.message, ui.ButtonSet.OK);
+  }
+}
+
+
+/**
+ * Synchronizes Presentation_Staging team rosters and metadata directly to Google Slides using permanent Alt Text IDs.
  */
 function syncPresentationStagingToSlides(ss) {
   var s = ss || getSS();
@@ -2779,16 +2867,28 @@ function syncPresentationStagingToSlides(ss) {
   var staging = s.getSheetByName("Presentation_Staging");
   if (!staging) return { success: false, message: "Presentation_Staging tab not found." };
 
+  // Read player photos map from Players tab
+  var playerSheet = s.getSheetByName("Players");
+  var photoUrlMap = {};
+  if (playerSheet && playerSheet.getLastRow() > 1) {
+    var pRows = playerSheet.getRange(2, 1, playerSheet.getLastRow() - 1, 14).getValues();
+    pRows.forEach(function(pr) {
+      var pid = String(pr[0] || "").trim().toLowerCase();
+      var url = String(pr[13] || "").trim(); // Col N
+      if (pid && url) photoUrlMap[pid] = url;
+    });
+  }
+
   var pres = SlidesApp.openById(presId);
   var slides = pres.getSlides();
 
   // Read data for all 5 teams from Presentation_Staging
   var frames = [
-    { name: "FIRST ELEVEN", prefix: "1ST", start: 4 }, 
-    { name: "SECOND ELEVEN", prefix: "2ND", start: 23 }, 
-    { name: "THIRD ELEVEN", prefix: "3RD", start: 42 }, 
-    { name: "FOURTH ELEVEN", prefix: "4TH", start: 61 }, 
-    { name: "FIFTH ELEVEN", prefix: "5TH", start: 80 }
+    { name: "FIRST ELEVEN", prefix: "1ST", slideIdx: 1, start: 4 }, 
+    { name: "SECOND ELEVEN", prefix: "2ND", slideIdx: 2, start: 23 }, 
+    { name: "THIRD ELEVEN", prefix: "3RD", slideIdx: 3, start: 42 }, 
+    { name: "FOURTH ELEVEN", prefix: "4TH", slideIdx: 4, start: 61 }, 
+    { name: "FIFTH ELEVEN", prefix: "5TH", slideIdx: 5, start: 80 }
   ];
 
   var teamData = [];
@@ -2804,12 +2904,14 @@ function syncPresentationStagingToSlides(ss) {
       var role = String(staging.getRange(pRow, 1).getValue() || "").trim();
       var name = String(staging.getRange(pRow, 2).getValue() || "").trim();
       var profileId = String(staging.getRange(pRow, 3).getValue() || "").trim();
-      players.push({ role: role, name: name, profileId: profileId });
+      var photoUrl = photoUrlMap[profileId.toLowerCase()] || "";
+      players.push({ role: role, name: name, profileId: profileId, photoUrl: photoUrl });
     }
 
     teamData.push({
       teamName: f.name,
       prefix: f.prefix,
+      slideIdx: f.slideIdx,
       round: roundVal,
       opponent: oppVal,
       venue: venVal,
@@ -2818,37 +2920,108 @@ function syncPresentationStagingToSlides(ss) {
     });
   });
 
-  // Global replacement tags across presentation (e.g. {{1ST_ROUND}}, {{1ST_PLAYER_1}}...)
+  // Update each team's slide using permanent Alt Text IDs
   teamData.forEach(function(t) {
-    pres.replaceAllText("{{" + t.prefix + "_ROUND}}", t.round);
-    pres.replaceAllText("{{" + t.prefix + "_OPPONENT}}", t.opponent);
-    pres.replaceAllText("{{" + t.prefix + "_VENUE}}", t.venue);
-    pres.replaceAllText("{{" + t.prefix + "_FORMAT}}", t.format);
+    if (t.slideIdx >= slides.length) return;
+    var slide = slides[t.slideIdx];
+    var elements = slide.getPageElements();
 
-    for (var i = 0; i < t.players.length; i++) {
-      pres.replaceAllText("{{" + t.prefix + "_PLAYER_" + (i + 1) + "}}", t.players[i].name);
-      pres.replaceAllText("{{" + t.prefix + "_ROLE_" + (i + 1) + "}}", t.players[i].role);
-    }
-  });
+    var matchedPlayerTags = {};
+    elements.forEach(function(el) {
+      var tag = String(el.getTitle() || el.getDescription() || "").trim().toUpperCase();
+      if (!tag) return;
 
-  // Per-slide contextual replacement (Slide 1 = 1st XI, Slide 2 = 2nd XI...)
-  slides.forEach(function(slide, sIdx) {
-    if (sIdx < teamData.length) {
-      var t = teamData[sIdx];
-      slide.replaceAllText("{{ROUND}}", t.round);
-      slide.replaceAllText("{{OPPONENT}}", t.opponent);
-      slide.replaceAllText("{{VENUE}}", t.venue);
-      slide.replaceAllText("{{FORMAT}}", t.format);
-      slide.replaceAllText("{{TEAM_NAME}}", t.teamName);
-
-      for (var i = 0; i < t.players.length; i++) {
-        slide.replaceAllText("{{PLAYER_" + (i + 1) + "}}", t.players[i].name);
-        slide.replaceAllText("{{ROLE_" + (i + 1) + "}}", t.players[i].role);
+      if (tag === "ROUND" || tag === "{{" + t.prefix + "_ROUND}}" || tag === "{{ROUND}}") {
+        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.round);
+      } else if (tag === "OPPONENT" || tag === "{{" + t.prefix + "_OPPONENT}}" || tag === "{{OPPONENT}}") {
+        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.opponent);
+      } else if (tag === "VENUE" || tag === "{{" + t.prefix + "_VENUE}}" || tag === "{{VENUE}}") {
+        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.venue);
+      } else if (tag === "FORMAT" || tag === "{{" + t.prefix + "_FORMAT}}" || tag === "{{FORMAT}}") {
+        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.format);
       }
+
+      // Match PLAYER_1 .. PLAYER_13
+      var pMatch = tag.match(/^(?:.*_)?PLAYER_?(\d+)$/);
+      if (pMatch) {
+        var pNum = parseInt(pMatch[1], 10);
+        if (pNum >= 1 && pNum <= t.players.length) {
+          var pInfo = t.players[pNum - 1];
+          matchedPlayerTags[pNum] = true;
+          if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) {
+            el.asShape().getText().setText(pInfo.name);
+          }
+        }
+      }
+
+      // Match PHOTO_1 .. PHOTO_13
+      var photoMatch = tag.match(/^(?:.*_)?PHOTO_?(\d+)$/);
+      if (photoMatch) {
+        var photoNum = parseInt(photoMatch[1], 10);
+        if (photoNum >= 1 && photoNum <= t.players.length) {
+          var pPhoto = t.players[photoNum - 1];
+          if (pPhoto.photoUrl && el.getPageElementType() === SlidesApp.PageElementType.IMAGE) {
+            try {
+              el.asImage().replace(pPhoto.photoUrl);
+            } catch (err) {
+              Logger.log("Image replace warning for " + pPhoto.name + ": " + err.message);
+            }
+          }
+        }
+      }
+    });
+
+    // Fallback: If no Alt Text IDs were manually set yet, auto-assign and populate spatially
+    if (Object.keys(matchedPlayerTags).length === 0) {
+      var textShapes = [];
+      elements.forEach(function(el) {
+        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) {
+          var shp = el.asShape();
+          var txt = shp.getText() ? shp.getText().asString().trim() : "";
+          if (txt.toLowerCase() !== t.teamName.toLowerCase() && txt.toLowerCase() !== "first eleven" && txt.toLowerCase() !== "second eleven" && txt.toLowerCase() !== "third eleven" && txt.toLowerCase() !== "fourth eleven" && txt.toLowerCase() !== "fifth eleven") {
+            textShapes.push(el);
+          }
+        }
+      });
+
+      textShapes.sort(function(a, b) {
+        var diffY = a.getTop() - b.getTop();
+        if (Math.abs(diffY) > 20) return diffY;
+        return a.getLeft() - b.getLeft();
+      });
+
+      textShapes.forEach(function(shpEl, sIdx) {
+        if (sIdx < t.players.length) {
+          shpEl.setTitle("PLAYER_" + (sIdx + 1));
+          shpEl.setDescription(t.prefix + "_PLAYER_" + (sIdx + 1));
+          shpEl.asShape().getText().setText(t.players[sIdx].name);
+        }
+      });
     }
+
+    // Update any 2x4 Match Info Tables (T20 slides or fixture summary tables)
+    elements.forEach(function(el) {
+      if (el.getPageElementType() === SlidesApp.PageElementType.TABLE) {
+        var tbl = el.asTable();
+        for (var r = 0; r < tbl.getNumRows(); r++) {
+          for (var c = 0; c < tbl.getNumColumns(); c++) {
+            var label = tbl.getCell(r, c).getText().asString().trim().toLowerCase();
+            if (label === "round" && c + 1 < tbl.getNumColumns()) {
+              tbl.getCell(r, c + 1).getText().setText(t.round);
+            } else if ((label === "playing" || label === "opponent" || label === "versus" || label === "vs") && c + 1 < tbl.getNumColumns()) {
+              tbl.getCell(r, c + 1).getText().setText(t.opponent);
+            } else if ((label === "ground" || label === "venue") && c + 1 < tbl.getNumColumns()) {
+              tbl.getCell(r, c + 1).getText().setText(t.venue);
+            } else if (label === "format" && c + 1 < tbl.getNumColumns()) {
+              tbl.getCell(r, c + 1).getText().setText(t.format);
+            }
+          }
+        }
+      }
+    });
   });
 
-  return { success: true, message: "Successfully synced all 5 teams to Google Slides deck!" };
+  return { success: true, message: "Successfully synced all 5 teams to Google Slides using permanent element IDs!" };
 }
 
 
