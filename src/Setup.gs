@@ -46,9 +46,9 @@ function createCoreDatabaseSheets(ss) {
   var playerHeaders = [[
     "ProfileID", "FirstName", "LastName", "FullName",
     "JuniorLevel", "T20Squad", "GlobalStatus", "ExpectedReturnDate",
-    "Phone", "Phone2", "Phone3", "Phone4", "Email"
+    "Phone", "Phone2", "Phone3", "Phone4", "Email", "PhotoUrl"
   ]];
-  playerSheet.getRange(1, 1, 1, 13).setValues(playerHeaders).setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.maroonBg).setFontColor(LCC_SETUP_PALETTE.maroonFg);
+  playerSheet.getRange(1, 1, 1, 14).setValues(playerHeaders).setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.maroonBg).setFontColor(LCC_SETUP_PALETTE.maroonFg);
   
   // 2. CONFIG TAB (Team configuration)
   var configSheet = ss.getSheetByName("Config") || ss.insertSheet("Config");
@@ -110,7 +110,7 @@ function applyAllStandardColumnWidths(ss) {
 
   var playerSheet = ss.getSheetByName("Players");
   if (playerSheet) {
-    var playerWidths = [280, 120, 140, 180, 100, 90, 120, 150, 140, 140, 140, 140, 240];
+    var playerWidths = [120, 110, 110, 150, 90, 80, 110, 120, 120, 120, 120, 120, 180, 200];
     for (var p = 0; p < playerWidths.length; p++) {
       playerSheet.setColumnWidth(p + 1, playerWidths[p]);
     }
@@ -214,8 +214,8 @@ function buildPresentationStagingHub(ss) {
       // Col C: Dynamic Profile ID Lookup from Players tab (Hidden)
       sh.getRange(currRow, 3).setFormula('=IFERROR(IF(B' + currRow + '="", "", INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$D$2:$D, 0))), IFERROR(INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$B$2:$B & " " & Players!$C$2:$C, 0)), ""))');
       
-      // Col D: Dynamic Headshot Image from Drive
-      sh.getRange(currRow, 4).setFormula('=IFERROR(IF(C' + currRow + '="", "", IMAGE(LCC_PLAYER_PHOTO_URL(C' + currRow + '))), "")');
+      // Col D: Dynamic Headshot Image from Players tab PhotoUrl
+      sh.getRange(currRow, 4).setFormula('=IFERROR(IF(B' + currRow + '="", "", IMAGE(INDEX(Players!$N$2:$N, MATCH(C' + currRow + ', Players!$A$2:$A, 0)))), "")');
     }
     
     // Set borders for this team frame

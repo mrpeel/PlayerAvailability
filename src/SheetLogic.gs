@@ -1190,7 +1190,8 @@ function onOpen() {
     .addSeparator()
     .addItem("Pull new players into round from Master Players list", "showPullNewPlayersDialog")
     .addItem("Mark player as inactive", "showMarkInactiveDialog")
-    .addItem("Record player injury / absence", "showRecordInjuryDialog")
+    .addSeparator()
+    .addItem("Sync player headshots from Google Drive", "menuSyncPlayerHeadshots")
     .addSeparator()
     .addItem("Import fixtures from PlayHQ export", "showImportFixturesDialog")
     .addItem("Import players from PlayHQ export", "showImportPlayHQDialog")
@@ -1210,7 +1211,8 @@ function onOpen() {
         }
       });
 
-      // Auto-sync Presentation Staging Hub dropdown and formatting
+      // Auto-sync Presentation Staging Hub and Headshots
+      syncPlayerHeadshots(ss);
       syncPresentationStagingHub(ss);
     }
   } catch (e) {
@@ -1543,8 +1545,8 @@ function syncPresentationStagingHub(ss, targetRoundName) {
           // Col C: Dynamic Profile ID Lookup from Players tab (Hidden)
           sh.getRange(currRow, 3).setFormula('=IFERROR(IF(B' + currRow + '="", "", INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$D$2:$D, 0))), IFERROR(INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$B$2:$B & " " & Players!$C$2:$C, 0)), ""))');
           
-          // Col D: Dynamic Headshot Image from Drive
-          sh.getRange(currRow, 4).setFormula('=IFERROR(IF(C' + currRow + '="", "", IMAGE(LCC_PLAYER_PHOTO_URL(C' + currRow + '))), "")');
+          // Col D: Dynamic Headshot Image from Players tab PhotoUrl
+          sh.getRange(currRow, 4).setFormula('=IFERROR(IF(B' + currRow + '="", "", IMAGE(INDEX(Players!$N$2:$N, MATCH(C' + currRow + ', Players!$A$2:$A, 0)))), "")');
         }
         
         sh.getRange(rowIdx, 1, 17, 4).setBorder(true, true, true, true, true, true, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
@@ -1594,12 +1596,71 @@ function syncPresentationStagingHub(ss, targetRoundName) {
 
 
 /**
+ * Scans the Google Drive headshots folder and syncs photo URLs into the Players tab (Col N: PhotoUrl).
+ */
+function syncPlayerHeadshots(ss) {
+  try {
+    var s = ss || getSS();
+    if (!s) return;
+    var folderId = getHeadshotFolderId();
+    if (!folderId) return;
+
+    var folder = DriveApp.getFolderById(folderId);
+    var files = folder.getFiles();
+    var photoMap = {};
+    while (files.hasNext()) {
+      var file = files.next();
+      var fileName = file.getName();
+      var baseId = fileName.replace(/\.[^/.]+$/, "").trim();
+      var fileId = file.getId();
+      // Google CDN thumbnail endpoint for native =IMAGE() rendering
+      var photoUrl = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w500";
+      photoMap[baseId] = photoUrl;
+    }
+
+    var playerSheet = s.getSheetByName("Players");
+    if (!playerSheet) return;
+    
+    // Ensure Col N Header is "PhotoUrl"
+    playerSheet.getRange(1, 14).setValue("PhotoUrl").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg);
+    
+    var lastRow = playerSheet.getLastRow();
+    if (lastRow > 1) {
+      var profileIds = playerSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+      var photoColValues = [];
+      for (var r = 0; r < profileIds.length; r++) {
+        var pid = String(profileIds[r][0] || "").trim();
+        var url = photoMap[pid] || "";
+        photoColValues.push([url]);
+      }
+      playerSheet.getRange(2, 14, photoColValues.length, 1).setValues(photoColValues);
+    }
+  } catch (e) {
+    Logger.log("syncPlayerHeadshots warning: " + e.message);
+  }
+}
+
+
+/**
+ * Menu action to manually sync player headshots from Google Drive.
+ */
+function menuSyncPlayerHeadshots() {
+  var ss = getSS();
+  if (!ss) return;
+  syncPlayerHeadshots(ss);
+  syncPresentationStagingHub(ss);
+  ss.toast("Player headshots synced from Google Drive!", "LCC Selection", 4);
+}
+
+
+/**
  * Menu action to re-apply standard column widths across all tabs.
  */
 function menuResetColumnWidths() {
   var ss = getSS();
   if (!ss) return;
   applyAllStandardColumnWidths(ss);
+  syncPlayerHeadshots(ss);
   syncPresentationStagingHub(ss);
   ss.toast("Standard column widths and Presentation Staging Hub refreshed.", "LCC Selection Engine", 4);
 }
