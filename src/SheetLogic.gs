@@ -304,6 +304,16 @@ function doPost(e) {
       return jsonResponse(simResult);
     }
 
+    if (action === 'getPlayersListForStudio') {
+      var studioPlayers = getPlayersListForStudio();
+      return jsonResponse({ status: "success", players: studioPlayers });
+    }
+
+    if (action === 'savePlayerHeadshot') {
+      var saveRes = savePlayerHeadshot(payload.profileId, payload.base64Data);
+      return jsonResponse(saveRes);
+    }
+
     if (action === 'updateGlobalStatus') {
       var profileId = String(payload.profileId || payload.playerId).trim();
       var newStatus = payload.status || 'Active';
@@ -1196,8 +1206,10 @@ function onOpen() {
     .addItem("Pull new players into round from Master Players list", "showPullNewPlayersDialog")
     .addItem("Mark player as inactive", "showMarkInactiveDialog")
     .addSeparator()
+    .addItem("📸 Player Photo Studio", "showPhotoStudioDialog")
     .addItem("Sync player headshots from Google Drive", "menuSyncPlayerHeadshots")
-    .addItem("Sync to Google Slides presentation", "menuSyncToGoogleSlides")
+    .addSeparator()
+    .addItem("🚀 Sync to Google Slides presentation", "showSyncSlidesDialog")
     .addItem("Assign permanent IDs to Google Slides elements", "menuAutoTagSlides")
     .addItem("Inspect Google Slides layout", "menuInspectSlidesLayout")
     .addSeparator()
@@ -3121,20 +3133,386 @@ function syncPresentationStagingToSlides(ss) {
 
 
 /**
- * Menu action to synchronize Presentation_Staging to Google Slides.
+ * Retrieves summary info for the Google Slides sync dialog.
  */
-function menuSyncToGoogleSlides() {
+function getSlidesSyncSummary() {
   var ss = getSS();
-  if (!ss) return;
-  var ui = SpreadsheetApp.getUi();
-  try {
-    var res = syncPresentationStagingToSlides(ss);
-    if (res.success) {
-      ui.alert("🏏 Google Slides Synced", res.message + "\n\nPresentation URL:\nhttps://docs.google.com/presentation/d/" + getSlidesPresentationId() + "/edit", ui.ButtonSet.OK);
+  var presId = getSlidesPresentationId();
+  var presUrl = "https://docs.google.com/presentation/d/" + presId + "/edit";
+  var staging = ss ? ss.getSheetByName("Presentation_Staging") : null;
+  var roundVal = "";
+  if (staging) {
+    var rawB1 = staging.getRange("B1").getValue();
+    if (rawB1 instanceof Date) {
+      roundVal = Utilities.formatDate(rawB1, "Australia/Melbourne", "yyyy-MM-dd");
     } else {
-      ui.alert("Sync Warning", res.message, ui.ButtonSet.OK);
+      roundVal = String(rawB1 || "").trim();
     }
-  } catch (err) {
-    ui.alert("Google Slides Sync Error", err.message, ui.ButtonSet.OK);
   }
+  return {
+    presentationId: presId,
+    presentationUrl: presUrl,
+    roundToPresent: roundVal || "(None selected in B1)",
+    teamCount: 5
+  };
+}
+
+
+/**
+ * Opens the interactive Google Slides Sync modal dialog.
+ */
+function showSyncSlidesDialog() {
+  var html = HtmlService.createHtmlOutput(
+    '<!DOCTYPE html>' +
+    '<html><head><base target="_top">' +
+    '<style>' +
+    '  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }' +
+    '  body { padding: 24px; background: #fafafa; color: #333; }' +
+    '  .header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; border-bottom: 2px solid #4d0012; padding-bottom: 12px; }' +
+    '  .header h2 { color: #4d0012; font-size: 20px; font-weight: 700; }' +
+    '  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }' +
+    '  .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }' +
+    '  .info-row:last-child { border-bottom: none; }' +
+    '  .label { color: #666; font-weight: 500; }' +
+    '  .value { color: #111; font-weight: 600; }' +
+    '  .actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }' +
+    '  button { padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }' +
+    '  .btn-primary { background: #4d0012; color: #fff; }' +
+    '  .btn-primary:hover { background: #35000c; }' +
+    '  .btn-secondary { background: #e0e0e0; color: #444; }' +
+    '  .btn-secondary:hover { background: #d0d0d0; }' +
+    '  .btn-gold { background: #fac218; color: #4d0012; border: 1px solid #dfac13; }' +
+    '  .btn-gold:hover { background: #e6b216; }' +
+    '  .spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid #f3f3f3; border-top: 3px solid #4d0012; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 12px; }' +
+    '  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }' +
+    '  .state-box { text-align: center; padding: 24px 0; }' +
+    '</style>' +
+    '</head><body>' +
+    '<div class="header">' +
+    '  <h2>🏏 Sync to Google Slides</h2>' +
+    '</div>' +
+    '<div id="confirmState">' +
+    '  <p style="font-size: 14px; color: #555; margin-bottom: 16px;">This will read the active round selection from <strong>Presentation_Staging</strong> and populate all 5 team slides in your Google Slides deck.</p>' +
+    '  <div class="card">' +
+    '    <div class="info-row"><span class="label">Round to Present:</span><span class="value" id="roundVal">Loading...</span></div>' +
+    '    <div class="info-row"><span class="label">Teams:</span><span class="value">1st, 2nd, 3rd, 4th, 5th Elevens</span></div>' +
+    '    <div class="info-row"><span class="label">Headshot Sync:</span><span class="value">Drive Photos & Transparent fallback</span></div>' +
+    '  </div>' +
+    '  <div class="actions">' +
+    '    <button class="btn-secondary" onclick="google.script.host.close()">Cancel</button>' +
+    '    <button class="btn-primary" id="syncBtn" onclick="startSync()">🚀 Start Sync</button>' +
+    '  </div>' +
+    '</div>' +
+    '<div id="loadingState" style="display: none;" class="state-box">' +
+    '  <div class="spinner"></div>' +
+    '  <p style="font-size: 15px; font-weight: 600; color: #4d0012;">Updating Google Slides presentation...</p>' +
+    '  <p style="font-size: 13px; color: #777; margin-top: 4px;">Populating team rosters, match metadata, and player headshots.</p>' +
+    '</div>' +
+    '<div id="successState" style="display: none;" class="state-box">' +
+    '  <div style="font-size: 40px; margin-bottom: 12px;">✅</div>' +
+    '  <h3 style="color: #4d0012; font-size: 18px; margin-bottom: 8px;">Sync Complete!</h3>' +
+    '  <p id="successMsg" style="font-size: 14px; color: #555; margin-bottom: 24px;">All 5 team slides are now up to date.</p>' +
+    '  <div class="actions" style="justify-content: center;">' +
+    '    <button class="btn-gold" id="openSlidesBtn" onclick="openSlides()">🔗 Open Google Slides</button>' +
+    '    <button class="btn-secondary" onclick="google.script.host.close()">Close</button>' +
+    '  </div>' +
+    '</div>' +
+    '<script>' +
+    '  var presentationUrl = "";' +
+    '  google.script.run.withSuccessHandler(function(summary) {' +
+    '    document.getElementById("roundVal").innerText = summary.roundToPresent;' +
+    '    presentationUrl = summary.presentationUrl;' +
+    '  }).getSlidesSyncSummary();' +
+    '  function startSync() {' +
+    '    document.getElementById("confirmState").style.display = "none";' +
+    '    document.getElementById("loadingState").style.display = "block";' +
+    '    google.script.run.withSuccessHandler(function(res) {' +
+    '      document.getElementById("loadingState").style.display = "none";' +
+    '      document.getElementById("successState").style.display = "block";' +
+    '      if (res && res.message) document.getElementById("successMsg").innerText = res.message;' +
+    '    }).withFailureHandler(function(err) {' +
+    '      alert("Sync Error: " + err.message);' +
+    '      google.script.host.close();' +
+    '    }).syncPresentationStagingToSlides();' +
+    '  }' +
+    '  function openSlides() {' +
+    '    if (presentationUrl) window.open(presentationUrl, "_blank");' +
+    '  }' +
+    '</script>' +
+    '</body></html>'
+  ).setWidth(520).setHeight(360);
+  SpreadsheetApp.getUi().showModalDialog(html, "🏏 Google Slides Sync");
+}
+
+
+/**
+ * Retrieves the full players list for the Player Photo Studio.
+ */
+function getPlayersListForStudio() {
+  var ss = getSS();
+  if (!ss) return [];
+  var playerSheet = ss.getSheetByName("Players");
+  if (!playerSheet || playerSheet.getLastRow() < 2) return [];
+
+  var data = playerSheet.getRange(2, 1, playerSheet.getLastRow() - 1, 14).getValues();
+  var players = [];
+  data.forEach(function(row) {
+    var profileId = String(row[0] || "").trim();
+    var fName = String(row[3] || (row[1] + " " + row[2])).trim();
+    var status = String(row[6] || "").trim();
+    var photoUrl = String(row[13] || "").trim();
+    if (profileId && fName && status !== "Inactive") {
+      players.push({
+        profileId: profileId,
+        fullName: fName,
+        hasPhoto: photoUrl !== "",
+        photoUrl: photoUrl
+      });
+    }
+  });
+
+  players.sort(function(a, b) {
+    return a.fullName.localeCompare(b.fullName);
+  });
+  return players;
+}
+
+
+/**
+ * Saves a player headshot directly to Google Drive as <ProfileID>.png and updates Players sheet.
+ */
+function savePlayerHeadshot(profileId, base64Data) {
+  if (!profileId || !base64Data) {
+    throw new Error("Missing player Profile ID or image data.");
+  }
+  var ss = getSS();
+  var folderId = getHeadshotFolderId();
+  if (!folderId) throw new Error("HEADSHOT_FOLDER_ID is not configured in Script Properties.");
+
+  var cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, "");
+  var decoded = Utilities.base64Decode(cleanBase64);
+  var blob = Utilities.newBlob(decoded, "image/png", profileId + ".png");
+
+  var folder = DriveApp.getFolderById(folderId);
+
+  // Trash any previous versions of this player's photo
+  var existingPng = folder.getFilesByName(profileId + ".png");
+  while (existingPng.hasNext()) {
+    existingPng.next().setTrashed(true);
+  }
+  var existingJpg = folder.getFilesByName(profileId + ".jpg");
+  while (existingJpg.hasNext()) {
+    existingJpg.next().setTrashed(true);
+  }
+
+  // Create new transparent PNG
+  var newFile = folder.createFile(blob);
+  var fileId = newFile.getId();
+  var photoUrl = "https://lh3.googleusercontent.com/d/" + fileId;
+
+  // Update Players sheet Col N
+  if (ss) {
+    var pSheet = ss.getSheetByName("Players");
+    if (pSheet && pSheet.getLastRow() > 1) {
+      var pIds = pSheet.getRange(2, 1, pSheet.getLastRow() - 1, 1).getValues();
+      for (var i = 0; i < pIds.length; i++) {
+        if (String(pIds[i][0]).trim().toLowerCase() === profileId.toLowerCase()) {
+          pSheet.getRange(2 + i, 14).setValue(photoUrl);
+          break;
+        }
+      }
+    }
+  }
+
+  return {
+    success: true,
+    profileId: profileId,
+    photoUrl: photoUrl,
+    message: "Headshot saved successfully!"
+  };
+}
+
+
+/**
+ * Opens the Player Photo Studio interactive modal dialog.
+ */
+function showPhotoStudioDialog() {
+  var html = HtmlService.createHtmlOutput(
+    '<!DOCTYPE html>' +
+    '<html><head><base target="_top">' +
+    '<style>' +
+    '  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }' +
+    '  body { padding: 20px; background: #fdfdfd; color: #222; }' +
+    '  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 2px solid #4d0012; padding-bottom: 10px; }' +
+    '  .header h2 { color: #4d0012; font-size: 18px; font-weight: 700; }' +
+    '  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }' +
+    '  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }' +
+    '  .card h3 { font-size: 14px; font-weight: 600; color: #4d0012; margin-bottom: 10px; }' +
+    '  label { font-size: 12px; font-weight: 600; color: #555; display: block; margin-bottom: 4px; }' +
+    '  select, input[type="text"] { width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; margin-bottom: 10px; }' +
+    '  .drop-zone { border: 2px dashed #4d0012; border-radius: 8px; padding: 20px; text-align: center; background: #fff9e6; cursor: pointer; transition: all 0.2s; }' +
+    '  .drop-zone:hover { background: #fff2cc; }' +
+    '  .canvas-container { position: relative; width: 100%; height: 220px; background: #eee; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; }' +
+    '  canvas { max-width: 100%; max-height: 100%; }' +
+    '  .preview-circle { width: 100px; height: 100px; border-radius: 50%; border: 3px solid #fac218; box-shadow: 0 2px 6px rgba(0,0,0,0.15); overflow: hidden; margin: 0 auto 10px; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 12px 12px; }' +
+    '  .preview-circle img { width: 100%; height: 100%; object-fit: cover; }' +
+    '  .controls { display: flex; gap: 8px; align-items: center; margin-top: 8px; }' +
+    '  .controls button { padding: 4px 10px; font-size: 12px; }' +
+    '  .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }' +
+    '  button { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }' +
+    '  .btn-primary { background: #4d0012; color: #fff; }' +
+    '  .btn-primary:hover { background: #35000c; }' +
+    '  .btn-secondary { background: #e0e0e0; color: #333; }' +
+    '  .btn-gold { background: #fac218; color: #4d0012; font-weight: bold; }' +
+    '  .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; }' +
+    '  .badge-has { background: #e6f4ea; color: #137333; }' +
+    '  .badge-none { background: #fce8e6; color: #c5221f; }' +
+    '</style>' +
+    '</head><body>' +
+    '<div class="header">' +
+    '  <h2>📸 Player Photo Studio</h2>' +
+    '</div>' +
+    '<div class="grid">' +
+    '  <div class="card">' +
+    '    <h3>1. Select Player</h3>' +
+    '    <label for="playerSelect">Player:</label>' +
+    '    <select id="playerSelect" onchange="onPlayerChange()"><option value="">Loading players...</option></select>' +
+    '    <div id="playerStatus" style="font-size: 12px; margin-bottom: 12px;"></div>' +
+    '    <h3>2. Choose Photo</h3>' +
+    '    <div class="drop-zone" onclick="document.getElementById(\'fileInput\').click()">' +
+    '      <div style="font-size: 24px; margin-bottom: 4px;">📷</div>' +
+    '      <p style="font-size: 12px; font-weight: 600; color: #4d0012;">Click to Upload or Snap</p>' +
+    '      <p style="font-size: 10px; color: #777;">PNG, JPG, HEIC supported</p>' +
+    '    </div>' +
+    '    <input type="file" id="fileInput" accept="image/*" style="display:none;" onchange="handleFile(this.files[0])">' +
+    '  </div>' +
+    '  <div class="card">' +
+    '    <h3>3. Crop & Preview</h3>' +
+    '    <div class="canvas-container">' +
+    '      <canvas id="cropCanvas"></canvas>' +
+    '    </div>' +
+    '    <div class="controls">' +
+    '      <label style="margin:0; font-size:11px;">Zoom:</label>' +
+    '      <input type="range" id="zoomSlider" min="0.5" max="3" step="0.05" value="1" oninput="drawCanvas()" style="flex:1;">' +
+    '      <button class="btn-secondary" onclick="removeBackground()" title="Remove background with transparent key">🪄 Cutout BG</button>' +
+    '    </div>' +
+    '    <div style="text-align: center; margin-top: 10px;">' +
+    '      <div class="preview-circle">' +
+    '        <img id="previewImg" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">' +
+    '      </div>' +
+    '      <span style="font-size: 11px; color: #666;">Circle Avatar Output (400x400 PNG)</span>' +
+    '    </div>' +
+    '  </div>' +
+    '</div>' +
+    '<div class="actions">' +
+    '  <button class="btn-secondary" onclick="google.script.host.close()">Close</button>' +
+    '  <button class="btn-primary" id="saveBtn" onclick="savePhoto()" disabled>💾 Save to Player Profile</button>' +
+    '</div>' +
+    '<script>' +
+    '  var playersData = [];' +
+    '  var rawImg = new Image();' +
+    '  var imgLoaded = false;' +
+    '  var scale = 1;' +
+    '  var posX = 0, posY = 0;' +
+    '  var isDragging = false, startX = 0, startY = 0;' +
+    '  var canvas = document.getElementById("cropCanvas");' +
+    '  var ctx = canvas.getContext("2d");' +
+    '  google.script.run.withSuccessHandler(function(list) {' +
+    '    playersData = list;' +
+    '    var sel = document.getElementById("playerSelect");' +
+    '    sel.innerHTML = "<option value=\'\'>-- Select a Player --</option>";' +
+    '    list.forEach(function(p) {' +
+    '      var opt = document.createElement("option");' +
+    '      opt.value = p.profileId;' +
+    '      opt.innerText = p.fullName + (p.hasPhoto ? " (Has Photo)" : " (No Photo)");' +
+    '      sel.appendChild(opt);' +
+    '    });' +
+    '  }).getPlayersListForStudio();' +
+    '  function onPlayerChange() {' +
+    '    var pid = document.getElementById("playerSelect").value;' +
+    '    var p = playersData.find(function(item) { return item.profileId === pid; });' +
+    '    var statusDiv = document.getElementById("playerStatus");' +
+    '    if (!p) { statusDiv.innerHTML = ""; checkReady(); return; }' +
+    '    if (p.hasPhoto) {' +
+    '      statusDiv.innerHTML = "<span class=\'badge badge-has\'>Photo Active</span> <a href=\'" + p.photoUrl + "\' target=\'_blank\' style=\'color:#4d0012; font-size:11px;\'>View current</a>";' +
+    '    } else {' +
+    '      statusDiv.innerHTML = "<span class=\'badge badge-none\'>No Photo Uploaded</span>";' +
+    '    }' +
+    '    checkReady();' +
+    '  }' +
+    '  function handleFile(file) {' +
+    '    if (!file) return;' +
+    '    var reader = new FileReader();' +
+    '    reader.onload = function(e) {' +
+    '      rawImg.onload = function() {' +
+    '        imgLoaded = true;' +
+    '        canvas.width = 400;' +
+    '        canvas.height = 400;' +
+    '        posX = canvas.width / 2;' +
+    '        posY = canvas.height / 2;' +
+    '        scale = 1;' +
+    '        document.getElementById("zoomSlider").value = 1;' +
+    '        drawCanvas();' +
+    '        checkReady();' +
+    '      };' +
+    '      rawImg.src = e.target.result;' +
+    '    };' +
+    '    reader.readAsDataURL(file);' +
+    '  }' +
+    '  function drawCanvas() {' +
+    '    if (!imgLoaded) return;' +
+    '    scale = parseFloat(document.getElementById("zoomSlider").value);' +
+    '    ctx.clearRect(0, 0, canvas.width, canvas.height);' +
+    '    var w = rawImg.width * scale;' +
+    '    var h = rawImg.height * scale;' +
+    '    ctx.drawImage(rawImg, posX - w / 2, posY - h / 2, w, h);' +
+    '    updatePreview();' +
+    '  }' +
+    '  function updatePreview() {' +
+    '    var outCanvas = document.createElement("canvas");' +
+    '    outCanvas.width = 400; outCanvas.height = 400;' +
+    '    var outCtx = outCanvas.getContext("2d");' +
+    '    outCtx.drawImage(canvas, 0, 0);' +
+    '    document.getElementById("previewImg").src = outCanvas.toDataURL("image/png");' +
+    '  }' +
+    '  function removeBackground() {' +
+    '    if (!imgLoaded) return;' +
+    '    var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);' +
+    '    var data = imgData.data;' +
+    '    var cornerR = data[0], cornerG = data[1], cornerB = data[2];' +
+    '    for (var i = 0; i < data.length; i += 4) {' +
+    '      var r = data[i], g = data[i+1], b = data[i+2];' +
+    '      var diff = Math.abs(r - cornerR) + Math.abs(g - cornerG) + Math.abs(b - cornerB);' +
+    '      if (diff < 60) {' +
+    '        data[i+3] = 0;' +
+    '      }' +
+    '    }' +
+    '    ctx.putImageData(imgData, 0, 0);' +
+    '    updatePreview();' +
+    '  }' +
+    '  function checkReady() {' +
+    '    var pid = document.getElementById("playerSelect").value;' +
+    '    document.getElementById("saveBtn").disabled = !(pid && imgLoaded);' +
+    '  }' +
+    '  function savePhoto() {' +
+    '    var pid = document.getElementById("playerSelect").value;' +
+    '    if (!pid || !imgLoaded) return;' +
+    '    var btn = document.getElementById("saveBtn");' +
+    '    btn.disabled = true;' +
+    '    btn.innerText = "⏳ Uploading to Drive...";' +
+    '    var base64 = canvas.toDataURL("image/png");' +
+    '    google.script.run.withSuccessHandler(function(res) {' +
+    '      btn.innerText = "✅ Saved!";' +
+    '      alert("Photo saved successfully to Google Drive!");' +
+    '      google.script.host.close();' +
+    '    }).withFailureHandler(function(err) {' +
+    '      btn.disabled = false;' +
+    '      btn.innerText = "💾 Save to Player Profile";' +
+    '      alert("Upload error: " + err.message);' +
+    '    }).savePlayerHeadshot(pid, base64);' +
+    '  }' +
+    '</script>' +
+    '</body></html>'
+  ).setWidth(680).setHeight(560);
+  SpreadsheetApp.getUi().showModalDialog(html, "📸 Player Photo Studio");
 }

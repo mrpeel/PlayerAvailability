@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LCC Player Photo Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --maroon: #4d0012;
+      --gold: #fac218;
+      --cream: #fff8f7;
+      --white: #ffffff;
+      --text: #1a0005;
+      --text-muted: #5c4a4e;
+      --radius: 12px;
+      --shadow: 0 4px 12px rgba(77, 0, 18, 0.1);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; font-family: 'Hanken Grotesk', sans-serif; }
+    body { background-color: var(--cream); color: var(--text); display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 16px; }
+    .container { width: 100%; max-width: 480px; background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; border: 1px solid rgba(77,0,18,0.08); }
+    .header { background: var(--maroon); color: var(--gold); padding: 16px 20px; text-align: center; }
+    .header h1 { font-size: 20px; font-weight: 800; }
+    .content { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    label { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+    select, input[type="text"] { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ccc; font-size: 15px; background: #fafafa; }
+    .upload-box { border: 2px dashed var(--maroon); border-radius: var(--radius); padding: 24px; text-align: center; background: #fffcf2; cursor: pointer; transition: all 0.2s; }
+    .upload-box:active { background: #fff3cc; }
+    .canvas-box { width: 100%; height: 260px; background: #eee; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; position: relative; }
+    canvas { max-width: 100%; max-height: 100%; }
+    .preview-container { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; padding-top: 10px; }
+    .circle-avatar { width: 120px; height: 120px; border-radius: 50%; border: 4px solid var(--gold); box-shadow: 0 4px 10px rgba(0,0,0,0.15); overflow: hidden; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 14px 14px; }
+    .circle-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .slider-row { display: flex; align-items: center; gap: 10px; }
+    .slider-row input[type="range"] { flex: 1; }
+    button { padding: 14px; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; border: none; transition: all 0.2s; }
+    .btn-primary { background: var(--maroon); color: var(--white); width: 100%; }
+    .btn-primary:active { background: #35000c; }
+    .btn-secondary { background: #eee; color: var(--text); padding: 8px 12px; font-size: 13px; }
+    .btn-gold { background: var(--gold); color: var(--maroon); }
+    .status-badge { font-size: 12px; padding: 4px 8px; border-radius: 4px; font-weight: 600; display: inline-block; width: fit-content; }
+    .status-badge.has { background: #e6f4ea; color: #137333; }
+    .status-badge.none { background: #fce8e6; color: #c5221f; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📸 LCC Player Photo Studio</h1>
+    </div>
+    <div class="content">
+      <div class="field">
+        <label for="playerSelect">1. Select Player</label>
+        <select id="playerSelect" onchange="onPlayerChange()">
+          <option value="">-- Choose Player --</option>
+        </select>
+        <div id="playerStatus"></div>
+      </div>
+
+      <div class="field">
+        <label>2. Take or Upload Photo</label>
+        <div class="upload-box" onclick="document.getElementById('fileInput').click()">
+          <div style="font-size: 32px; margin-bottom: 6px;">📷</div>
+          <p style="font-weight: 700; color: var(--maroon);">Tap to Snap or Upload Photo</p>
+          <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">JPG, PNG, Camera</p>
+        </div>
+        <input type="file" id="fileInput" accept="image/*" capture="camera" style="display:none;" onchange="handleFile(this.files[0])">
+      </div>
+
+      <div class="field" id="cropSection" style="display:none;">
+        <label>3. Adjust & Cutout Background</label>
+        <div class="canvas-box">
+          <canvas id="cropCanvas"></canvas>
+        </div>
+        <div class="slider-row" style="margin-top: 8px;">
+          <label style="font-size: 12px;">Zoom:</label>
+          <input type="range" id="zoomSlider" min="0.5" max="3" step="0.05" value="1" oninput="drawCanvas()">
+          <button class="btn-secondary" onclick="removeBackground()">🪄 Cutout BG</button>
+        </div>
+        <div class="preview-container">
+          <div class="circle-avatar">
+            <img id="previewImg" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Preview">
+          </div>
+          <span style="font-size: 12px; color: var(--text-muted);">Transparent 400×400 PNG Preview</span>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="saveBtn" onclick="savePhoto()" disabled>💾 Save Headshot to Google Drive</button>
+    </div>
+  </div>
+
+  <script>
+    var GAS_EXEC_URL = "https://script.google.com/macros/s/AKfycbxBl5Uhn6GucAIsvcDYpANfyN1aF3qXuooP1kEzwzH0LY_RnmkjLUjtfoOz8T-0uHNxbQ/exec";
+    var rawImg = new Image();
+    var imgLoaded = false;
+    var scale = 1;
+    var canvas = document.getElementById("cropCanvas");
+    var ctx = canvas.getContext("2d");
+
+    // Fetch players list
+    fetch(GAS_EXEC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({ action: "getPlayersListForStudio" })
+    }).then(function(r) { return r.json(); }).then(function(res) {
+      if (res && res.players) {
+        var sel = document.getElementById("playerSelect");
+        sel.innerHTML = "<option value=''>-- Choose Player --</option>";
+        res.players.forEach(function(p) {
+          var opt = document.createElement("option");
+          opt.value = p.profileId;
+          opt.innerText = p.fullName + (p.hasPhoto ? " (Photo ✓)" : " (No photo)");
+          sel.appendChild(opt);
+        });
+      }
+    }).catch(function(err) { console.error(err); });
+
+    function onPlayerChange() {
+      checkReady();
+    }
+
+    function handleFile(file) {
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        rawImg.onload = function() {
+          imgLoaded = true;
+          canvas.width = 400;
+          canvas.height = 400;
+          scale = 1;
+          document.getElementById("zoomSlider").value = 1;
+          document.getElementById("cropSection").style.display = "block";
+          drawCanvas();
+          checkReady();
+        };
+        rawImg.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function drawCanvas() {
+      if (!imgLoaded) return;
+      scale = parseFloat(document.getElementById("zoomSlider").value);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      var w = rawImg.width * scale;
+      var h = rawImg.height * scale;
+      ctx.drawImage(rawImg, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+      updatePreview();
+    }
+
+    function updatePreview() {
+      document.getElementById("previewImg").src = canvas.toDataURL("image/png");
+    }
+
+    function removeBackground() {
+      if (!imgLoaded) return;
+      var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      var data = imgData.data;
+      var cornerR = data[0], cornerG = data[1], cornerB = data[2];
+      for (var i = 0; i < data.length; i += 4) {
+        var r = data[i], g = data[i+1], b = data[i+2];
+        var diff = Math.abs(r - cornerR) + Math.abs(g - cornerG) + Math.abs(b - cornerB);
+        if (diff < 60) {
+          data[i+3] = 0;
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+      updatePreview();
+    }
+
+    function checkReady() {
+      var pid = document.getElementById("playerSelect").value;
+      document.getElementById("saveBtn").disabled = !(pid && imgLoaded);
+    }
+
+    function savePhoto() {
+      var pid = document.getElementById("playerSelect").value;
+      if (!pid || !imgLoaded) return;
+      var btn = document.getElementById("saveBtn");
+      btn.disabled = true;
+      btn.innerText = "⏳ Saving to Google Drive...";
+
+      var base64 = canvas.toDataURL("image/png");
+      fetch(GAS_EXEC_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({
+          action: "savePlayerHeadshot",
+          profileId: pid,
+          base64Data: base64
+        })
+      }).then(function(r) { return r.json(); }).then(function(res) {
+        btn.innerText = "✅ Saved Successfully!";
+        alert("Player headshot saved directly to Google Drive!");
+        setTimeout(function() {
+          btn.innerText = "💾 Save Headshot to Google Drive";
+          btn.disabled = false;
+        }, 2500);
+      }).catch(function(err) {
+        btn.disabled = false;
+        btn.innerText = "💾 Save Headshot to Google Drive";
+        alert("Upload error: " + err.message);
+      });
+    }
+  </script>
+</body>
+</html>
