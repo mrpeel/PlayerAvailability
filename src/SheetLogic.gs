@@ -1492,14 +1492,12 @@ function syncPresentationStagingHub(ss, targetRoundName) {
     if (!s) return;
     var sh = s.getSheetByName("Presentation_Staging") || s.insertSheet("Presentation_Staging");
     
-    // Check if A1 needs updating to "Round to present" or layout rebuild
-    var currentA1 = String(sh.getRange("A1").getValue()).trim();
-    if (currentA1 !== "Round to present" || sh.getRange("B1").getDataValidation() === null || sh.getLastRow() < 80) {
-      sh.clear();
-      
-      // Row 1: Header and Selection Controls
-      sh.getRange("A1").setValue("Round to present").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
-      sh.getRange("B1").setValue("").setNumberFormat("@").setBackground(LCC_PALETTE.inputHighlight).setFontWeight("bold").setHorizontalAlignment("center");
+    // Rebuild/refresh Presentation_Staging layout and formulas
+    sh.clear();
+    
+    // Row 1: Header and Selection Controls
+    sh.getRange("A1").setValue("Round to present").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
+    sh.getRange("B1").setValue("").setNumberFormat("@").setBackground(LCC_PALETTE.inputHighlight).setFontWeight("bold").setHorizontalAlignment("center");
       
       var frames = [
         { name: "FIRST ELEVEN", start: 4 }, 
@@ -1562,7 +1560,6 @@ function syncPresentationStagingHub(ss, targetRoundName) {
       try {
         sh.getRange(1, 1, 95, 4).setFontFamily("Hanken Grotesk");
       } catch (e) {}
-    }
     
     // Sync dropdown validation list in B1 with all round tabs
     var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log"];
