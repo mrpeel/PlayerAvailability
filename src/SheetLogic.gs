@@ -2782,7 +2782,21 @@ function inspectSelectionSlides() {
       } else if (type === SlidesApp.PageElementType.IMAGE) {
         desc += " | Image";
       } else if (type === SlidesApp.PageElementType.GROUP) {
-        desc += " | Group (" + el.asGroup().getChildren().length + " items)";
+        var grp = el.asGroup();
+        var gChildren = grp.getChildren();
+        var gTag = el.getTitle() || el.getDescription() || "";
+        desc += " | Group (" + gChildren.length + " items)";
+        if (gTag) desc += " [Alt: '" + gTag + "']";
+        gChildren.forEach(function(gc, gcIdx) {
+          var gcType = gc.getPageElementType();
+          var gcTag = gc.getTitle() || gc.getDescription() || "";
+          var gcDesc = "\n      -> [" + (gcIdx + 1) + "] " + gcType;
+          if (gcType === SlidesApp.PageElementType.SHAPE && gc.asShape().getText()) {
+            gcDesc += " | Text: '" + gc.asShape().getText().asString().trim().replace(/\n/g, " ↵ ") + "'";
+          }
+          if (gcTag) gcDesc += " [Alt: '" + gcTag + "']";
+          desc += gcDesc;
+        });
       }
       report += desc + "\n";
     });
@@ -2858,12 +2872,17 @@ function autoTagSlideElements(ss) {
     var slide = slides[f.slideIdx];
     var elements = slide.getPageElements();
 
+    var slotGroups = [];
     var textShapes = [];
     var avatarImages = [];
 
     elements.forEach(function(el) {
       var type = el.getPageElementType();
-      if (type === SlidesApp.PageElementType.SHAPE) {
+      if (type === SlidesApp.PageElementType.GROUP) {
+        if (el.getTop() < 430) {
+          slotGroups.push(el);
+        }
+      } else if (type === SlidesApp.PageElementType.SHAPE) {
         var shp = el.asShape();
         var txt = shp.getText() ? shp.getText().asString().trim() : "";
         if (txt.toLowerCase() !== f.name.toLowerCase() &&
@@ -2884,20 +2903,29 @@ function autoTagSlideElements(ss) {
       }
     });
 
-    var sortedShapes = sortElementsTwoColumns(textShapes);
-    var sortedImages = sortElementsTwoColumns(avatarImages);
+    if (slotGroups.length > 0) {
+      var sortedGroups = sortElementsTwoColumns(slotGroups);
+      sortedGroups.forEach(function(grp, gIdx) {
+        grp.setTitle(f.prefix + "_SLOT_" + (gIdx + 1));
+        grp.setDescription(f.prefix + "_SLOT_" + (gIdx + 1));
+        taggedCount++;
+      });
+    } else {
+      var sortedShapes = sortElementsTwoColumns(textShapes);
+      var sortedImages = sortElementsTwoColumns(avatarImages);
 
-    sortedShapes.forEach(function(shp, idx) {
-      shp.setTitle("PLAYER_" + (idx + 1));
-      shp.setDescription(f.prefix + "_PLAYER_" + (idx + 1));
-      taggedCount++;
-    });
+      sortedShapes.forEach(function(shp, idx) {
+        shp.setTitle("PLAYER_" + (idx + 1));
+        shp.setDescription(f.prefix + "_PLAYER_" + (idx + 1));
+        taggedCount++;
+      });
 
-    sortedImages.forEach(function(img, idx) {
-      img.setTitle("PHOTO_" + (idx + 1));
-      img.setDescription(f.prefix + "_PHOTO_" + (idx + 1));
-      taggedCount++;
-    });
+      sortedImages.forEach(function(img, idx) {
+        img.setTitle("PHOTO_" + (idx + 1));
+        img.setDescription(f.prefix + "_PHOTO_" + (idx + 1));
+        taggedCount++;
+      });
+    }
   });
 
   return "Successfully assigned permanent Alt Text IDs to " + taggedCount + " elements across team slides!";
@@ -3118,123 +3146,167 @@ function syncPresentationStagingToSlides(ss) {
     var roundOpponentText = formatRoundOpponent(t.round, t.prefix, t.opponent);
     var formatVenueText = formatFormatVenue(t.format, t.venue);
 
-    // 1. Element-by-element Alt Text Tag Matching (No text replacement)
+    // 1. Element-by-element & Group Alt Text Tag Matching
     var matchedPlayerTags = {};
-    elements.forEach(function(el) {
-      var tag = String(el.getTitle() || el.getDescription() || "").trim().toUpperCase();
-      if (!tag) return;
 
-      // Match concatenated match tags (e.g. 1ST_ROUND_OPPONENT, 1ST_FORMAT_VENUE)
-      if (tag === t.prefix + "_ROUND_OPPONENT" || tag === "ROUND_OPPONENT") {
-        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(roundOpponentText);
-      } else if (tag === t.prefix + "_FORMAT_VENUE" || tag === "FORMAT_VENUE") {
-        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(formatVenueText);
-      }
-      // Match individual info Alt Text tags
-      else if (tag === t.prefix + "_ROUND" || tag === "ROUND") {
-        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.round);
-      } else if (tag === t.prefix + "_OPPONENT" || tag === "OPPONENT") {
-        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.opponent);
-      } else if (tag === t.prefix + "_VENUE" || tag === "VENUE") {
-        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.venue);
-      } else if (tag === t.prefix + "_FORMAT" || tag === "FORMAT") {
-        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.format);
-      }
-
-      // Match PLAYER_1 .. PLAYER_13
-      var pMatch = tag.match(/^(?:.*_)?PLAYER_?(\d+)$/);
-      if (pMatch) {
-        var pNum = parseInt(pMatch[1], 10);
-        if (pNum >= 1 && pNum <= t.players.length) {
-          var pInfo = t.players[pNum - 1];
-          matchedPlayerTags[pNum] = true;
-          if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) {
-            var formattedName = formatPlayerPresentationName(pInfo.name, pInfo.role);
-            el.asShape().getText().setText(formattedName);
-          }
+    function processSlotElements(pNum, shapeEl, imageEl) {
+      if (pNum >= 1 && pNum <= t.players.length) {
+        var pInfo = t.players[pNum - 1];
+        matchedPlayerTags[pNum] = true;
+        if (shapeEl && shapeEl.getPageElementType() === SlidesApp.PageElementType.SHAPE) {
+          var formattedName = formatPlayerPresentationName(pInfo.name, pInfo.role);
+          shapeEl.asShape().getText().setText(formattedName);
         }
-      }
-
-      // Match PHOTO_1 .. PHOTO_13
-      var photoMatch = tag.match(/^(?:.*_)?PHOTO_?(\d+)$/);
-      if (photoMatch) {
-        var photoNum = parseInt(photoMatch[1], 10);
-        if (photoNum >= 1 && photoNum <= t.players.length) {
-          var pPhoto = t.players[photoNum - 1];
-          if (el.getPageElementType() === SlidesApp.PageElementType.IMAGE) {
-            try {
-              var blob = (pPhoto && pPhoto.photoUrl) ? getDriveImageBlob(pPhoto.photoUrl) : null;
-              if (!blob) blob = defaultBlob;
-              if (blob) {
-                el.asImage().replace(blob);
-              }
-            } catch (err) {
-              Logger.log("Image replace warning for " + pPhoto.name + ": " + err.message);
+        if (imageEl && imageEl.getPageElementType() === SlidesApp.PageElementType.IMAGE) {
+          try {
+            var blob = (pInfo && pInfo.photoUrl) ? getDriveImageBlob(pInfo.photoUrl) : null;
+            if (!blob) blob = defaultBlob;
+            if (blob) {
+              imageEl.asImage().replace(blob);
             }
+          } catch (err) {
+            Logger.log("Image replace warning for " + pInfo.name + ": " + err.message);
           }
         }
       }
-    });
-
-    // 3. Fallback: Spatial two-column matching for player text shapes and avatar images
-    var textShapes = [];
-    var avatarImages = [];
+    }
 
     elements.forEach(function(el) {
       var type = el.getPageElementType();
-      if (type === SlidesApp.PageElementType.SHAPE) {
-        var shp = el.asShape();
-        var txt = shp.getText() ? shp.getText().asString().trim() : "";
-        if (txt.toLowerCase() !== t.teamName.toLowerCase() &&
-            txt.toLowerCase().indexOf("first eleven") === -1 &&
-            txt.toLowerCase().indexOf("second eleven") === -1 &&
-            txt.toLowerCase().indexOf("third eleven") === -1 &&
-            txt.toLowerCase().indexOf("fourth eleven") === -1 &&
-            txt.toLowerCase().indexOf("fifth eleven") === -1 &&
-            txt.indexOf("{{") === -1 &&
-            shp.getTop() < 420) {
-          textShapes.push(el);
+      var tag = String(el.getTitle() || el.getDescription() || "").trim().toUpperCase();
+
+      // A. If it's a GROUP container
+      if (type === SlidesApp.PageElementType.GROUP) {
+        var grp = el.asGroup();
+        var children = grp.getChildren();
+
+        // Check if group itself is tagged with slot ID (e.g. 1ST_SLOT_1, 1ST_PLAYER_1, SLOT_1, PLAYER_1)
+        var slotMatch = tag.match(/^(?:.*_)?(?:SLOT|PLAYER)_?(\d+)$/);
+        if (slotMatch) {
+          var pNum = parseInt(slotMatch[1], 10);
+          var grpShape = null;
+          var grpImage = null;
+          children.forEach(function(child) {
+            if (child.getPageElementType() === SlidesApp.PageElementType.SHAPE) grpShape = child;
+            else if (child.getPageElementType() === SlidesApp.PageElementType.IMAGE) grpImage = child;
+          });
+          processSlotElements(pNum, grpShape, grpImage);
+          return;
         }
-      } else if (type === SlidesApp.PageElementType.IMAGE) {
-        // Exclude central Club Crest (width/height < 120)
-        if (el.getWidth() < 120 && el.getHeight() < 120) {
-          avatarImages.push(el);
-        }
+
+        // Otherwise check children individually inside the group
+        children.forEach(function(child) {
+          var cTag = String(child.getTitle() || child.getDescription() || "").trim().toUpperCase();
+          if (!cTag) return;
+          var cPlayerMatch = cTag.match(/^(?:.*_)?PLAYER_?(\d+)$/);
+          if (cPlayerMatch) {
+            processSlotElements(parseInt(cPlayerMatch[1], 10), child, null);
+          }
+          var cPhotoMatch = cTag.match(/^(?:.*_)?PHOTO_?(\d+)$/);
+          if (cPhotoMatch) {
+            processSlotElements(parseInt(cPhotoMatch[1], 10), null, child);
+          }
+        });
+        return;
+      }
+
+      // B. Match concatenated match tags (e.g. 1ST_ROUND_OPPONENT, 1ST_FORMAT_VENUE)
+      if (tag === t.prefix + "_ROUND_OPPONENT" || tag === "ROUND_OPPONENT") {
+        if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(roundOpponentText);
+      } else if (tag === t.prefix + "_FORMAT_VENUE" || tag === "FORMAT_VENUE") {
+        if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(formatVenueText);
+      }
+      // Match individual info Alt Text tags
+      else if (tag === t.prefix + "_ROUND" || tag === "ROUND") {
+        if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.round);
+      } else if (tag === t.prefix + "_OPPONENT" || tag === "OPPONENT") {
+        if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.opponent);
+      } else if (tag === t.prefix + "_VENUE" || tag === "VENUE") {
+        if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.venue);
+      } else if (tag === t.prefix + "_FORMAT" || tag === "FORMAT") {
+        if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.format);
+      }
+
+      // C. Match standalone PLAYER_1 .. PLAYER_13
+      var pMatch = tag.match(/^(?:.*_)?PLAYER_?(\d+)$/);
+      if (pMatch) {
+        processSlotElements(parseInt(pMatch[1], 10), el, null);
+      }
+
+      // D. Match standalone PHOTO_1 .. PHOTO_13
+      var photoMatch = tag.match(/^(?:.*_)?PHOTO_?(\d+)$/);
+      if (photoMatch) {
+        processSlotElements(parseInt(photoMatch[1], 10), null, el);
       }
     });
 
-    var sortedShapes = sortElementsTwoColumns(textShapes);
-    var sortedImages = sortElementsTwoColumns(avatarImages);
-
-    // Apply player names if not already set by Alt text
+    // 2. Spatial two-column fallback for Groups, Shapes, and Images
     if (Object.keys(matchedPlayerTags).length === 0) {
-      sortedShapes.forEach(function(shpEl, sIdx) {
-        if (sIdx < t.players.length) {
-          shpEl.setTitle("PLAYER_" + (sIdx + 1));
-          shpEl.setDescription(t.prefix + "_PLAYER_" + (sIdx + 1));
-          var formattedName = formatPlayerPresentationName(t.players[sIdx].name, t.players[sIdx].role);
-          shpEl.asShape().getText().setText(formattedName);
+      var slotGroups = [];
+      var textShapes = [];
+      var avatarImages = [];
+
+      elements.forEach(function(el) {
+        var type = el.getPageElementType();
+        if (type === SlidesApp.PageElementType.GROUP) {
+          if (el.getTop() < 430) slotGroups.push(el.asGroup());
+        } else if (type === SlidesApp.PageElementType.SHAPE) {
+          var shp = el.asShape();
+          var txt = shp.getText() ? shp.getText().asString().trim() : "";
+          if (txt.toLowerCase() !== t.teamName.toLowerCase() &&
+              txt.toLowerCase().indexOf("first eleven") === -1 &&
+              txt.toLowerCase().indexOf("second eleven") === -1 &&
+              txt.toLowerCase().indexOf("third eleven") === -1 &&
+              txt.toLowerCase().indexOf("fourth eleven") === -1 &&
+              txt.toLowerCase().indexOf("fifth eleven") === -1 &&
+              txt.indexOf("{{") === -1 &&
+              shp.getTop() < 420) {
+            textShapes.push(el);
+          }
+        } else if (type === SlidesApp.PageElementType.IMAGE) {
+          // Exclude central Club Crest (width/height < 120)
+          if (el.getWidth() < 120 && el.getHeight() < 120) {
+            avatarImages.push(el);
+          }
         }
       });
-    }
 
-    // Apply player headshots or transparent fallback for all avatars
-    sortedImages.forEach(function(imgEl, sIdx) {
-      if (sIdx < t.players.length) {
-        imgEl.setTitle("PHOTO_" + (sIdx + 1));
-        imgEl.setDescription(t.prefix + "_PHOTO_" + (sIdx + 1));
-        var pPhoto = t.players[sIdx];
-        try {
-          var blob = (pPhoto && pPhoto.photoUrl) ? getDriveImageBlob(pPhoto.photoUrl) : null;
-          if (!blob) blob = defaultBlob;
-          if (blob) {
-            imgEl.asImage().replace(blob);
+      // A. If slide uses Groups:
+      if (slotGroups.length > 0) {
+        var sortedGroups = sortElementsTwoColumns(slotGroups);
+        sortedGroups.forEach(function(grp, gIdx) {
+          if (gIdx < t.players.length) {
+            var grpShape = null;
+            var grpImage = null;
+            grp.getChildren().forEach(function(gc) {
+              if (gc.getPageElementType() === SlidesApp.PageElementType.SHAPE) grpShape = gc;
+              else if (gc.getPageElementType() === SlidesApp.PageElementType.IMAGE) grpImage = gc;
+            });
+            processSlotElements(gIdx + 1, grpShape, grpImage);
           }
-        } catch (imgErr) {
-          Logger.log("Avatar replace warning for slot " + (sIdx + 1) + ": " + imgErr.message);
-        }
+        });
+      } else {
+        // B. If slide uses separate standalone shapes & images:
+        var sortedShapes = sortElementsTwoColumns(textShapes);
+        var sortedImages = sortElementsTwoColumns(avatarImages);
+
+        sortedShapes.forEach(function(shpEl, sIdx) {
+          if (sIdx < t.players.length) {
+            shpEl.setTitle("PLAYER_" + (sIdx + 1));
+            shpEl.setDescription(t.prefix + "_PLAYER_" + (sIdx + 1));
+            processSlotElements(sIdx + 1, shpEl, null);
+          }
+        });
+
+        sortedImages.forEach(function(imgEl, sIdx) {
+          if (sIdx < t.players.length) {
+            imgEl.setTitle("PHOTO_" + (sIdx + 1));
+            imgEl.setDescription(t.prefix + "_PHOTO_" + (sIdx + 1));
+            processSlotElements(sIdx + 1, null, imgEl);
+          }
+        });
       }
-    });
+    }
 
     // 4. Update any 2x4 Match Info Tables (T20 slides or fixture summary tables)
     elements.forEach(function(el) {
