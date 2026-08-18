@@ -3034,6 +3034,16 @@ function formatFormatVenue(format, venue) {
 }
 
 
+var TRANSPARENT_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+/**
+ * Creates an in-memory 1x1 transparent PNG blob. 100% reliable, zero network dependency.
+ */
+function getTransparentPngBlob() {
+  return Utilities.newBlob(Utilities.base64Decode(TRANSPARENT_PNG_BASE64), "image/png", "transparent.png");
+}
+
+
 /**
  * Helper to retrieve a Google Drive image Blob directly in memory, bypassing HTTP URLs.
  */
@@ -3053,6 +3063,81 @@ function getDriveImageBlob(urlOrId) {
     } catch (e) {
       Logger.log("getDriveImageBlob error for " + fileId + ": " + e.message);
     }
+  }
+  return null;
+}
+
+
+/**
+ * Recursively extracts the primary text Shape and avatar Image from a Group (handles nested groups).
+ */
+function extractShapeAndImageFromGroup(grp) {
+  var grpShape = null;
+  var grpImage = null;
+  function recurse(el) {
+    var t = el.getPageElementType();
+    if (t === SlidesApp.PageElementType.SHAPE && !grpShape) {
+      grpShape = el;
+    } else if (t === SlidesApp.PageElementType.IMAGE && !grpImage) {
+      grpImage = el;
+    } else if (t === SlidesApp.PageElementType.GROUP) {
+      el.asGroup().getChildren().forEach(recurse);
+    }
+  }
+  recurse(grp);
+  return { shape: grpShape, image: grpImage };
+}
+
+
+/**
+ * Dynamically finds the correct Slide for a team by checking Alt text tags or Slide title text.
+ */
+function findSlideForTeam(prefix, defaultIdx, slides) {
+  var teamNameKeywords = {
+    "1ST": ["FIRST ELEVEN", "1ST XI", "1ST ELEVEN", "FIRSTS"],
+    "2ND": ["SECOND ELEVEN", "2ND XI", "2ND ELEVEN", "SECONDS"],
+    "3RD": ["THIRD ELEVEN", "3RD XI", "3RD ELEVEN", "THIRDS"],
+    "4TH": ["FOURTH ELEVEN", "4TH XI", "4TH ELEVEN", "FOURTHS"],
+    "5TH": ["FIFTH ELEVEN", "5TH XI", "5TH ELEVEN", "FIFTHS"]
+  };
+
+  // 1. Check all elements on each slide for explicit prefix Alt Text tag
+  for (var s = 0; s < slides.length; s++) {
+    var els = slides[s].getPageElements();
+    for (var e = 0; e < els.length; e++) {
+      var tag = String(els[e].getTitle() || els[e].getDescription() || "").toUpperCase();
+      if (tag.indexOf(prefix + "_") > -1) {
+        return slides[s];
+      }
+      if (els[e].getPageElementType() === SlidesApp.PageElementType.GROUP) {
+        var gChildren = els[e].asGroup().getChildren();
+        for (var g = 0; g < gChildren.length; g++) {
+          var gcTag = String(gChildren[g].getTitle() || gChildren[g].getDescription() || "").toUpperCase();
+          if (gcTag.indexOf(prefix + "_") > -1) return slides[s];
+        }
+      }
+    }
+  }
+
+  // 2. Check title text on slide shapes
+  var keywords = teamNameKeywords[prefix] || [];
+  for (var s = 0; s < slides.length; s++) {
+    var els = slides[s].getPageElements();
+    for (var e = 0; e < els.length; e++) {
+      if (els[e].getPageElementType() === SlidesApp.PageElementType.SHAPE) {
+        var txt = els[e].asShape().getText() ? els[e].asShape().getText().asString().toUpperCase() : "";
+        for (var k = 0; k < keywords.length; k++) {
+          if (txt.indexOf(keywords[k]) > -1) {
+            return slides[s];
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Fallback: If default slide index exists
+  if (defaultIdx < slides.length) {
+    return slides[defaultIdx];
   }
   return null;
 }
@@ -3088,11 +3173,11 @@ function syncPresentationStagingToSlides(ss) {
 
   // Read data for all 5 teams from Presentation_Staging
   var frames = [
-    { name: "FIRST ELEVEN", prefix: "1ST", slideIdx: 1, start: 4 }, 
-    { name: "SECOND ELEVEN", prefix: "2ND", slideIdx: 2, start: 23 }, 
-    { name: "THIRD ELEVEN", prefix: "3RD", slideIdx: 3, start: 42 }, 
-    { name: "FOURTH ELEVEN", prefix: "4TH", slideIdx: 4, start: 61 }, 
-    { name: "FIFTH ELEVEN", prefix: "5TH", slideIdx: 5, start: 80 }
+    { name: "FIRST ELEVEN", prefix: "1ST", defaultIdx: 0, start: 4 }, 
+    { name: "SECOND ELEVEN", prefix: "2ND", defaultIdx: 1, start: 23 }, 
+    { name: "THIRD ELEVEN", prefix: "3RD", defaultIdx: 2, start: 42 }, 
+    { name: "FOURTH ELEVEN", prefix: "4TH", defaultIdx: 3, start: 61 }, 
+    { name: "FIFTH ELEVEN", prefix: "5TH", defaultIdx: 4, start: 80 }
   ];
 
   var teamData = [];
@@ -3115,7 +3200,7 @@ function syncPresentationStagingToSlides(ss) {
     teamData.push({
       teamName: f.name,
       prefix: f.prefix,
-      slideIdx: f.slideIdx,
+      defaultIdx: f.defaultIdx,
       round: roundVal,
       opponent: oppVal,
       venue: venVal,
@@ -3130,17 +3215,13 @@ function syncPresentationStagingToSlides(ss) {
     defaultBlob = getDriveImageBlob(defaultPhotoUrl);
   }
   if (!defaultBlob) {
-    try {
-      defaultBlob = UrlFetchApp.fetch("https://upload.wikimedia.org/wikipedia/commons/c/ca/1x1.png").getBlob();
-    } catch (e) {
-      Logger.log("Fallback 1x1 fetch error: " + e.message);
-    }
+    defaultBlob = getTransparentPngBlob();
   }
 
-  // Update each team's slide using permanent Alt Text IDs & spatial fallbacks
+  // Update each team's slide using dynamic slide finding, permanent Alt Text IDs & spatial fallbacks
   teamData.forEach(function(t) {
-    if (t.slideIdx >= slides.length) return;
-    var slide = slides[t.slideIdx];
+    var slide = findSlideForTeam(t.prefix, t.defaultIdx, slides);
+    if (!slide) return;
     var elements = slide.getPageElements();
 
     var roundOpponentText = formatRoundOpponent(t.round, t.prefix, t.opponent);
@@ -3160,7 +3241,7 @@ function syncPresentationStagingToSlides(ss) {
         if (imageEl && imageEl.getPageElementType() === SlidesApp.PageElementType.IMAGE) {
           try {
             var blob = (pInfo && pInfo.photoUrl) ? getDriveImageBlob(pInfo.photoUrl) : null;
-            if (!blob) blob = defaultBlob;
+            if (!blob) blob = defaultBlob || getTransparentPngBlob();
             if (blob) {
               imageEl.asImage().replace(blob);
             }
@@ -3180,17 +3261,12 @@ function syncPresentationStagingToSlides(ss) {
         var grp = el.asGroup();
         var children = grp.getChildren();
 
-        // Check if group itself is tagged with slot ID (e.g. 1ST_SLOT_1, 1ST_PLAYER_1, SLOT_1, PLAYER_1)
+        // Check if group itself is tagged with slot ID (e.g. 1ST_SLOT_1, 2ND_SLOT_1, SLOT_1, PLAYER_1)
         var slotMatch = tag.match(/^(?:.*_)?(?:SLOT|PLAYER)_?(\d+)$/);
         if (slotMatch) {
           var pNum = parseInt(slotMatch[1], 10);
-          var grpShape = null;
-          var grpImage = null;
-          children.forEach(function(child) {
-            if (child.getPageElementType() === SlidesApp.PageElementType.SHAPE) grpShape = child;
-            else if (child.getPageElementType() === SlidesApp.PageElementType.IMAGE) grpImage = child;
-          });
-          processSlotElements(pNum, grpShape, grpImage);
+          var extracted = extractShapeAndImageFromGroup(grp);
+          processSlotElements(pNum, extracted.shape, extracted.image);
           return;
         }
 
@@ -3210,7 +3286,7 @@ function syncPresentationStagingToSlides(ss) {
         return;
       }
 
-      // B. Match concatenated match tags (e.g. 1ST_ROUND_OPPONENT, 1ST_FORMAT_VENUE)
+      // B. Match concatenated match tags (e.g. 1ST_ROUND_OPPONENT, 2ND_ROUND_OPPONENT)
       if (tag === t.prefix + "_ROUND_OPPONENT" || tag === "ROUND_OPPONENT") {
         if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(roundOpponentText);
       } else if (tag === t.prefix + "_FORMAT_VENUE" || tag === "FORMAT_VENUE") {
@@ -3276,13 +3352,8 @@ function syncPresentationStagingToSlides(ss) {
         var sortedGroups = sortElementsTwoColumns(slotGroups);
         sortedGroups.forEach(function(grp, gIdx) {
           if (gIdx < t.players.length) {
-            var grpShape = null;
-            var grpImage = null;
-            grp.getChildren().forEach(function(gc) {
-              if (gc.getPageElementType() === SlidesApp.PageElementType.SHAPE) grpShape = gc;
-              else if (gc.getPageElementType() === SlidesApp.PageElementType.IMAGE) grpImage = gc;
-            });
-            processSlotElements(gIdx + 1, grpShape, grpImage);
+            var extracted = extractShapeAndImageFromGroup(grp);
+            processSlotElements(gIdx + 1, extracted.shape, extracted.image);
           }
         });
       } else {
