@@ -3050,13 +3050,23 @@ function getTransparentPngBlob() {
 function getDriveImageBlob(urlOrId) {
   if (!urlOrId) return null;
   var fileId = "";
-  var str = String(urlOrId);
+  var str = String(urlOrId).trim();
+  
+  // 1. Match /d/<fileId>
   var m = str.match(/\/d\/([a-zA-Z0-9_-]+)/);
   if (m) {
     fileId = m[1];
-  } else if (str.indexOf("http") === -1 && str.length >= 20) {
+  }
+  // 2. Match id=<fileId>
+  if (!fileId) {
+    var mId = str.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (mId) fileId = mId[1];
+  }
+  // 3. Raw file ID (20+ chars, no slashes/http)
+  if (!fileId && str.indexOf("http") === -1 && str.indexOf("/") === -1 && str.length >= 20) {
     fileId = str;
   }
+  
   if (fileId) {
     try {
       return DriveApp.getFileById(fileId).getBlob();
@@ -3069,22 +3079,42 @@ function getDriveImageBlob(urlOrId) {
 
 
 /**
- * Recursively extracts the primary text Shape and avatar Image from a Group (handles nested groups).
+ * Recursively extracts the primary text Shape and avatar Image from a Group or PageElement.
  */
-function extractShapeAndImageFromGroup(grp) {
+function extractShapeAndImageFromGroup(item) {
   var grpShape = null;
   var grpImage = null;
+
   function recurse(el) {
-    var t = el.getPageElementType();
-    if (t === SlidesApp.PageElementType.SHAPE && !grpShape) {
-      grpShape = el;
-    } else if (t === SlidesApp.PageElementType.IMAGE && !grpImage) {
-      grpImage = el;
-    } else if (t === SlidesApp.PageElementType.GROUP) {
-      el.asGroup().getChildren().forEach(recurse);
+    if (!el) return;
+
+    // Direct Group object (has getChildren)
+    if (typeof el.getChildren === "function") {
+      var children = el.getChildren();
+      for (var i = 0; i < children.length; i++) {
+        recurse(children[i]);
+      }
+      return;
+    }
+
+    // PageElement object (has getPageElementType)
+    if (typeof el.getPageElementType === "function") {
+      var t = el.getPageElementType();
+      if (t === SlidesApp.PageElementType.GROUP) {
+        var groupObj = el.asGroup();
+        var children = groupObj.getChildren();
+        for (var j = 0; j < children.length; j++) {
+          recurse(children[j]);
+        }
+      } else if (t === SlidesApp.PageElementType.SHAPE && !grpShape) {
+        grpShape = el.asShape();
+      } else if (t === SlidesApp.PageElementType.IMAGE && !grpImage) {
+        grpImage = el.asImage();
+      }
     }
   }
-  recurse(grp);
+
+  recurse(item);
   return { shape: grpShape, image: grpImage };
 }
 
@@ -3105,14 +3135,16 @@ function findSlideForTeam(prefix, defaultIdx, slides) {
   for (var s = 0; s < slides.length; s++) {
     var els = slides[s].getPageElements();
     for (var e = 0; e < els.length; e++) {
-      var tag = String(els[e].getTitle() || els[e].getDescription() || "").toUpperCase();
+      var el = els[e];
+      var tag = String(el.getTitle() || el.getDescription() || "").toUpperCase();
       if (tag.indexOf(prefix + "_") > -1) {
         return slides[s];
       }
-      if (els[e].getPageElementType() === SlidesApp.PageElementType.GROUP) {
-        var gChildren = els[e].asGroup().getChildren();
+      if (el.getPageElementType() === SlidesApp.PageElementType.GROUP) {
+        var gChildren = el.asGroup().getChildren();
         for (var g = 0; g < gChildren.length; g++) {
-          var gcTag = String(gChildren[g].getTitle() || gChildren[g].getDescription() || "").toUpperCase();
+          var gc = gChildren[g];
+          var gcTag = String(gc.getTitle() || gc.getDescription() || "").toUpperCase();
           if (gcTag.indexOf(prefix + "_") > -1) return slides[s];
         }
       }
@@ -3124,8 +3156,9 @@ function findSlideForTeam(prefix, defaultIdx, slides) {
   for (var s = 0; s < slides.length; s++) {
     var els = slides[s].getPageElements();
     for (var e = 0; e < els.length; e++) {
-      if (els[e].getPageElementType() === SlidesApp.PageElementType.SHAPE) {
-        var txt = els[e].asShape().getText() ? els[e].asShape().getText().asString().toUpperCase() : "";
+      var el = els[e];
+      if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) {
+        var txt = el.asShape().getText() ? el.asShape().getText().asString().toUpperCase() : "";
         for (var k = 0; k < keywords.length; k++) {
           if (txt.indexOf(keywords[k]) > -1) {
             return slides[s];
@@ -3156,15 +3189,27 @@ function syncPresentationStagingToSlides(ss) {
   var staging = s.getSheetByName("Presentation_Staging");
   if (!staging) return { success: false, message: "Presentation_Staging tab not found." };
 
-  // Read player photos map from Players tab
+  // Read player photos map from Players tab (both by Profile ID and Player Name)
   var playerSheet = s.getSheetByName("Players");
   var photoUrlMap = {};
+  var nameToPhotoUrlMap = {};
   if (playerSheet && playerSheet.getLastRow() > 1) {
     var pRows = playerSheet.getRange(2, 1, playerSheet.getLastRow() - 1, 14).getValues();
     pRows.forEach(function(pr) {
       var pid = String(pr[0] || "").trim().toLowerCase();
-      var url = String(pr[13] || "").trim(); // Col N
-      if (pid && url) photoUrlMap[pid] = url;
+      var fName = String(pr[1] || "").trim();
+      var lName = String(pr[2] || "").trim();
+      var knownAs = String(pr[3] || "").trim();
+      var url = String(pr[13] || "").trim(); // Col N: Photo URL
+      
+      if (url) {
+        if (pid) photoUrlMap[pid] = url;
+        if (knownAs) nameToPhotoUrlMap[knownAs.toLowerCase()] = url;
+        if (fName || lName) {
+          var fullName = (fName + " " + lName).trim().toLowerCase();
+          nameToPhotoUrlMap[fullName] = url;
+        }
+      }
     });
   }
 
@@ -3193,7 +3238,11 @@ function syncPresentationStagingToSlides(ss) {
       var role = String(staging.getRange(pRow, 1).getValue() || "").trim();
       var name = String(staging.getRange(pRow, 2).getValue() || "").trim();
       var profileId = String(staging.getRange(pRow, 3).getValue() || "").trim();
-      var photoUrl = photoUrlMap[profileId.toLowerCase()] || "";
+      
+      // Resolve photo URL by Profile ID or Player Name
+      var cleanName = name.replace(/\s*\(.*?\)/g, "").trim().toLowerCase();
+      var photoUrl = photoUrlMap[profileId.toLowerCase()] || nameToPhotoUrlMap[cleanName] || "";
+      
       players.push({ role: role, name: name, profileId: profileId, photoUrl: photoUrl });
     }
 
@@ -3234,19 +3283,27 @@ function syncPresentationStagingToSlides(ss) {
       if (pNum >= 1 && pNum <= t.players.length) {
         var pInfo = t.players[pNum - 1];
         matchedPlayerTags[pNum] = true;
-        if (shapeEl && shapeEl.getPageElementType() === SlidesApp.PageElementType.SHAPE) {
-          var formattedName = formatPlayerPresentationName(pInfo.name, pInfo.role);
-          shapeEl.asShape().getText().setText(formattedName);
-        }
-        if (imageEl && imageEl.getPageElementType() === SlidesApp.PageElementType.IMAGE) {
+        if (shapeEl) {
           try {
+            var shp = (typeof shapeEl.asShape === "function") ? shapeEl.asShape() : shapeEl;
+            if (shp && typeof shp.getText === "function") {
+              var formattedName = formatPlayerPresentationName(pInfo.name, pInfo.role);
+              shp.getText().setText(formattedName);
+            }
+          } catch (e) {
+            Logger.log("Shape setText error: " + e.message);
+          }
+        }
+        if (imageEl) {
+          try {
+            var img = (typeof imageEl.asImage === "function") ? imageEl.asImage() : imageEl;
             var blob = (pInfo && pInfo.photoUrl) ? getDriveImageBlob(pInfo.photoUrl) : null;
             if (!blob) blob = defaultBlob || getTransparentPngBlob();
-            if (blob) {
-              imageEl.asImage().replace(blob);
+            if (blob && img && typeof img.replace === "function") {
+              img.replace(blob);
             }
           } catch (err) {
-            Logger.log("Image replace warning for " + pInfo.name + ": " + err.message);
+            Logger.log("Image replace warning for " + (pInfo ? pInfo.name : pNum) + ": " + err.message);
           }
         }
       }
@@ -3325,7 +3382,7 @@ function syncPresentationStagingToSlides(ss) {
       elements.forEach(function(el) {
         var type = el.getPageElementType();
         if (type === SlidesApp.PageElementType.GROUP) {
-          if (el.getTop() < 430) slotGroups.push(el.asGroup());
+          if (el.getTop() < 430) slotGroups.push(el);
         } else if (type === SlidesApp.PageElementType.SHAPE) {
           var shp = el.asShape();
           var txt = shp.getText() ? shp.getText().asString().trim() : "";
@@ -3350,9 +3407,9 @@ function syncPresentationStagingToSlides(ss) {
       // A. If slide uses Groups:
       if (slotGroups.length > 0) {
         var sortedGroups = sortElementsTwoColumns(slotGroups);
-        sortedGroups.forEach(function(grp, gIdx) {
+        sortedGroups.forEach(function(grpEl, gIdx) {
           if (gIdx < t.players.length) {
-            var extracted = extractShapeAndImageFromGroup(grp);
+            var extracted = extractShapeAndImageFromGroup(grpEl);
             processSlotElements(gIdx + 1, extracted.shape, extracted.image);
           }
         });
