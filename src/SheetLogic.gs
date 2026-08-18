@@ -95,42 +95,45 @@ function deployVerticalRoundSheet(ss, dateStr) {
   ws.getRange("H1").setValue(new Date()).setNumberFormat("dd/mm/yyyy hh:mm").setFontColor("#666666");
 
   // Vertical Team Stack (Cols A & B)
-  var grades = ["FIRST ELEVEN", "SECOND ELEVEN", "THIRD ELEVEN", "FOURTH ELEVEN", "FIFTH ELEVEN"];
-  var teamPrefixes = ["1st", "2nd", "3rd", "4th", "5th"];
-  var currentTeamRow = 4;
+  var frames = [
+    { name: "FIRST ELEVEN", prefix: "1st", start: 4, slots: 12 }, 
+    { name: "SECOND ELEVEN", prefix: "2nd", start: 22, slots: 12 }, 
+    { name: "THIRD ELEVEN", prefix: "3rd", start: 40, slots: 13 }, 
+    { name: "FOURTH ELEVEN", prefix: "4th", start: 59, slots: 13 }, 
+    { name: "FIFTH ELEVEN", prefix: "5th", start: 78, slots: 13 }
+  ];
 
-  grades.forEach(function(gName, gIdx) {
-    var prefix = teamPrefixes[gIdx];
-    var rnd = fixInfo ? (fixInfo[prefix + " round"] || "") : "";
-    var opp = fixInfo ? (fixInfo[prefix + " opponent"] || "") : "";
-    var ven = fixInfo ? (fixInfo[prefix + " venue"] || "") : "";
-    var fmt = fixInfo ? (fixInfo[prefix + " format"] || "") : "";
+  frames.forEach(function(f) {
+    var rnd = fixInfo ? (fixInfo[f.prefix + " round"] || "") : "";
+    var opp = fixInfo ? (fixInfo[f.prefix + " opponent"] || "") : "";
+    var ven = fixInfo ? (fixInfo[f.prefix + " venue"] || "") : "";
+    var fmt = fixInfo ? (fixInfo[f.prefix + " format"] || "") : "";
 
     // Team Banner
-    ws.getRange(currentTeamRow, 1, 1, 2).merge().setValue(gName).setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
+    ws.getRange(f.start, 1, 1, 2).merge().setValue(f.name).setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
     
     // 4 Metadata rows: Round, Opponent, Venue, Format
-    ws.getRange(currentTeamRow + 1, 1).setValue("Round:").setFontStyle("italic");
-    ws.getRange(currentTeamRow + 1, 2).setValue(rnd);
-    ws.getRange(currentTeamRow + 2, 1).setValue("Opponent:").setFontStyle("italic");
-    ws.getRange(currentTeamRow + 2, 2).setValue(opp);
-    ws.getRange(currentTeamRow + 3, 1).setValue("Venue:").setFontStyle("italic");
-    ws.getRange(currentTeamRow + 3, 2).setValue(ven);
-    ws.getRange(currentTeamRow + 4, 1).setValue("Format:").setFontStyle("italic");
-    ws.getRange(currentTeamRow + 4, 2).setValue(fmt);
+    ws.getRange(f.start + 1, 1).setValue("Round:").setFontStyle("italic");
+    ws.getRange(f.start + 1, 2).setValue(rnd);
+    ws.getRange(f.start + 2, 1).setValue("Opponent:").setFontStyle("italic");
+    ws.getRange(f.start + 2, 2).setValue(opp);
+    ws.getRange(f.start + 3, 1).setValue("Venue:").setFontStyle("italic");
+    ws.getRange(f.start + 3, 2).setValue(ven);
+    ws.getRange(f.start + 4, 1).setValue("Format:").setFontStyle("italic");
+    ws.getRange(f.start + 4, 2).setValue(fmt);
 
-    // 13 Player Slot Rows (currentTeamRow + 5 to currentTeamRow + 17)
-    var structure = [
-      ["1. Captain", ""], ["2. VC", ""], ["3. WK", ""],
-      ["4. Player", ""], ["5. Player", ""], ["6. Player", ""],
-      ["7. Player", ""], ["8. Player", ""], ["9. Player", ""],
-      ["10. Player", ""], ["11. Player", ""], ["12. Player", ""], ["13. Player", ""]
-    ];
-    ws.getRange(currentTeamRow + 5, 1, 13, 2).setValues(structure);
-    ws.getRange(currentTeamRow + 5, 1, 13, 1).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
-    ws.getRange(currentTeamRow, 1, 18, 2).setBorder(true, true, true, true, true, true, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
-
-    currentTeamRow += 19;
+    // Player Slot Rows: Default Captain, Vice Captain, Wicket Keeper, Player...
+    var structure = [];
+    for (var s = 0; s < f.slots; s++) {
+      var defaultRole = "Player";
+      if (s === 0) defaultRole = "Captain";
+      else if (s === 1) defaultRole = "Vice Captain";
+      else if (s === 2) defaultRole = "Wicket Keeper";
+      structure.push([defaultRole, ""]);
+    }
+    ws.getRange(f.start + 5, 1, f.slots, 2).setValues(structure);
+    ws.getRange(f.start + 5, 1, f.slots, 1).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
+    ws.getRange(f.start, 1, 5 + f.slots, 2).setBorder(true, true, true, true, true, true, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
   });
 
   // Col D: Dynamic Virtual "Available for Selection" Pool
@@ -1257,34 +1260,38 @@ function applySelectionValidationRules(ws) {
     // Col D: Global unselected pool (Alphabetical)
     ws.getRange("D5").setFormula(`=IFERROR(SORT(FILTER(G5:G, G5:G<>"", COUNTIF(B:B, G5:G)=0)), "")`);
 
-    var teamStarts = [9, 28, 47, 66, 85];
+    var frames = [
+      { start: 4, slots: 12 }, 
+      { start: 22, slots: 12 }, 
+      { start: 40, slots: 13 }, 
+      { start: 59, slots: 13 }, 
+      { start: 78, slots: 13 }
+    ];
+
     var maxCols = ws.getMaxColumns();
     if (maxCols < 95) {
       ws.insertColumnsAfter(maxCols, 95 - maxCols);
     }
 
-    var startCol = 27; // Col AA (Col 27) through Col CQ (Col 91)
+    var startCol = 27; // Col AA (Col 27)
     var slotIndex = 0;
 
     var roleOptions = [
-      "Player",
       "Captain",
-      "VC",
-      "WK",
+      "Vice Captain",
+      "Wicket Keeper",
       "VC & WK",
       "Captain & WK",
-      "1. Captain",
-      "2. VC",
-      "3. WK"
+      "Player"
     ];
     var roleRule = SpreadsheetApp.newDataValidation()
       .requireValueInList(roleOptions, true)
       .setAllowInvalid(true)
       .build();
 
-    teamStarts.forEach(function(startRow) {
-      for (var s = 0; s < 13; s++) {
-        var row = startRow + s;
+    frames.forEach(function(f) {
+      for (var s = 0; s < f.slots; s++) {
+        var row = f.start + 5 + s;
         var helperCol = startCol + slotIndex;
         slotIndex++;
 
@@ -1294,7 +1301,7 @@ function applySelectionValidationRules(ws) {
         // Set helper header and dynamic formula (Alphabetical A-Z)
         ws.getRange(3, helperCol).setValue("SLOT_" + row);
         ws.getRange(5, helperCol).setFormula(
-          '=IFERROR(SORT(FILTER(G$5:G, (COUNTIF($B$9:$B$97, G$5:G)=0) + (G$5:G=B' + row + '))), "")'
+          '=IFERROR(SORT(FILTER(G$5:G, (COUNTIF($B$9:$B$95, G$5:G)=0) + (G$5:G=B' + row + '))), "")'
         );
 
         // Apply Data Validation to this specific slot
@@ -1306,8 +1313,8 @@ function applySelectionValidationRules(ws) {
       }
     });
 
-    // Hide all 65 helper columns (Col 27 to Col 91)
-    ws.hideColumns(27, 65);
+    // Hide all helper columns (Col 27 onwards)
+    ws.hideColumns(27, slotIndex);
   } catch (err) {
     Logger.log("applySelectionValidationRules error: " + err.message);
   }
@@ -1539,18 +1546,11 @@ function syncPresentationStagingHub(ss, targetRoundName) {
     sh.getRange("B1").setValue("").setNumberFormat("@").setBackground(LCC_PALETTE.inputHighlight).setFontWeight("bold").setHorizontalAlignment("center");
       
       var frames = [
-        { name: "FIRST ELEVEN", start: 4 }, 
-        { name: "SECOND ELEVEN", start: 23 }, 
-        { name: "THIRD ELEVEN", start: 42 }, 
-        { name: "FOURTH ELEVEN", start: 61 }, 
-        { name: "FIFTH ELEVEN", start: 80 }
-      ];
-      
-      var slotRoles = [
-        "1. Captain", "2. VC", "3. WK",
-        "4. Player", "5. Player", "6. Player",
-        "7. Player", "8. Player", "9. Player",
-        "10. Player", "11. Player", "12. Player", "13. Player"
+        { name: "FIRST ELEVEN", start: 4, slots: 12 }, 
+        { name: "SECOND ELEVEN", start: 22, slots: 12 }, 
+        { name: "THIRD ELEVEN", start: 40, slots: 13 }, 
+        { name: "FOURTH ELEVEN", start: 59, slots: 13 }, 
+        { name: "FIFTH ELEVEN", start: 78, slots: 13 }
       ];
       
       var targetTabExpr = 'IF(ISNUMBER($B$1), TEXT($B$1, "yyyy-mm-dd"), TO_TEXT($B$1))';
@@ -1574,9 +1574,9 @@ function syncPresentationStagingHub(ss, targetRoundName) {
         sh.getRange(rowIdx + 4, 1).setValue("Format:").setFontStyle("italic");
         sh.getRange(rowIdx + 4, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 4) + '"), "")');
         
-        // 13 Player Slot Rows (start + 5 to start + 17) -> Exact 1-to-1 match with Round sheet
-        for (var idx = 0; idx < 13; idx++) {
-          var currRow = rowIdx + 5 + idx; // 9..21, 28..40, 47..59, 66..78, 85..97
+        // Player Slot Rows (start + 5 to start + 4 + slots) -> Exact 1-to-1 match with Round sheet
+        for (var idx = 0; idx < f.slots; idx++) {
+          var currRow = rowIdx + 5 + idx;
           
           // Col A: Slot Role (Dynamically pulled from active round sheet)
           sh.getRange(currRow, 1).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!A' + currRow + '"), "")').setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
@@ -1591,8 +1591,8 @@ function syncPresentationStagingHub(ss, targetRoundName) {
           sh.getRange(currRow, 4).setFormula('=IFERROR(IF(B' + currRow + '="", "", IMAGE(INDEX(Players!$N$2:$N, MATCH(C' + currRow + ', Players!$A$2:$A, 0)))), "")');
         }
         
-        // Set borders for this team frame (18 rows: 1 banner + 4 metadata + 13 slots)
-        sh.getRange(rowIdx, 1, 18, 4).setBorder(true, true, true, true, true, true, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
+        // Set borders for this team frame (1 banner + 4 metadata + slots)
+        sh.getRange(rowIdx, 1, 5 + f.slots, 4).setBorder(true, true, true, true, true, true, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
       });
       
       sh.setColumnWidth(1, 120); // Col A (Slot Role)
@@ -2859,17 +2859,17 @@ function autoTagSlideElements(ss) {
   var slides = pres.getSlides();
 
   var frames = [
-    { name: "FIRST ELEVEN", prefix: "1ST", slideIdx: 1 }, 
-    { name: "SECOND ELEVEN", prefix: "2ND", slideIdx: 2 }, 
-    { name: "THIRD ELEVEN", prefix: "3RD", slideIdx: 3 }, 
-    { name: "FOURTH ELEVEN", prefix: "4TH", slideIdx: 4 }, 
-    { name: "FIFTH ELEVEN", prefix: "5TH", slideIdx: 5 }
+    { name: "FIRST ELEVEN", prefix: "1ST", defaultIdx: 0, slots: 12 }, 
+    { name: "SECOND ELEVEN", prefix: "2ND", defaultIdx: 1, slots: 12 }, 
+    { name: "THIRD ELEVEN", prefix: "3RD", defaultIdx: 2, slots: 13 }, 
+    { name: "FOURTH ELEVEN", prefix: "4TH", defaultIdx: 3, slots: 13 }, 
+    { name: "FIFTH ELEVEN", prefix: "5TH", defaultIdx: 4, slots: 13 }
   ];
 
   var taggedCount = 0;
   frames.forEach(function(f) {
-    if (f.slideIdx >= slides.length) return;
-    var slide = slides[f.slideIdx];
+    var slide = findSlideForTeam(f.prefix, f.defaultIdx, slides);
+    if (!slide) return;
     var elements = slide.getPageElements();
 
     var slotGroups = [];
@@ -3218,11 +3218,11 @@ function syncPresentationStagingToSlides(ss) {
 
   // Read data for all 5 teams from Presentation_Staging
   var frames = [
-    { name: "FIRST ELEVEN", prefix: "1ST", defaultIdx: 0, start: 4 }, 
-    { name: "SECOND ELEVEN", prefix: "2ND", defaultIdx: 1, start: 23 }, 
-    { name: "THIRD ELEVEN", prefix: "3RD", defaultIdx: 2, start: 42 }, 
-    { name: "FOURTH ELEVEN", prefix: "4TH", defaultIdx: 3, start: 61 }, 
-    { name: "FIFTH ELEVEN", prefix: "5TH", defaultIdx: 4, start: 80 }
+    { name: "FIRST ELEVEN", prefix: "1ST", defaultIdx: 0, start: 4, slots: 12 }, 
+    { name: "SECOND ELEVEN", prefix: "2ND", defaultIdx: 1, start: 22, slots: 12 }, 
+    { name: "THIRD ELEVEN", prefix: "3RD", defaultIdx: 2, start: 40, slots: 13 }, 
+    { name: "FOURTH ELEVEN", prefix: "4TH", defaultIdx: 3, start: 59, slots: 13 }, 
+    { name: "FIFTH ELEVEN", prefix: "5TH", defaultIdx: 4, start: 78, slots: 13 }
   ];
 
   var teamData = [];
@@ -3233,7 +3233,7 @@ function syncPresentationStagingToSlides(ss) {
     var fmtVal = String(staging.getRange(f.start + 4, 2).getValue() || "").trim();
     
     var players = [];
-    for (var p = 0; p < 13; p++) {
+    for (var p = 0; p < f.slots; p++) {
       var pRow = f.start + 5 + p;
       var role = String(staging.getRange(pRow, 1).getValue() || "").trim();
       var name = String(staging.getRange(pRow, 2).getValue() || "").trim();

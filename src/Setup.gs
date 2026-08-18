@@ -171,18 +171,11 @@ function buildPresentationStagingHub(ss) {
   sh.getRange("B1").setValue("").setNumberFormat("@").setBackground(LCC_SETUP_PALETTE.inputHighlight).setFontWeight("bold").setHorizontalAlignment("center");
   
   var frames = [
-    { name: "FIRST ELEVEN", start: 4 }, 
-    { name: "SECOND ELEVEN", start: 23 }, 
-    { name: "THIRD ELEVEN", start: 42 }, 
-    { name: "FOURTH ELEVEN", start: 61 }, 
-    { name: "FIFTH ELEVEN", start: 80 }
-  ];
-  
-  var slotRoles = [
-    "1. Captain", "2. VC", "3. WK",
-    "4. Player", "5. Player", "6. Player",
-    "7. Player", "8. Player", "9. Player",
-    "10. Player", "11. Player", "12. Player", "13. Player"
+    { name: "FIRST ELEVEN", start: 4, slots: 12 }, 
+    { name: "SECOND ELEVEN", start: 22, slots: 12 }, 
+    { name: "THIRD ELEVEN", start: 40, slots: 13 }, 
+    { name: "FOURTH ELEVEN", start: 59, slots: 13 }, 
+    { name: "FIFTH ELEVEN", start: 78, slots: 13 }
   ];
   
   var targetTabExpr = 'IF(ISNUMBER($B$1), TEXT($B$1, "yyyy-mm-dd"), TO_TEXT($B$1))';
@@ -206,9 +199,9 @@ function buildPresentationStagingHub(ss) {
     sh.getRange(rowIdx + 4, 1).setValue("Format:").setFontStyle("italic");
     sh.getRange(rowIdx + 4, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 4) + '"), "")');
     
-    // 13 Player Slot Rows (start + 5 to start + 17) -> Exact 1-to-1 match with Round sheet
-    for (var idx = 0; idx < 13; idx++) {
-      var currRow = rowIdx + 5 + idx; // 9..21, 28..40, 47..59, 66..78, 85..97
+    // Player Slot Rows (start + 5 to start + 4 + slots) -> Exact 1-to-1 match with Round sheet
+    for (var idx = 0; idx < f.slots; idx++) {
+      var currRow = rowIdx + 5 + idx;
       
       // Col A: Slot Role (Dynamically pulled from active round sheet)
       sh.getRange(currRow, 1).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!A' + currRow + '"), "")').setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.zebraLight);
@@ -223,8 +216,8 @@ function buildPresentationStagingHub(ss) {
       sh.getRange(currRow, 4).setFormula('=IFERROR(IF(B' + currRow + '="", "", IMAGE(INDEX(Players!$N$2:$N, MATCH(C' + currRow + ', Players!$A$2:$A, 0)))), "")');
     }
     
-    // Set borders for this team frame (18 rows: 1 banner + 4 metadata + 13 slots)
-    sh.getRange(rowIdx, 1, 18, 4).setBorder(true, true, true, true, true, true, LCC_SETUP_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
+    // Set borders for this team frame (1 banner + 4 metadata + slots)
+    sh.getRange(rowIdx, 1, 5 + f.slots, 4).setBorder(true, true, true, true, true, true, LCC_SETUP_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
   });
   
   sh.setColumnWidth(1, 120); // Col A (Slot Role)
