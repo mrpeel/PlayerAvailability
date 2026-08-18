@@ -1205,19 +1205,14 @@ function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu("🏏 LCC Selection")
     .addItem("Initialise new round", "showDatePickerDialog")
+    .addItem("Sync round to Google slides presentation", "showSyncSlidesDialog")
+    .addItem("Pull new players into round from master list", "showPullNewPlayersDialog")
     .addSeparator()
-    .addItem("Pull new players into round from Master Players list", "showPullNewPlayersDialog")
-    .addItem("Mark player as inactive", "showMarkInactiveDialog")
-    .addSeparator()
-    .addItem("📸 Player Photo Studio", "showPhotoStudioDialog")
-    .addItem("Sync player headshots from Google Drive", "menuSyncPlayerHeadshots")
-    .addSeparator()
-    .addItem("🚀 Sync to Google Slides presentation", "showSyncSlidesDialog")
-    .addItem("Assign permanent IDs to Google Slides elements", "menuAutoTagSlides")
-    .addItem("Inspect Google Slides layout", "menuInspectSlidesLayout")
+    .addItem("Mark players as inactive", "showMarkInactiveDialog")
+    .addItem("Player Photo Studio", "showPhotoStudioDialog")
+    .addItem("Import Players from PlayHQ export", "showImportPlayHQDialog")
     .addSeparator()
     .addItem("Import fixtures from PlayHQ export", "showImportFixturesDialog")
-    .addItem("Import players from PlayHQ export", "showImportPlayHQDialog")
     .addToUi();
 
   // Auto-sync selection validation rules & WhatsApp columns on existing round sheets
