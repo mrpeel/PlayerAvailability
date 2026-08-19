@@ -1219,6 +1219,11 @@ function onOpen() {
   try {
     var ss = getSS();
     if (ss) {
+      var playerSheet = ss.getSheetByName("Players");
+      if (playerSheet) {
+        applyPlayersValidationRules(playerSheet);
+      }
+
       var sheets = ss.getSheets();
       var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log"];
       sheets.forEach(function(s) {
@@ -1235,6 +1240,35 @@ function onOpen() {
     }
   } catch (e) {
     Logger.log("onOpen auto-sync warning: " + e.message);
+  }
+}
+
+
+/**
+ * Applies dropdown validation rules to the Players tab:
+ * - Col F (T20Squad): Yes, No
+ * - Col G (GlobalStatus): Active, Injured, Long-Term Away, Inactive
+ */
+function applyPlayersValidationRules(playerSheet) {
+  if (!playerSheet) return;
+  try {
+    var maxRows = Math.max(playerSheet.getMaxRows(), 200);
+    
+    // 1. T20Squad Validation (Col F / Col 6)
+    var t20Rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(["Yes", "No"], true)
+      .setAllowInvalid(true)
+      .build();
+    playerSheet.getRange(2, 6, maxRows - 1, 1).setDataValidation(t20Rule);
+
+    // 2. GlobalStatus Validation (Col G / Col 7)
+    var statusRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(["Active", "Injured", "Long-Term Away", "Inactive"], true)
+      .setAllowInvalid(true)
+      .build();
+    playerSheet.getRange(2, 7, maxRows - 1, 1).setDataValidation(statusRule);
+  } catch (err) {
+    Logger.log("applyPlayersValidationRules error: " + err.message);
   }
 }
 
@@ -3173,9 +3207,22 @@ function findSlideForTeam(prefix, defaultIdx, slides) {
 
 /**
  * Synchronizes Presentation_Staging team rosters and metadata directly to Google Slides using permanent Alt Text IDs.
+ * @param {string|Spreadsheet} [roundDateOrSs] Optional round date string (e.g. "2025-10-04") or Spreadsheet object.
+ * @param {Spreadsheet} [optSs] Optional Spreadsheet object if roundDate string was passed first.
  */
-function syncPresentationStagingToSlides(ss) {
-  var s = ss || getSS();
+function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
+  var s = null;
+  var targetRound = null;
+
+  if (typeof roundDateOrSs === "string") {
+    targetRound = roundDateOrSs.trim();
+    s = optSs || getSS();
+  } else if (roundDateOrSs && typeof roundDateOrSs.getSheetByName === "function") {
+    s = roundDateOrSs;
+  } else {
+    s = getSS();
+  }
+
   if (!s) return { success: false, message: "Spreadsheet not found." };
   
   var presId = getSlidesPresentationId();
@@ -3183,6 +3230,12 @@ function syncPresentationStagingToSlides(ss) {
 
   var staging = s.getSheetByName("Presentation_Staging");
   if (!staging) return { success: false, message: "Presentation_Staging tab not found." };
+
+  // If a specific round was chosen in the sync dialog, update Presentation_Staging B1 and flush formulas
+  if (targetRound) {
+    staging.getRange("B1").setValue(targetRound);
+    SpreadsheetApp.flush();
+  }
 
   // Read player photos map from Players tab (both by Profile ID and Player Name)
   var playerSheet = s.getSheetByName("Players");
@@ -3465,19 +3518,43 @@ function getSlidesSyncSummary() {
   var presId = getSlidesPresentationId();
   var presUrl = "https://docs.google.com/presentation/d/" + presId + "/edit";
   var staging = ss ? ss.getSheetByName("Presentation_Staging") : null;
-  var roundVal = "";
+  var currentRound = "";
   if (staging) {
     var rawB1 = staging.getRange("B1").getValue();
     if (rawB1 instanceof Date) {
-      roundVal = Utilities.formatDate(rawB1, "Australia/Melbourne", "yyyy-MM-dd");
+      currentRound = Utilities.formatDate(rawB1, "Australia/Melbourne", "yyyy-MM-dd");
     } else {
-      roundVal = String(rawB1 || "").trim();
+      currentRound = String(rawB1 || "").trim();
     }
   }
+
+  // Detect all round tabs in the workbook (exclude non-round system sheets)
+  var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log"];
+  var roundTabs = [];
+  if (ss) {
+    var allSheets = ss.getSheets();
+    allSheets.forEach(function(sh) {
+      var name = sh.getName();
+      if (nonRoundNames.indexOf(name) === -1) {
+        roundTabs.push(name);
+      }
+    });
+  }
+
+  // If the user currently has a round tab open, default to that round!
+  var activeSheet = ss ? ss.getActiveSheet() : null;
+  var activeName = activeSheet ? activeSheet.getName() : "";
+  if (activeName && nonRoundNames.indexOf(activeName) === -1) {
+    currentRound = activeName;
+  } else if (!currentRound && roundTabs.length > 0) {
+    currentRound = roundTabs[roundTabs.length - 1];
+  }
+
   return {
     presentationId: presId,
     presentationUrl: presUrl,
-    roundToPresent: roundVal || "(None selected in B1)",
+    roundToPresent: currentRound || "(None selected)",
+    availableRounds: roundTabs,
     teamCount: 5
   };
 }
@@ -3496,10 +3573,12 @@ function showSyncSlidesDialog() {
     '  .header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; border-bottom: 2px solid #4d0012; padding-bottom: 12px; }' +
     '  .header h2 { color: #4d0012; font-size: 20px; font-weight: 700; }' +
     '  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }' +
-    '  .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }' +
+    '  .info-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }' +
     '  .info-row:last-child { border-bottom: none; }' +
     '  .label { color: #666; font-weight: 500; }' +
     '  .value { color: #111; font-weight: 600; }' +
+    '  select { padding: 6px 12px; border-radius: 6px; border: 1.5px solid #4d0012; font-size: 14px; font-weight: 600; color: #4d0012; background: #fff; cursor: pointer; min-width: 170px; outline: none; transition: border-color 0.2s; }' +
+    '  select:focus { border-color: #fac218; box-shadow: 0 0 0 2px rgba(250, 194, 24, 0.25); }' +
     '  .actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }' +
     '  button { padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }' +
     '  .btn-primary { background: #4d0012; color: #fff; }' +
@@ -3517,9 +3596,12 @@ function showSyncSlidesDialog() {
     '  <h2>🏏 Sync to Google Slides</h2>' +
     '</div>' +
     '<div id="confirmState">' +
-    '  <p style="font-size: 14px; color: #555; margin-bottom: 16px;">This will read the active round selection from <strong>Presentation_Staging</strong> and populate all 5 team slides in your Google Slides deck.</p>' +
+    '  <p style="font-size: 14px; color: #555; margin-bottom: 16px;">Select the round to present. This will load the round selection and update all team slides in your Google Slides deck.</p>' +
     '  <div class="card">' +
-    '    <div class="info-row"><span class="label">Round to Present:</span><span class="value" id="roundVal">Loading...</span></div>' +
+    '    <div class="info-row">' +
+    '      <span class="label">Round to Present:</span>' +
+    '      <select id="roundSelect"><option value="">Loading rounds...</option></select>' +
+    '    </div>' +
     '    <div class="info-row"><span class="label">Teams:</span><span class="value">1st, 2nd, 3rd, 4th, 5th Elevens</span></div>' +
     '    <div class="info-row"><span class="label">Headshot Sync:</span><span class="value">Drive Photos & Transparent fallback</span></div>' +
     '  </div>' +
@@ -3545,10 +3627,32 @@ function showSyncSlidesDialog() {
     '<script>' +
     '  var presentationUrl = "";' +
     '  google.script.run.withSuccessHandler(function(summary) {' +
-    '    document.getElementById("roundVal").innerText = summary.roundToPresent;' +
     '    presentationUrl = summary.presentationUrl;' +
+    '    var sel = document.getElementById("roundSelect");' +
+    '    sel.innerHTML = "";' +
+    '    if (summary.availableRounds && summary.availableRounds.length > 0) {' +
+    '      summary.availableRounds.forEach(function(rnd) {' +
+    '        var opt = document.createElement("option");' +
+    '        opt.value = rnd;' +
+    '        opt.text = rnd;' +
+    '        if (rnd === summary.roundToPresent) {' +
+    '          opt.selected = true;' +
+    '        }' +
+    '        sel.appendChild(opt);' +
+    '      });' +
+    '    } else {' +
+    '      var opt = document.createElement("option");' +
+    '      opt.value = summary.roundToPresent || "";' +
+    '      opt.text = summary.roundToPresent || "No rounds found";' +
+    '      sel.appendChild(opt);' +
+    '    }' +
     '  }).getSlidesSyncSummary();' +
     '  function startSync() {' +
+    '    var selectedRound = document.getElementById("roundSelect").value;' +
+    '    if (!selectedRound) {' +
+    '      alert("Please select a round to present.");' +
+    '      return;' +
+    '    }' +
     '    document.getElementById("confirmState").style.display = "none";' +
     '    document.getElementById("loadingState").style.display = "block";' +
     '    google.script.run.withSuccessHandler(function(res) {' +
@@ -3558,14 +3662,14 @@ function showSyncSlidesDialog() {
     '    }).withFailureHandler(function(err) {' +
     '      alert("Sync Error: " + err.message);' +
     '      google.script.host.close();' +
-    '    }).syncPresentationStagingToSlides();' +
+    '    }).syncPresentationStagingToSlides(selectedRound);' +
     '  }' +
     '  function openSlides() {' +
     '    if (presentationUrl) window.open(presentationUrl, "_blank");' +
     '  }' +
     '</script>' +
     '</body></html>'
-  ).setWidth(520).setHeight(360);
+  ).setWidth(520).setHeight(370);
   SpreadsheetApp.getUi().showModalDialog(html, "🏏 Google Slides Sync");
 }
 

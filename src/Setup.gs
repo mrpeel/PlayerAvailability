@@ -50,6 +50,19 @@ function createCoreDatabaseSheets(ss) {
   ]];
   playerSheet.getRange(1, 1, 1, 14).setValues(playerHeaders).setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.maroonBg).setFontColor(LCC_SETUP_PALETTE.maroonFg);
   
+  // Data Validation for T20Squad (Col F) & GlobalStatus (Col G)
+  var t20Rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(["Yes", "No"], true)
+    .setAllowInvalid(true)
+    .build();
+  playerSheet.getRange("F2:F200").setDataValidation(t20Rule);
+
+  var statusRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(["Active", "Injured", "Long-Term Away", "Inactive"], true)
+    .setAllowInvalid(true)
+    .build();
+  playerSheet.getRange("G2:G200").setDataValidation(statusRule);
+  
   // 2. CONFIG TAB (Team configuration)
   var configSheet = ss.getSheetByName("Config") || ss.insertSheet("Config");
   configSheet.clear();
