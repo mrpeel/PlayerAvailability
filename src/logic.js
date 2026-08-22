@@ -768,11 +768,21 @@ function formatRoundOpponent(round, prefix, opponent) {
   
   var xiLabel = "LCC 1st XI";
   var pLower = String(prefix || "").toLowerCase();
-  if (pLower.indexOf("1") > -1) xiLabel = "LCC 1st XI";
-  else if (pLower.indexOf("2") > -1) xiLabel = "LCC 2nd XI";
-  else if (pLower.indexOf("3") > -1) xiLabel = "LCC 3rd XI";
-  else if (pLower.indexOf("4") > -1) xiLabel = "LCC 4th XI";
-  else if (pLower.indexOf("5") > -1) xiLabel = "LCC 5th XI";
+  if (pLower.indexOf("t20") > -1) {
+    if (pLower.indexOf("1") > -1) xiLabel = "LCC T20 1st XI";
+    else if (pLower.indexOf("2") > -1) xiLabel = "LCC T20 2nd XI";
+    else xiLabel = "LCC T20 XI";
+  } else if (pLower.indexOf("1") > -1) {
+    xiLabel = "LCC 1st XI";
+  } else if (pLower.indexOf("2") > -1) {
+    xiLabel = "LCC 2nd XI";
+  } else if (pLower.indexOf("3") > -1) {
+    xiLabel = "LCC 3rd XI";
+  } else if (pLower.indexOf("4") > -1) {
+    xiLabel = "LCC 4th XI";
+  } else if (pLower.indexOf("5") > -1) {
+    xiLabel = "LCC 5th XI";
+  }
   
   var oppStr = String(opponent || "").trim();
   if (rStr && oppStr) {
@@ -783,6 +793,230 @@ function formatRoundOpponent(round, prefix, opponent) {
     return rStr + ": " + xiLabel;
   }
   return xiLabel;
+}
+
+/**
+ * Extracts slot number (1-13) for a specific team prefix from an Alt Text title or description.
+ * Prevents cross-matching between teams (e.g. 1ST vs T20_1ST, 2ND vs T20_2ND).
+ *
+ * @param {string} tag Alt Text title or description tag.
+ * @param {string} teamPrefix Team prefix (e.g. 'T20_1ST', 'T20_2ND', '1ST', '2ND', etc.).
+ * @returns {number|null} 1-based slot index or null if not a match.
+ */
+function extractSlotNumberForTeam(tag, teamPrefix) {
+  if (!tag) return null;
+  var upperTag = String(tag).trim().toUpperCase();
+  var pUpper = String(teamPrefix || "").trim().toUpperCase();
+
+  // Normalize delimiters (replace spaces, colons, dashes with underscores)
+  var normalizedTag = upperTag.replace(/[\s\-:]+/g, "_");
+  var normalizedPrefix = pUpper.replace(/[\s\-:]+/g, "_");
+
+  var isT20 = normalizedPrefix.indexOf("T20") > -1;
+  var isT20_1st = normalizedPrefix === "T20_1ST" || (isT20 && (normalizedPrefix.indexOf("1") > -1 || normalizedPrefix.indexOf("FIRST") > -1));
+  var isT20_2nd = normalizedPrefix === "T20_2ND" || (isT20 && (normalizedPrefix.indexOf("2") > -1 || normalizedPrefix.indexOf("SECOND") > -1));
+
+  // Check if tag explicitly belongs to a DIFFERENT team
+  if (isT20_1st) {
+    if (/^T20_?(?:2ND|2|SECOND)/i.test(normalizedTag)) return null;
+    if (/^(?:1ST|2ND|3RD|4TH|5TH|FIRST|SECOND|THIRD|FOURTH|FIFTH)_/i.test(normalizedTag) && !/^T20/i.test(normalizedTag)) return null;
+  } else if (isT20_2nd) {
+    if (/^T20_?(?:1ST|1|FIRST)/i.test(normalizedTag)) return null;
+    if (/^(?:1ST|2ND|3RD|4TH|5TH|FIRST|SECOND|THIRD|FOURTH|FIFTH)_/i.test(normalizedTag) && !/^T20/i.test(normalizedTag)) return null;
+  } else {
+    // Standard Saturday teams
+    if (/^T20/i.test(normalizedTag)) return null;
+    var otherSatPrefixes = ["1ST", "2ND", "3RD", "4TH", "5TH"];
+    for (var i = 0; i < otherSatPrefixes.length; i++) {
+      if (normalizedPrefix !== otherSatPrefixes[i] && normalizedTag.indexOf(otherSatPrefixes[i] + "_") === 0) {
+        return null;
+      }
+    }
+  }
+
+  // Strip team prefix from the start of tag if present
+  var cleanTag = normalizedTag;
+  if (isT20_1st) {
+    cleanTag = cleanTag.replace(/^T20_?(?:1ST|1|FIRST)?(?:_XI|_ELEVEN)?_+/i, "");
+  } else if (isT20_2nd) {
+    cleanTag = cleanTag.replace(/^T20_?(?:2ND|2|SECOND)?(?:_XI|_ELEVEN)?_+/i, "");
+  } else {
+    cleanTag = cleanTag.replace(new RegExp("^(?:" + normalizedPrefix + "|FIRST|SECOND|THIRD|FOURTH|FIFTH)(?:_XI|_ELEVEN)?_+", "i"), "");
+  }
+
+  // Extract slot number from remaining tag (e.g. SLOT_1, PLAYER_1, PHOTO_1, IMAGE_1, 1)
+  var slotMatch = cleanTag.match(/^(?:SLOT|PLAYER|PHOTO|IMAGE|IMG|PIC|AVATAR|HEADSHOT|P|PH)?_?(\d+)$/i);
+  if (slotMatch) {
+    return parseInt(slotMatch[1], 10);
+  }
+
+  return null;
+}
+
+/**
+ * Returns vertical team frame configurations for a round tab or staging hub.
+ *
+ * @param {boolean} isT20 Whether the round is a T20 round.
+ * @returns {Array<Object>}
+ */
+function getRoundFrames(isT20) {
+  if (isT20) {
+    return [
+      { name: "T20 1st ELEVEN", prefix: "T20 1st", altPrefix: "T20_1ST", defaultIdx: 0, start: 4, slots: 12 },
+      { name: "T20 SECOND ELEVEN", prefix: "T20 2nd", altPrefix: "T20_2ND", defaultIdx: 1, start: 22, slots: 12 }
+    ];
+  }
+  return [
+    { name: "FIRST ELEVEN", prefix: "1st", altPrefix: "1ST", defaultIdx: 0, start: 4, slots: 12 },
+    { name: "SECOND ELEVEN", prefix: "2nd", altPrefix: "2ND", defaultIdx: 1, start: 22, slots: 12 },
+    { name: "THIRD ELEVEN", prefix: "3rd", altPrefix: "3RD", defaultIdx: 2, start: 40, slots: 13 },
+    { name: "FOURTH ELEVEN", prefix: "4th", altPrefix: "4TH", defaultIdx: 3, start: 59, slots: 13 },
+    { name: "FIFTH ELEVEN", prefix: "5th", altPrefix: "5TH", defaultIdx: 4, start: 78, slots: 13 }
+  ];
+}
+
+/**
+ * Detects whether a given fixture row object, tab name, or date corresponds to a T20 round.
+ *
+ * @param {Object|string} fixInfoOrDate Either a fixInfo object (keys like '1st format', 't20 1st opponent') or date string.
+ * @param {Array<Array>} [fixtures2DData] Optional 2D array of Fixtures sheet to lookup date.
+ * @returns {boolean} True if T20 round.
+ */
+function isT20Fixture(fixInfoOrDate, fixtures2DData) {
+  if (!fixInfoOrDate) return false;
+
+  if (typeof fixInfoOrDate === "object" && !Array.isArray(fixInfoOrDate)) {
+    for (var k in fixInfoOrDate) {
+      var keyLower = String(k || "").toLowerCase();
+      var valLower = String(fixInfoOrDate[k] || "").toLowerCase().trim();
+      if (keyLower.indexOf("t20") > -1 && valLower !== "") {
+        return true;
+      }
+      if (keyLower.indexOf("format") > -1 && valLower.indexOf("t20") > -1) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  var dateStr = String(fixInfoOrDate || "").trim();
+  if (/t20/i.test(dateStr)) return true;
+
+  if (fixtures2DData && Array.isArray(fixtures2DData) && fixtures2DData.length > 1) {
+    var headers = fixtures2DData[0];
+    var dateColIdx = -1;
+    headers.forEach(function(h, i) {
+      var ch = String(h || "").trim().toLowerCase();
+      if (ch === "game date" || ch === "date" || ch.indexOf("date") > -1) {
+        dateColIdx = i;
+      }
+    });
+
+    if (dateColIdx !== -1) {
+      var targetNorm = normalizeDateToYYYYMMDD(dateStr);
+      for (var r = 1; r < fixtures2DData.length; r++) {
+        var row = fixtures2DData[r];
+        var rowDateNorm = normalizeDateToYYYYMMDD(row[dateColIdx]);
+        if (rowDateNorm === targetNorm || String(row[dateColIdx] || "").trim() === dateStr) {
+          for (var c = 0; c < headers.length; c++) {
+            var hLower = String(headers[c] || "").toLowerCase();
+            var val = String(row[c] || "").trim().toLowerCase();
+            if (!val) continue;
+            if (hLower.indexOf("t20") > -1) return true;
+            if (hLower.indexOf("format") > -1 && val.indexOf("t20") > -1) return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Extracts and filters players from the 2D data of the Players tab for a round snapshot.
+ *
+ * @param {Array<Array>} players2DData 2D array from Players tab (including headers in row 0).
+ * @param {boolean} isT20 Whether to filter exclusively for T20 squad players (T20Squad === "Yes").
+ * @param {Date|string} [targetDate] Date of the match for checking return dates.
+ * @returns {{ unavailableSnapshot: Array<Array<string>>, unknownSnapshot: Array<Array<string>> }}
+ */
+function filterPlayersForRoundSnapshot(players2DData, isT20, targetDate) {
+  if (!players2DData || !Array.isArray(players2DData) || players2DData.length < 2) {
+    return { unavailableSnapshot: [], unknownSnapshot: [] };
+  }
+
+  var headers = players2DData[0];
+  var idCol = 0;
+  var fNameCol = 1;
+  var lNameCol = 2;
+  var fullCol = 3;
+  var juniorCol = 4;
+  var t20Col = 5;
+  var statusCol = 6;
+  var returnCol = 7;
+
+  headers.forEach(function(h, i) {
+    var ch = String(h || "").trim().toLowerCase();
+    if (ch === "profileid" || ch === "profile id" || ch === "id") idCol = i;
+    else if (ch === "firstname" || ch === "first name") fNameCol = i;
+    else if (ch === "lastname" || ch === "last name") lNameCol = i;
+    else if (ch === "fullname" || ch === "full name") fullCol = i;
+    else if (ch === "juniorlevel" || ch === "junior level") juniorCol = i;
+    else if (ch.indexOf("t20") > -1) t20Col = i;
+    else if (ch === "globalstatus" || ch === "global status" || ch === "status") statusCol = i;
+    else if (ch === "expectedreturndate" || ch === "return date") returnCol = i;
+  });
+
+  var matchDate = targetDate ? (targetDate instanceof Date ? targetDate : new Date(targetDate)) : null;
+  var unavailableSnapshot = [];
+  var unknownSnapshot = [];
+
+  for (var r = 1; r < players2DData.length; r++) {
+    var row = players2DData[r];
+    var profileId = String(row[idCol] || "").trim();
+    var fullName = String(row[fullCol] || (String(row[fNameCol] || "") + " " + String(row[lNameCol] || ""))).trim();
+    if (!profileId || !fullName) continue;
+
+    var t20Raw = (t20Col !== -1 && t20Col < row.length) ? row[t20Col] : "";
+    var t20Val = String(t20Raw || "").trim().toLowerCase();
+    var isExplicitYes = (t20Val === "yes" || t20Val === "y" || t20Val === "true");
+
+    // If T20 round, MUST have an explicit "Yes" in T20Squad.
+    // Blank, "No", null, undefined, or any other value is EXCLUDED.
+    if (isT20 && !isExplicitYes) {
+      continue;
+    }
+
+    var globalStatus = String(row[statusCol] || "Active").trim();
+    var returnDateRaw = row[returnCol];
+    var juniorLevel = String(row[juniorCol] || "").trim();
+
+    var displayName = formatNameWithJuniorTag(fullName, juniorLevel);
+
+    var isExempt = false;
+    if (globalStatus === "Injured" || globalStatus === "Long-Term Away" || globalStatus === "Inactive") {
+      if (returnDateRaw && globalStatus !== "Inactive" && matchDate && !isNaN(matchDate.getTime())) {
+        var returnDate = new Date(returnDateRaw);
+        if (!isNaN(returnDate.getTime()) && returnDate >= matchDate) {
+          isExempt = true;
+        }
+      } else {
+        isExempt = true;
+      }
+    }
+
+    if (isExempt) {
+      unavailableSnapshot.push([profileId, displayName, "Global Exemption: " + globalStatus, ""]);
+    } else if (globalStatus === "Active") {
+      unknownSnapshot.push([profileId, displayName, "", ""]);
+    }
+  }
+
+  return {
+    unavailableSnapshot: unavailableSnapshot,
+    unknownSnapshot: unknownSnapshot
+  };
 }
 
 /**
@@ -810,6 +1044,161 @@ function formatFormatVenue(format, venue) {
   return "";
 }
 
+/**
+ * Processes 2D data from the Fixtures tab into structured, chronological fixture
+ * options for round tab initialisation.
+ *
+ * Formats dropdown labels as:
+ * Day and date ({list of teams with an entry for the fixture})
+ * e.g. "Sat 16 Nov 2025 (1st XI)"
+ * e.g. "Sat 10 Jan 2026 (1st XI, 2nd XI, 3rd XI, 4th XI, 5th XI)"
+ * e.g. "Tue 20 Jan 2026 (T20 1st XI, T20 2nd XI)"
+ *
+ * @param {Array<Array>} fixturesData 2D array of values from the Fixtures tab.
+ * @param {Array<string>} existingSheetNames List of current sheet names in the workbook.
+ * @returns {Array<Object>} List of structured fixture options sorted by date.
+ */
+function getFixtureOptionsForRoundInit(fixturesData, existingSheetNames) {
+  if (!fixturesData || !Array.isArray(fixturesData) || fixturesData.length < 2) {
+    return [];
+  }
+
+  var existingTabs = (existingSheetNames && Array.isArray(existingSheetNames))
+    ? existingSheetNames.map(function(s) { return String(s || "").trim(); })
+    : [];
+
+  var headers = fixturesData[0];
+  var dateColIdx = -1;
+
+  headers.forEach(function(h, i) {
+    var cleanHeader = String(h || "").trim().toLowerCase();
+    if (cleanHeader === "game date" || cleanHeader === "date" || cleanHeader === "match date") {
+      dateColIdx = i;
+    }
+  });
+
+  if (dateColIdx === -1) {
+    return [];
+  }
+
+  // Dynamically discover all teams and their field column indices from headers
+  var teamDescriptors = [];
+  var seenPrefixes = {};
+
+  headers.forEach(function(h, i) {
+    var cleanHeader = String(h || "").trim();
+    var match = cleanHeader.match(/^(.*?)\s+(Round|Format|Opponent|Venue)$/i);
+    if (match) {
+      var prefix = match[1].trim();
+      var key = prefix.toLowerCase();
+      if (!seenPrefixes[key]) {
+        seenPrefixes[key] = {
+          prefix: prefix,
+          name: (/XI$|Team$/i.test(prefix) ? prefix : (prefix + " XI")),
+          roundIdx: -1,
+          formatIdx: -1,
+          oppIdx: -1,
+          venueIdx: -1
+        };
+        teamDescriptors.push(seenPrefixes[key]);
+      }
+      var field = match[2].toLowerCase();
+      if (field === "round") seenPrefixes[key].roundIdx = i;
+      else if (field === "format") seenPrefixes[key].formatIdx = i;
+      else if (field === "opponent") seenPrefixes[key].oppIdx = i;
+      else if (field === "venue") seenPrefixes[key].venueIdx = i;
+    }
+  });
+
+  var daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var fullDays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  var fullMonths = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+  var optionsMap = {};
+
+  for (var r = 1; r < fixturesData.length; r++) {
+    var row = fixturesData[r];
+    var rawDate = row[dateColIdx];
+    var normalizedDate = normalizeDateToYYYYMMDD(rawDate);
+    if (!normalizedDate) continue;
+
+    var parts = normalizedDate.split("-");
+    var year = parts[0];
+    var monthIdx = parseInt(parts[1], 10) - 1;
+    var dayNum = parseInt(parts[2], 10);
+    var dObj = new Date(parseInt(parts[0], 10), monthIdx, dayNum);
+    var dayName = !isNaN(dObj.getTime()) ? daysOfWeek[dObj.getDay()] : "";
+    var fullDayName = !isNaN(dObj.getTime()) ? fullDays[dObj.getDay()] : "";
+    var monthName = (monthIdx >= 0 && monthIdx < 12) ? months[monthIdx] : "";
+    var fullMonthName = (monthIdx >= 0 && monthIdx < 12) ? fullMonths[monthIdx] : "";
+
+    // E.g. "Sat 16 Nov 2025" or "Sat 10 Jan 2026"
+    var dayDateStr = dayName ? (dayName + " " + dayNum + " " + monthName + " " + year) : (dayNum + " " + monthName + " " + year);
+    var fullDisplayDate = fullDayName ? (fullDayName + ", " + dayNum + " " + fullMonthName + " " + year) : dayDateStr;
+
+    var tabExists = existingTabs.some(function(tabName) {
+      return tabName === normalizedDate || tabName === String(rawDate).trim() || normalizeDateToYYYYMMDD(tabName) === normalizedDate;
+    });
+
+    var teamMatches = [];
+    var teamsWithEntries = [];
+
+    teamDescriptors.forEach(function(t) {
+      var tRound = t.roundIdx !== -1 && row[t.roundIdx] ? String(row[t.roundIdx]).trim() : "";
+      var tFmt = t.formatIdx !== -1 && row[t.formatIdx] ? String(row[t.formatIdx]).trim() : "";
+      var tOpp = t.oppIdx !== -1 && row[t.oppIdx] ? String(row[t.oppIdx]).trim() : "";
+      var tVen = t.venueIdx !== -1 && row[t.venueIdx] ? String(row[t.venueIdx]).trim() : "";
+
+      if (tOpp || tVen || tFmt || tRound) {
+        teamsWithEntries.push(t.name);
+        teamMatches.push({
+          team: t.name,
+          round: tRound,
+          format: tFmt,
+          opponent: tOpp,
+          venue: tVen
+        });
+      }
+    });
+
+    // Build label: Day and date ({list of teams with an entry for the fixture})
+    // E.g. "Sat 16 Nov 2025 (1st XI)"
+    // E.g. "Sat 10 Jan 2026 (1st XI, 2nd XI, 3rd XI, 4th XI, 5th XI)"
+    // E.g. "Tue 20 Jan 2026 (T20 1st XI, T20 2nd XI)"
+    var label = dayDateStr;
+    if (teamsWithEntries.length > 0) {
+      label += " (" + teamsWithEntries.join(", ") + ")";
+    }
+    if (tabExists) {
+      label += " [Tab Initialised]";
+    }
+
+    if (!optionsMap[normalizedDate]) {
+      optionsMap[normalizedDate] = {
+        date: normalizedDate,
+        rawDate: String(rawDate).trim(),
+        displayDate: dayDateStr,
+        fullDisplayDate: fullDisplayDate,
+        teams: teamsWithEntries,
+        tabExists: tabExists,
+        label: label,
+        teamMatches: teamMatches
+      };
+    }
+  }
+
+  var optionsList = Object.keys(optionsMap).map(function(k) {
+    return optionsMap[k];
+  });
+
+  optionsList.sort(function(a, b) {
+    return a.date.localeCompare(b.date);
+  });
+
+  return optionsList;
+}
+
 // Node/Jest interop — Apps Script ignores this guard.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -832,6 +1221,11 @@ if (typeof module !== 'undefined' && module.exports) {
     readTemplatesFromSheet,
     parseFixtureCsv,
     mergeFixturesIntoMatrix,
+    getFixtureOptionsForRoundInit,
+    getRoundFrames,
+    extractSlotNumberForTeam,
+    isT20Fixture,
+    filterPlayersForRoundSnapshot,
     simulatePlayerAvailability,
     generateAvailabilityCalloutMessage,
     generateWallOfShameMessage

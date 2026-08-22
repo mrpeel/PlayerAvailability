@@ -65,52 +65,61 @@ function deployVerticalRoundSheet(ss, dateStr) {
   // Lookup fixture details for this date if present
   var fixSheet = ss.getSheetByName("Fixtures");
   var fixInfo = null;
+  var fValues = null;
   if (fixSheet && fixSheet.getLastRow() > 1) {
-    var fValues = fixSheet.getDataRange().getValues();
+    fValues = fixSheet.getDataRange().getValues();
     var fHeaders = fValues[0];
     var dateColIdx = -1;
     fHeaders.forEach(function(h, i) {
-      if (String(h).trim().toLowerCase() === "game date") dateColIdx = i;
+      var ch = String(h || "").trim().toLowerCase();
+      if (ch === "game date" || ch === "date" || ch.indexOf("date") > -1) {
+        dateColIdx = i;
+      }
     });
-    if (dateColIdx !== -1) {
-      var targetNormalized = normalizeDateToYYYYMMDD(dateStr) || String(dateStr).trim();
-      for (var fRow = 1; fRow < fValues.length; fRow++) {
-        var rowDateNormalized = normalizeDateToYYYYMMDD(fValues[fRow][dateColIdx]) || String(fValues[fRow][dateColIdx]).trim();
-        if (rowDateNormalized === targetNormalized) {
-          fixInfo = {};
-          fHeaders.forEach(function(h, i) {
-            fixInfo[String(h).trim().toLowerCase()] = fValues[fRow][i];
-          });
-          break;
-        }
+    if (dateColIdx === -1) dateColIdx = 0;
+
+    var targetNormalized = normalizeDateToYYYYMMDD(dateStr) || String(dateStr).trim();
+    for (var fRow = 1; fRow < fValues.length; fRow++) {
+      var rowDateNormalized = normalizeDateToYYYYMMDD(fValues[fRow][dateColIdx]) || String(fValues[fRow][dateColIdx]).trim();
+      if (rowDateNormalized === targetNormalized || String(fValues[fRow][dateColIdx]).trim() === String(dateStr).trim()) {
+        fixInfo = {};
+        fHeaders.forEach(function(h, i) {
+          fixInfo[String(h).trim().toLowerCase()] = fValues[fRow][i];
+        });
+        break;
       }
     }
   }
 
-  // Header Metadata (Date is key, clean single Match Date header)
-  ws.getRange("A1").setValue("Match Date:").setFontWeight("bold");
-  ws.getRange("B1").setValue(targetDate).setNumberFormat("dd/mm/yyyy").setBackground(LCC_PALETTE.inputHighlight).setHorizontalAlignment("center").setFontWeight("bold");
+  // Detect whether this round is a T20 round
+  var isT20 = isT20Fixture(fixInfo) || isT20Fixture(dateStr, fValues) || /t20/i.test(sheetName);
+  var headerBg = isT20 ? "#fbbc04" : LCC_PALETTE.maroonBg;
+  var headerFg = isT20 ? "#000000" : LCC_PALETTE.maroonFg;
+
+  // Header Metadata (T20 uses background: #fbbc04 and text: black)
+  if (isT20) {
+    ws.getRange("A1").setValue("Match Date (T20):").setFontWeight("bold").setBackground("#fbbc04").setFontColor("#000000");
+    ws.getRange("B1").setValue(targetDate).setNumberFormat("dd/mm/yyyy").setBackground("#fbbc04").setFontColor("#000000").setHorizontalAlignment("center").setFontWeight("bold");
+  } else {
+    ws.getRange("A1").setValue("Match Date:").setFontWeight("bold");
+    ws.getRange("B1").setValue(targetDate).setNumberFormat("dd/mm/yyyy").setBackground(LCC_PALETTE.inputHighlight).setHorizontalAlignment("center").setFontWeight("bold");
+  }
   ws.getRange("A2:B2").clear();
   ws.getRange("G1").setValue("Roster Last Synced:").setFontWeight("bold");
   ws.getRange("H1").setValue(new Date()).setNumberFormat("dd/mm/yyyy hh:mm").setFontColor("#666666");
 
-  // Vertical Team Stack (Cols A & B)
-  var frames = [
-    { name: "FIRST ELEVEN", prefix: "1st", start: 4, slots: 12 }, 
-    { name: "SECOND ELEVEN", prefix: "2nd", start: 22, slots: 12 }, 
-    { name: "THIRD ELEVEN", prefix: "3rd", start: 40, slots: 13 }, 
-    { name: "FOURTH ELEVEN", prefix: "4th", start: 59, slots: 13 }, 
-    { name: "FIFTH ELEVEN", prefix: "5th", start: 78, slots: 13 }
-  ];
+  // Vertical Team Stack (T20 has 2 frames, Standard has 5 frames)
+  var frames = getRoundFrames(isT20);
 
   frames.forEach(function(f) {
-    var rnd = fixInfo ? (fixInfo[f.prefix + " round"] || "") : "";
-    var opp = fixInfo ? (fixInfo[f.prefix + " opponent"] || "") : "";
-    var ven = fixInfo ? (fixInfo[f.prefix + " venue"] || "") : "";
-    var fmt = fixInfo ? (fixInfo[f.prefix + " format"] || "") : "";
+    var pKey = (f.prefix || "").toLowerCase();
+    var rnd = fixInfo ? (fixInfo[pKey + " round"] || (isT20 ? fixInfo["1st round"] : "") || "") : "";
+    var opp = fixInfo ? (fixInfo[pKey + " opponent"] || (isT20 ? fixInfo["1st opponent"] : "") || "") : "";
+    var ven = fixInfo ? (fixInfo[pKey + " venue"] || (isT20 ? fixInfo["1st venue"] : "") || "") : "";
+    var fmt = fixInfo ? (fixInfo[pKey + " format"] || (isT20 ? "T20" : "") || "") : "";
 
     // Team Banner
-    ws.getRange(f.start, 1, 1, 2).merge().setValue(f.name).setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
+    ws.getRange(f.start, 1, 1, 2).merge().setValue(f.name).setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
     
     // 4 Metadata rows: Round, Opponent, Venue, Format
     ws.getRange(f.start + 1, 1).setValue("Round:").setFontStyle("italic");
@@ -137,64 +146,36 @@ function deployVerticalRoundSheet(ss, dateStr) {
   });
 
   // Col D: Dynamic Virtual "Available for Selection" Pool
-  ws.getRange("D3").setValue("AVAILABLE FOR SELECTION").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
+  ws.getRange("D3").setValue("AVAILABLE FOR SELECTION").setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
   ws.getRange("D4").setValue("(Dynamic Unselected Pool)").setFontStyle("italic").setFontColor("#666666");
   ws.getRange("D5").setFormula(`=IFERROR(SORT(FILTER(G5:G, G5:G<>"", COUNTIF(B:B, G5:G)=0)), "")`);
   ws.getRange("D3:D150").setBorder(true, true, true, true, false, false, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
 
-  // Extract Global Profiles and Populate Hard Snapshot Registries
+  // Extract Global Profiles and Populate Hard Snapshot Registries (filtered for T20 if isT20)
   var playerSheet = ss.getSheetByName("Players");
-  var lastPlayer = playerSheet ? playerSheet.getLastRow() : 0;
-
   var unavailableSnapshot = [];
   var unknownSnapshot = [];
 
-  if (lastPlayer > 1) {
-    var pData = playerSheet.getRange(2, 1, lastPlayer - 1, playerSheet.getLastColumn()).getValues();
-    pData.forEach(function(row) {
-      var profileId = String(row[0]).trim();            // Col A: ProfileID
-      var fullName = row[3] || (row[1] + " " + row[2]); // Col D or B+C
-      if (fullName.trim() === "" || profileId === "") return;
-
-      var globalStatus = String(row[6]).trim();          // Col G: GlobalStatus
-      var returnDateRaw = row[7];                      // Col H: ExpectedReturnDate
-      var juniorLevel = row[4] || "";                  // Col E: JuniorLevel
-
-      var displayName = formatNameWithJuniorTag(fullName, juniorLevel);
-
-      var isExempt = false;
-      if (globalStatus === "Injured" || globalStatus === "Long-Term Away" || globalStatus === "Inactive") {
-        if (returnDateRaw && globalStatus !== "Inactive") {
-          var returnDate = new Date(returnDateRaw);
-          if (!isNaN(returnDate.getTime()) && returnDate >= targetDate) {
-            isExempt = true;
-          }
-        } else {
-          isExempt = true;
-        }
-      }
-
-      if (isExempt) {
-        unavailableSnapshot.push([profileId, displayName, "Global Exemption: " + globalStatus, ""]);
-      } else if (globalStatus === "Active") {
-        unknownSnapshot.push([profileId, displayName, "", ""]);
-      }
-    });
+  if (playerSheet && playerSheet.getLastRow() > 1) {
+    var pData = playerSheet.getDataRange().getValues();
+    var filterRes = filterPlayersForRoundSnapshot(pData, isT20, targetDate);
+    unavailableSnapshot = filterRes.unavailableSnapshot;
+    unknownSnapshot = filterRes.unknownSnapshot;
   }
 
   // List 2: Available for Round (Cols F-I)
-  ws.getRange("F3:I3").merge().setValue("AVAILABLE FOR ROUND").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
+  ws.getRange("F3:I3").merge().setValue("AVAILABLE FOR ROUND").setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
   ws.getRange("F4:I4").setValues([["Profile ID", "Player Name", "Notes Context", "Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
 
   // List 3: Unavailable for Round (Cols K-N)
-  ws.getRange("K3:N3").merge().setValue("UNAVAILABLE FOR ROUND").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
+  ws.getRange("K3:N3").merge().setValue("UNAVAILABLE FOR ROUND").setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
   ws.getRange("K4:N4").setValues([["Profile ID", "Player Name", "Exemption Notes", "Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
   if (unavailableSnapshot.length > 0) {
     ws.getRange(5, 11, unavailableSnapshot.length, 4).setValues(unavailableSnapshot);
   }
 
   // List 4: Unknown Status Pool Ledger (Cols P-S)
-  ws.getRange("P3:S3").merge().setValue("UNKNOWN AVAILABILITY STATUS").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
+  ws.getRange("P3:S3").merge().setValue("UNKNOWN AVAILABILITY STATUS").setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
   ws.getRange("P4:S4").setValues([["Profile ID", "Player Name", "Notes Context", "Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
   if (unknownSnapshot.length > 0) {
     ws.getRange(5, 16, unknownSnapshot.length, 4).setValues(unknownSnapshot);
@@ -209,10 +190,10 @@ function deployVerticalRoundSheet(ss, dateStr) {
   ws.getRange("N5:N150").setDataValidation(unavailRule);
   ws.getRange("S5:S150").setDataValidation(unknownRule);
 
-  // Col B Selection Dropdowns linked to team-specific dynamic pools in hidden Cols AA-CQ
+  // Col B Selection Dropdowns linked to dynamic pools
   applySelectionValidationRules(ws);
 
-  // Setup Column U and Column V WhatsApp messaging (Merged cards so Row 4 height is unaffected)
+  // Setup Column U and Column V WhatsApp messaging
   setupWhatsAppMessageColumns(ws, targetDate);
 
   // Column Widths & Hide Technical ProfileID and Helper Columns
@@ -525,9 +506,10 @@ function simulateRoundAvailability(dateStr) {
     throw new Error("No active round selection tab found for date " + (targetDate || "") + ". Please initialise a round tab first.");
   }
 
-  var matchFormat = "Two Day";
   var fixSheet2 = ss.getSheetByName("Fixtures");
-  if (fixSheet2 && fixSheet2.getLastRow() > 1) {
+  var isT20 = isT20Fixture(targetDate, fixSheet2 ? fixSheet2.getDataRange().getValues() : null) || String(ws.getRange("A4").getValue()).indexOf("T20") > -1;
+  var matchFormat = isT20 ? "T20" : "Two Day";
+  if (!isT20 && fixSheet2 && fixSheet2.getLastRow() > 1) {
     var fValues = fixSheet2.getDataRange().getValues();
     var fHeaders = fValues[0];
     var dateIdx = fHeaders.indexOf("Game Date");
@@ -556,15 +538,26 @@ function simulateRoundAvailability(dateStr) {
   var firstIdx = pHeaders.indexOf("FirstName");
   var lastIdx = pHeaders.indexOf("LastName");
   var statusIdx = pHeaders.indexOf("GlobalStatus");
+  var t20Idx = -1;
+  pHeaders.forEach(function(h, i) {
+    if (String(h).toLowerCase().indexOf("t20") > -1) t20Idx = i;
+  });
+  if (t20Idx === -1) t20Idx = 5;
 
   var players = pRows.map(function(r) {
     var fn = r[nameIdx] || (r[firstIdx] + " " + r[lastIdx]);
+    var t20Raw = (t20Idx !== -1 && t20Idx < r.length) ? r[t20Idx] : "";
+    var t20Val = String(t20Raw || "").trim().toLowerCase();
+    var isExplicitYes = (t20Val === "yes" || t20Val === "y" || t20Val === "true");
+
+    if (isT20 && !isExplicitYes) return null;
+
     return {
       profileId: String(r[idIdx]).trim(),
       fullName: fn,
       globalStatus: String(r[statusIdx] || "Active").trim()
     };
-  }).filter(function(p) { return p.profileId !== ""; });
+  }).filter(function(p) { return p !== null && p.profileId !== ""; });
 
   var simulated = simulatePlayerAvailability(players, matchFormat);
   var availCount = 0;
@@ -1126,6 +1119,20 @@ function executeRealtimeAppListMovement(ws, profileId, response, notes) {
       var lastIdx = pHeaders.indexOf("LastName");
       var matchRow = pData.slice(1).find(function(r) { return String(r[idIdx]).trim() === targetProfileId; });
       if (matchRow) {
+        var isT20 = isT20Fixture(ws.getName()) || String(ws.getRange("A4").getValue()).indexOf("T20") > -1;
+        var t20Idx = pHeaders.indexOf("T20Squad");
+        if (t20Idx === -1) {
+          pHeaders.forEach(function(h, i) {
+            if (String(h).toLowerCase().indexOf("t20") > -1) t20Idx = i;
+          });
+        }
+        var t20Raw = (t20Idx !== -1 && t20Idx < matchRow.length) ? matchRow[t20Idx] : "";
+        var t20Val = String(t20Raw || "").trim().toLowerCase();
+        var isExplicitYes = (t20Val === "yes" || t20Val === "y" || t20Val === "true");
+
+        // Do not insert non-T20 squad players into T20 round tabs
+        if (isT20 && !isExplicitYes) return;
+
         var pName = matchRow[nameIdx] || (matchRow[firstIdx] + " " + matchRow[lastIdx]);
         var destNames = ws.getRange(5, targetDestCol + 1, 100, 1).getValues();
         var destRow = 5;
@@ -1176,7 +1183,13 @@ function onEdit(e) {
   var row = range.getRow();
   var value = e.value;
 
-  if (sheet.getName() === "Presentation_Staging" || sheet.getName() === "Players" || sheet.getName() === "Fixtures") return;
+  if (sheet.getName() === "Presentation_Staging") {
+    if (row === 1 && col === 2 && value) {
+      syncPresentationStagingHub(sheet.getParent(), value);
+    }
+    return;
+  }
+  if (sheet.getName() === "Players" || sheet.getName() === "Fixtures" || sheet.getName() === "Config" || sheet.getName() === "Admins") return;
   if (row < 5 || !value) return;
 
   if (col === 9 && value === "🚫 Move to Unavailable") {
@@ -1211,8 +1224,9 @@ function onOpen() {
     .addItem("Mark players as inactive", "showMarkInactiveDialog")
     .addItem("Player Photo Studio", "showPhotoStudioDialog")
     .addItem("Import Players from PlayHQ export", "showImportPlayHQDialog")
-    .addSeparator()
     .addItem("Import fixtures from PlayHQ export", "showImportFixturesDialog")
+    .addSeparator()
+    .addItem("🔍 Slide Diagnostics & Element Inspector", "showSlideDiagnosticsDialog")
     .addToUi();
 
   // Auto-sync selection validation rules & WhatsApp columns on existing round sheets
@@ -1289,17 +1303,14 @@ function applySelectionValidationRules(ws) {
     // Col D: Global unselected pool (Alphabetical)
     ws.getRange("D5").setFormula(`=IFERROR(SORT(FILTER(G5:G, G5:G<>"", COUNTIF(B:B, G5:G)=0)), "")`);
 
-    var frames = [
-      { start: 4, slots: 12 }, 
-      { start: 22, slots: 12 }, 
-      { start: 40, slots: 13 }, 
-      { start: 59, slots: 13 }, 
-      { start: 78, slots: 13 }
-    ];
+    var isT20 = isT20Fixture(ws.getName()) || String(ws.getRange("A4").getValue()).indexOf("T20") > -1;
+    var frames = getRoundFrames(isT20);
+    var maxRowToCheck = isT20 ? 39 : 95;
 
     var maxCols = ws.getMaxColumns();
-    if (maxCols < 95) {
-      ws.insertColumnsAfter(maxCols, 95 - maxCols);
+    var neededCols = isT20 ? 60 : 95;
+    if (maxCols < neededCols) {
+      ws.insertColumnsAfter(maxCols, neededCols - maxCols);
     }
 
     var startCol = 27; // Col AA (Col 27)
@@ -1330,7 +1341,7 @@ function applySelectionValidationRules(ws) {
         // Set helper header and dynamic formula (Alphabetical A-Z)
         ws.getRange(3, helperCol).setValue("SLOT_" + row);
         ws.getRange(5, helperCol).setFormula(
-          '=IFERROR(SORT(FILTER(G$5:G, (COUNTIF($B$9:$B$95, G$5:G)=0) + (G$5:G=B' + row + '))), "")'
+          '=IFERROR(SORT(FILTER(G$5:G, (COUNTIF($B$9:$B$' + maxRowToCheck + ', G$5:G)=0) + (G$5:G=B' + row + '))), "")'
         );
 
         // Apply Data Validation to this specific slot
@@ -1400,12 +1411,15 @@ function cleanConfigTabTemplates(ss) {
 function setupWhatsAppMessageColumns(ws, dateStr) {
   if (!ws) return;
   var dStr = dateStr || ws.getName();
+  var isT20 = isT20Fixture(dStr) || String(ws.getRange("A4").getValue()).indexOf("T20") > -1;
+  var headerBg = isT20 ? "#fbbc04" : LCC_PALETTE.maroonBg;
+  var headerFg = isT20 ? "#000000" : LCC_PALETTE.maroonFg;
 
   // Column U (Col 21) Header & Merged Card
   ws.getRange("U3").setValue(dStr + " Availability Request Message")
     .setFontWeight("bold")
-    .setBackground(LCC_PALETTE.maroonBg)
-    .setFontColor(LCC_PALETTE.maroonFg)
+    .setBackground(headerBg)
+    .setFontColor(headerFg)
     .setHorizontalAlignment("center");
 
   // Unmerge first if previously merged to allow clean formula assignment
@@ -1424,8 +1438,8 @@ function setupWhatsAppMessageColumns(ws, dateStr) {
   // Column V (Col 22) Header & Merged Card
   ws.getRange("V3").setValue(dStr + " Wall of Shame Message")
     .setFontWeight("bold")
-    .setBackground(LCC_PALETTE.maroonBg)
-    .setFontColor(LCC_PALETTE.maroonFg)
+    .setBackground(headerBg)
+    .setFontColor(headerFg)
     .setHorizontalAlignment("center");
 
   try {
@@ -1567,74 +1581,6 @@ function syncPresentationStagingHub(ss, targetRoundName) {
     if (!s) return;
     var sh = s.getSheetByName("Presentation_Staging") || s.insertSheet("Presentation_Staging");
     
-    // Rebuild/refresh Presentation_Staging layout and formulas
-    sh.clear();
-    
-    // Row 1: Header and Selection Controls
-    sh.getRange("A1").setValue("Round to present").setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
-    sh.getRange("B1").setValue("").setNumberFormat("@").setBackground(LCC_PALETTE.inputHighlight).setFontWeight("bold").setHorizontalAlignment("center");
-      
-      var frames = [
-        { name: "FIRST ELEVEN", start: 4, slots: 12 }, 
-        { name: "SECOND ELEVEN", start: 22, slots: 12 }, 
-        { name: "THIRD ELEVEN", start: 40, slots: 13 }, 
-        { name: "FOURTH ELEVEN", start: 59, slots: 13 }, 
-        { name: "FIFTH ELEVEN", start: 78, slots: 13 }
-      ];
-      
-      var targetTabExpr = 'IF(ISNUMBER($B$1), TEXT($B$1, "yyyy-mm-dd"), TO_TEXT($B$1))';
-      
-      frames.forEach(function(f) {
-        var rowIdx = f.start;
-        
-        // Team Banner
-        sh.getRange(rowIdx, 1, 1, 4).merge().setValue(f.name).setFontWeight("bold").setBackground(LCC_PALETTE.maroonBg).setFontColor(LCC_PALETTE.maroonFg).setHorizontalAlignment("center");
-        
-        // Metadata rows: Round, Opponent, Venue, Format (Exact 1-to-1 match with Round sheet)
-        sh.getRange(rowIdx + 1, 1).setValue("Round:").setFontStyle("italic");
-        sh.getRange(rowIdx + 1, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 1) + '"), "")');
-        
-        sh.getRange(rowIdx + 2, 1).setValue("Opponent:").setFontStyle("italic");
-        sh.getRange(rowIdx + 2, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 2) + '"), "")');
-        
-        sh.getRange(rowIdx + 3, 1).setValue("Venue:").setFontStyle("italic");
-        sh.getRange(rowIdx + 3, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 3) + '"), "")');
-        
-        sh.getRange(rowIdx + 4, 1).setValue("Format:").setFontStyle("italic");
-        sh.getRange(rowIdx + 4, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 4) + '"), "")');
-        
-        // Player Slot Rows (start + 5 to start + 4 + slots) -> Exact 1-to-1 match with Round sheet
-        for (var idx = 0; idx < f.slots; idx++) {
-          var currRow = rowIdx + 5 + idx;
-          
-          // Col A: Slot Role (Dynamically pulled from active round sheet)
-          sh.getRange(currRow, 1).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!A' + currRow + '"), "")').setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
-          
-          // Col B: Clean Player Name (Stripped of junior tags like (U16))
-          sh.getRange(currRow, 2).setFormula('=IFERROR(IF(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")="", "", TRIM(REGEXREPLACE(TO_TEXT(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")), "\\s*\\(.*?\\)", ""))), "")');
-          
-          // Col C: Dynamic Profile ID Lookup from Players tab (Hidden)
-          sh.getRange(currRow, 3).setFormula('=IFERROR(IF(B' + currRow + '="", "", INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$D$2:$D, 0))), IFERROR(INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$B$2:$B & " " & Players!$C$2:$C, 0)), ""))');
-          
-          // Col D: Dynamic Headshot Image from Players tab PhotoUrl
-          sh.getRange(currRow, 4).setFormula('=IFERROR(IF(B' + currRow + '="", "", IMAGE(INDEX(Players!$N$2:$N, MATCH(C' + currRow + ', Players!$A$2:$A, 0)))), "")');
-        }
-        
-        // Set borders for this team frame (1 banner + 4 metadata + slots)
-        sh.getRange(rowIdx, 1, 5 + f.slots, 4).setBorder(true, true, true, true, true, true, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
-      });
-      
-      sh.setColumnWidth(1, 120); // Col A (Slot Role)
-      sh.setColumnWidth(2, 210); // Col B (Clean Player Name)
-      sh.setColumnWidth(3, 20);  // Col C (Hidden Profile ID)
-      sh.setColumnWidth(4, 100); // Col D (Photo)
-      
-      sh.hideColumns(3); // Hide Column C
-      
-      try {
-        sh.getRange(1, 1, 100, 4).setFontFamily("Hanken Grotesk");
-      } catch (e) {}
-    
     // Sync dropdown validation list in B1 with all round tabs
     var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log"];
     var sheets = s.getSheets();
@@ -1645,20 +1591,105 @@ function syncPresentationStagingHub(ss, targetRoundName) {
         roundNames.push(name);
       }
     });
+
+    var selectedRound = targetRoundName;
+    if (!selectedRound) {
+      var curVal = String(sh.getRange("B1").getValue()).trim();
+      if (curVal && roundNames.indexOf(curVal) > -1) {
+        selectedRound = curVal;
+      } else if (roundNames.length > 0) {
+        selectedRound = roundNames[0];
+      }
+    }
+
+    // Detect if selected round is a T20 round
+    var isT20 = false;
+    if (selectedRound) {
+      var roundSheet = s.getSheetByName(selectedRound);
+      if (roundSheet) {
+        var a4Val = String(roundSheet.getRange("A4").getValue() || "");
+        var a1Val = String(roundSheet.getRange("A1").getValue() || "");
+        if (a4Val.indexOf("T20") > -1 || a1Val.indexOf("T20") > -1) {
+          isT20 = true;
+        }
+      }
+      if (!isT20) {
+        var fixSheet = s.getSheetByName("Fixtures");
+        if (fixSheet && fixSheet.getLastRow() > 1) {
+          isT20 = isT20Fixture(selectedRound, fixSheet.getDataRange().getValues());
+        }
+      }
+    }
+
+    // Rebuild/refresh Presentation_Staging layout and formulas
+    sh.clear();
     
+    // Row 1: Header and Selection Controls (T20 uses background: #fbbc04 and text: black)
+    var headerBg = isT20 ? "#fbbc04" : LCC_PALETTE.maroonBg;
+    var headerFg = isT20 ? "#000000" : LCC_PALETTE.maroonFg;
+    sh.getRange("A1").setValue("Round to present").setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
+    sh.getRange("B1").setValue(selectedRound || "").setNumberFormat("@").setBackground(isT20 ? "#fbbc04" : LCC_PALETTE.inputHighlight).setFontColor(isT20 ? "#000000" : "#222222").setFontWeight("bold").setHorizontalAlignment("center");
+      
+    var frames = getRoundFrames(isT20);
+    var targetTabExpr = 'IF(ISNUMBER($B$1), TEXT($B$1, "yyyy-mm-dd"), TO_TEXT($B$1))';
+    
+    frames.forEach(function(f) {
+      var rowIdx = f.start;
+      
+      // Team Banner
+      sh.getRange(rowIdx, 1, 1, 4).merge().setValue(f.name).setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
+      
+      // Metadata rows: Round, Opponent, Venue, Format (Exact 1-to-1 match with Round sheet)
+      sh.getRange(rowIdx + 1, 1).setValue("Round:").setFontStyle("italic");
+      sh.getRange(rowIdx + 1, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 1) + '"), "")');
+      
+      sh.getRange(rowIdx + 2, 1).setValue("Opponent:").setFontStyle("italic");
+      sh.getRange(rowIdx + 2, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 2) + '"), "")');
+      
+      sh.getRange(rowIdx + 3, 1).setValue("Venue:").setFontStyle("italic");
+      sh.getRange(rowIdx + 3, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 3) + '"), "")');
+      
+      sh.getRange(rowIdx + 4, 1).setValue("Format:").setFontStyle("italic");
+      sh.getRange(rowIdx + 4, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 4) + '"), "")');
+      
+      // Player Slot Rows (start + 5 to start + 4 + slots) -> Exact 1-to-1 match with Round sheet
+      for (var idx = 0; idx < f.slots; idx++) {
+        var currRow = rowIdx + 5 + idx;
+        
+        // Col A: Slot Role (Dynamically pulled from active round sheet)
+        sh.getRange(currRow, 1).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!A' + currRow + '"), "")').setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
+        
+        // Col B: Clean Player Name (Stripped of junior tags like (U16))
+        sh.getRange(currRow, 2).setFormula('=IFERROR(IF(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")="", "", TRIM(REGEXREPLACE(TO_TEXT(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")), "\\s*\\(.*?\\)", ""))), "")');
+        
+        // Col C: Dynamic Profile ID Lookup from Players tab (Hidden)
+        sh.getRange(currRow, 3).setFormula('=IFERROR(IF(B' + currRow + '="", "", INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$D$2:$D, 0))), IFERROR(INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$B$2:$B & " " & Players!$C$2:$C, 0)), ""))');
+        
+        // Col D: Dynamic Headshot Image from Players tab PhotoUrl
+        sh.getRange(currRow, 4).setFormula('=IFERROR(IF(B' + currRow + '="", "", IMAGE(INDEX(Players!$N$2:$N, MATCH(C' + currRow + ', Players!$A$2:$A, 0)))), "")');
+      }
+      
+      // Set borders for this team frame (1 banner + 4 metadata + slots)
+      sh.getRange(rowIdx, 1, 5 + f.slots, 4).setBorder(true, true, true, true, true, true, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
+    });
+    
+    sh.setColumnWidth(1, 120); // Col A (Slot Role)
+    sh.setColumnWidth(2, 210); // Col B (Clean Player Name)
+    sh.setColumnWidth(3, 20);  // Col C (Hidden Profile ID)
+    sh.setColumnWidth(4, 100); // Col D (Photo)
+    
+    sh.hideColumns(3); // Hide Column C
+    
+    try {
+      sh.getRange(1, 1, 100, 4).setFontFamily("Hanken Grotesk");
+    } catch (e) {}
+  
     if (roundNames.length > 0) {
       var rule = SpreadsheetApp.newDataValidation()
         .requireValueInList(roundNames, true)
         .setAllowInvalid(true)
         .build();
       sh.getRange("B1").setDataValidation(rule);
-      
-      var curVal = String(sh.getRange("B1").getValue()).trim();
-      if (targetRoundName) {
-        sh.getRange("B1").setValue(targetRoundName);
-      } else if (!curVal || roundNames.indexOf(curVal) === -1) {
-        sh.getRange("B1").setValue(roundNames[0]);
-      }
     }
   } catch (err) {
     Logger.log("syncPresentationStagingHub error: " + err.message);
@@ -1899,49 +1930,102 @@ function saveAvailability(profileId, dateStr, response, notes) {
 
 
 /**
- * DIALOG 1: HTML5 Datepicker Modal Window.
+ * DIALOG 1: Round Initialisation Modal Dialog connected to Fixtures.
  */
 function showDatePickerDialog() {
+  var ss = getSS();
+  var fixturesData = [];
+  var existingSheets = [];
+
+  if (ss) {
+    var fixSheet = ss.getSheetByName("Fixtures");
+    if (fixSheet && fixSheet.getLastRow() > 1) {
+      fixturesData = fixSheet.getDataRange().getValues();
+    }
+    existingSheets = ss.getSheets().map(function(s) { return s.getName(); });
+  }
+
+  var fixtureOptions = getFixtureOptionsForRoundInit(fixturesData, existingSheets);
+  var fixtureJson = JSON.stringify(fixtureOptions).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '\\x3c');
+  var sheetsJson = JSON.stringify(existingSheets).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '\\x3c');
+
   var htmlOutput = HtmlService.createHtmlOutput(
-    '<html><head>' +
+    '<!DOCTYPE html><html><head>' +
     '<link rel="preconnect" href="https://fonts.googleapis.com">' +
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
     '<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&display=swap" rel="stylesheet">' +
     '<style>' +
-    '  body { font-family: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 16px; color: #222; margin: 0; background: #fff; box-sizing: border-box; }' +
+    '  * { box-sizing: border-box; }' +
+    '  body { font-family: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 16px; color: #222; margin: 0; background: #fff; line-height: 1.4; }' +
     '  input, button, select { font-family: inherit; }' +
-    '  h3 { color: #6A1B29; margin-top: 0; margin-bottom: 6px; font-size: 16px; font-weight: 800; }' +
-    '  p { font-size: 13px; color: #555; line-height: 1.4; margin: 0 0 12px; }' +
-    '  .card { background: #fdfdfd; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 12px; }' +
-    '  .card-title { font-weight: bold; font-size: 13px; color: #6A1B29; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; }' +
-    '  input[type=date] { width: 100%; font-size: 13px; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }' +
-    '  .btn { padding: 9px 16px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; font-size: 13px; transition: all 0.2s; }' +
+    '  h3 { color: #6A1B29; margin-top: 0; margin-bottom: 4px; font-size: 17px; font-weight: 800; }' +
+    '  p.subtitle { font-size: 12.5px; color: #555; margin: 0 0 12px; }' +
+    '  .nav-tabs { display: flex; gap: 6px; margin-bottom: 12px; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px; }' +
+    '  .tab-btn { background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; color: #4b5563; transition: all 0.15s; }' +
+    '  .tab-btn.active { background: #6A1B29; color: #fff; border-color: #6A1B29; }' +
+    '  .card { background: #fdfdfd; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 10px; }' +
+    '  .form-label { font-weight: 700; font-size: 12px; color: #6A1B29; margin-bottom: 6px; display: block; }' +
+    '  select, input[type=date] { width: 100%; font-size: 13px; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; background: #fff; }' +
+    '  select:focus, input[type=date]:focus { outline: none; border-color: #6A1B29; box-shadow: 0 0 0 2px rgba(106,27,41,0.15); }' +
+    '  .fixture-info { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 12px; font-size: 12px; margin-top: 8px; }' +
+    '  .badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 700; }' +
+    '  .badge-green { background: #dcfce7; color: #166534; }' +
+    '  .badge-amber { background: #fef3c7; color: #92400e; }' +
+    '  .badge-maroon { background: #fbe8ec; color: #6A1B29; font-weight: 700; }' +
+    '  .match-row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px dashed #e5e7eb; }' +
+    '  .match-row:last-child { border-bottom: none; }' +
+    '  .match-team { font-weight: 700; color: #374151; min-width: 55px; }' +
+    '  .match-desc { color: #4b5563; text-align: right; flex: 1; padding-left: 8px; }' +
+    '  .warn-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 10px; font-size: 11.5px; color: #92400e; margin-top: 8px; }' +
+    '  .btn { padding: 9px 16px; border-radius: 6px; border: none; font-weight: 700; cursor: pointer; font-size: 13px; transition: all 0.2s; }' +
     '  .btn-primary { background: #6A1B29; color: white; }' +
-    '  .btn-primary:hover { background: #52131e; }' +
-    '  .btn-secondary { background: #e5e7eb; color: #333; margin-right: 8px; }' +
+    '  .btn-primary:hover:not(:disabled) { background: #52131e; }' +
+    '  .btn-primary:disabled { background: #9ca3af; cursor: not-allowed; opacity: 0.7; }' +
+    '  .btn-secondary { background: #e5e7eb; color: #333; }' +
+    '  .btn-secondary:hover { background: #d1d5db; }' +
     '  .actions { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }' +
-    '  .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #6A1B29; border-radius: 50%; width: 36px; height: 36px; animation: spin 1s linear infinite; margin: 20px auto; }' +
+    '  .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #6A1B29; border-radius: 50%; width: 34px; height: 34px; animation: spin 1s linear infinite; margin: 20px auto; }' +
     '  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }' +
-    '  .result-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; font-size: 13px; white-space: pre-wrap; color: #333; max-height: 180px; overflow-y: auto; box-sizing: border-box; }' +
+    '  .result-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; font-size: 13px; white-space: pre-wrap; color: #333; max-height: 200px; overflow-y: auto; }' +
     '</style>' +
     '</head><body>' +
     '  <h3>Initialise Round Selection Tab</h3>' +
-    '  <p>Select the first match date for this round to spawn a standalone selection tab.</p>' +
+    '  <p class="subtitle">Select a scheduled fixture from the season calendar or pick a custom date to spawn a standalone selection tab.</p>' +
     '' +
     '  <div id="inputSection">' +
-    '    <div class="card">' +
-    '      <div class="card-title"><span>Match Date (Day 1)</span></div>' +
-    '      <input type="date" id="matchDate">' +
+    '    <div class="nav-tabs">' +
+    '      <button type="button" id="tabFixtureBtn" class="tab-btn active" onclick="switchMode(\'fixture\')">📅 Scheduled Fixtures</button>' +
+    '      <button type="button" id="tabCustomBtn" class="tab-btn" onclick="switchMode(\'custom\')">🗓️ Another / Custom Date</button>' +
     '    </div>' +
+    '' +
+    '    <div id="fixtureModeSection" class="card">' +
+    '      <label class="form-label" for="fixtureSelect">Scheduled Fixture Date</label>' +
+    '      <select id="fixtureSelect" onchange="onFixtureSelected()"></select>' +
+    '      <div id="fixtureDetailBox" class="fixture-info" style="display:none;">' +
+    '        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">' +
+    '          <div style="font-weight:700; color:#111827; font-size:13px;" id="detailDate"></div>' +
+    '          <span id="detailStatusBadge" class="badge"></span>' +
+    '        </div>' +
+    '        <div id="detailMatchesList"></div>' +
+    '      </div>' +
+    '      <div id="fixtureWarningBox" class="warn-box" style="display:none;"></div>' +
+    '    </div>' +
+    '' +
+    '    <div id="customModeSection" class="card" style="display:none;">' +
+    '      <label class="form-label" for="customDate">Match Date (Day 1 of Round)</label>' +
+    '      <input type="date" id="customDate" onchange="onCustomDateChanged()">' +
+    '      <div id="customWarningBox" class="warn-box" style="display:none;"></div>' +
+    '    </div>' +
+    '' +
     '    <div class="actions">' +
     '      <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>' +
-    '      <button id="createBtn" class="btn btn-primary" onclick="submitDate()">Create Round Tab</button>' +
+    '      <button id="createBtn" class="btn btn-primary" onclick="submitSelection()">Create Round Tab</button>' +
     '    </div>' +
     '  </div>' +
     '' +
-    '  <div id="spinnerSection" style="display:none; text-align:center; padding:15px;">' +
+    '  <div id="spinnerSection" style="display:none; text-align:center; padding:20px;">' +
     '    <div class="spinner"></div>' +
-    '    <p style="font-weight:bold; color:#6A1B29;">Generating round selection tab...</p>' +
+    '    <p style="font-weight:bold; color:#6A1B29; margin-top:10px;">Generating round selection tab...</p>' +
     '  </div>' +
     '' +
     '  <div id="resultSection" style="display:none;">' +
@@ -1952,9 +2036,140 @@ function showDatePickerDialog() {
     '  </div>' +
     '' +
     '  <script>' +
-    '    function submitDate() {' +
-    '      var d = document.getElementById("matchDate").value;' +
-    '      if (!d) { alert("Please pick a valid calendar date."); return; }' +
+    '    var fixtureOptions = ' + (fixtureJson || '[]') + ';' +
+    '    var existingSheets = ' + (sheetsJson || '[]') + ';' +
+    '    var currentMode = "fixture";' +
+    '' +
+    '    function initDialog() {' +
+    '      var sel = document.getElementById("fixtureSelect");' +
+    '      if (!fixtureOptions || fixtureOptions.length === 0) {' +
+    '        sel.innerHTML = "<option value=\\"\\">(No scheduled fixtures found in Fixtures tab)</option>";' +
+    '        switchMode("custom");' +
+    '        document.getElementById("tabFixtureBtn").disabled = true;' +
+    '        return;' +
+    '      }' +
+    '      var html = "";' +
+    '      var firstUncreatedIdx = -1;' +
+    '      for (var i = 0; i < fixtureOptions.length; i++) {' +
+    '        var opt = fixtureOptions[i];' +
+    '        if (!opt.tabExists && firstUncreatedIdx === -1) firstUncreatedIdx = i;' +
+    '        html += "<option value=\\"" + opt.date + "\\">" + opt.label + "</option>";' +
+    '      }' +
+    '      html += "<option value=\\"__custom__\\">➕ Pick another / custom date...</option>";' +
+    '      sel.innerHTML = html;' +
+    '      if (firstUncreatedIdx !== -1) {' +
+    '        sel.selectedIndex = firstUncreatedIdx;' +
+    '      }' +
+    '      onFixtureSelected();' +
+    '    }' +
+    '' +
+    '    function switchMode(mode) {' +
+    '      currentMode = mode;' +
+    '      var tabFix = document.getElementById("tabFixtureBtn");' +
+    '      var tabCust = document.getElementById("tabCustomBtn");' +
+    '      var fixSec = document.getElementById("fixtureModeSection");' +
+    '      var custSec = document.getElementById("customModeSection");' +
+    '      if (mode === "fixture") {' +
+    '        tabFix.classList.add("active");' +
+    '        tabCust.classList.remove("active");' +
+    '        fixSec.style.display = "block";' +
+    '        custSec.style.display = "none";' +
+    '        onFixtureSelected();' +
+    '      } else {' +
+    '        tabCust.classList.add("active");' +
+    '        tabFix.classList.remove("active");' +
+    '        custSec.style.display = "block";' +
+    '        fixSec.style.display = "none";' +
+    '        onCustomDateChanged();' +
+    '      }' +
+    '    }' +
+    '' +
+    '    function onFixtureSelected() {' +
+    '      var sel = document.getElementById("fixtureSelect");' +
+    '      var val = sel.value;' +
+    '      if (val === "__custom__") {' +
+    '        switchMode("custom");' +
+    '        return;' +
+    '      }' +
+    '      var opt = null;' +
+    '      for (var i = 0; i < fixtureOptions.length; i++) {' +
+    '        if (fixtureOptions[i].date === val) { opt = fixtureOptions[i]; break; }' +
+    '      }' +
+    '      var detailBox = document.getElementById("fixtureDetailBox");' +
+    '      var warnBox = document.getElementById("fixtureWarningBox");' +
+    '      var createBtn = document.getElementById("createBtn");' +
+    '      if (!opt) {' +
+    '        detailBox.style.display = "none";' +
+    '        warnBox.style.display = "none";' +
+    '        createBtn.disabled = true;' +
+    '        return;' +
+    '      }' +
+    '      detailBox.style.display = "block";' +
+    '      document.getElementById("detailDate").innerText = opt.fullDisplayDate || opt.displayDate;' +
+    '      var statusBadge = document.getElementById("detailStatusBadge");' +
+    '      if (opt.tabExists) {' +
+    '        statusBadge.className = "badge badge-amber";' +
+    '        statusBadge.innerText = "Tab Already Exists";' +
+    '        warnBox.style.display = "block";' +
+    '        warnBox.innerText = "⚠️ A round selection tab for " + opt.date + " has already been initialised in this spreadsheet. Delete or rename the tab to recreate it.";' +
+    '        createBtn.disabled = true;' +
+    '      } else {' +
+    '        statusBadge.className = "badge badge-green";' +
+    '        statusBadge.innerText = (opt.teams && opt.teams.length > 0) ? (opt.teams.length + " Team" + (opt.teams.length > 1 ? "s" : "") + " Scheduled") : "Ready to Initialise";' +
+    '        warnBox.style.display = "none";' +
+    '        createBtn.disabled = false;' +
+    '      }' +
+    '      var matchesHtml = "";' +
+    '      if (opt.teamMatches && opt.teamMatches.length > 0) {' +
+    '        for (var m = 0; m < opt.teamMatches.length; m++) {' +
+    '          var tm = opt.teamMatches[m];' +
+    '          var matchParts = [];' +
+    '          if (tm.opponent) matchParts.push("vs " + tm.opponent);' +
+    '          if (tm.venue) matchParts.push("@ " + tm.venue);' +
+    '          var meta = [];' +
+    '          if (tm.format) meta.push(tm.format);' +
+    '          if (tm.round) meta.push(tm.round);' +
+    '          var metaStr = meta.length > 0 ? (" (" + meta.join(" • ") + ")") : "";' +
+    '          var desc = (matchParts.join(" ") || "Fixture Scheduled") + metaStr;' +
+    '          matchesHtml += "<div class=\\"match-row\\"><span class=\\"match-team\\">" + tm.team + "</span><span class=\\"match-desc\\">" + desc + "</span></div>";' +
+    '        }' +
+    '      } else {' +
+    '        matchesHtml = "<div style=\\"color:#6b7280; font-style:italic;\\">No team fixture details recorded for this date.</div>";' +
+    '      }' +
+    '      document.getElementById("detailMatchesList").innerHTML = matchesHtml;' +
+    '    }' +
+    '' +
+    '    function onCustomDateChanged() {' +
+    '      var d = document.getElementById("customDate").value;' +
+    '      var warnBox = document.getElementById("customWarningBox");' +
+    '      var createBtn = document.getElementById("createBtn");' +
+    '      if (!d) {' +
+    '        warnBox.style.display = "none";' +
+    '        createBtn.disabled = true;' +
+    '        return;' +
+    '      }' +
+    '      var exists = existingSheets.indexOf(d) > -1;' +
+    '      if (exists) {' +
+    '        warnBox.style.display = "block";' +
+    '        warnBox.innerText = "⚠️ A tab named \'" + d + "\' already exists in this spreadsheet.";' +
+    '        createBtn.disabled = true;' +
+    '      } else {' +
+    '        warnBox.style.display = "none";' +
+    '        createBtn.disabled = false;' +
+    '      }' +
+    '    }' +
+    '' +
+    '    function submitSelection() {' +
+    '      var targetDate = "";' +
+    '      if (currentMode === "fixture") {' +
+    '        var selVal = document.getElementById("fixtureSelect").value;' +
+    '        if (!selVal || selVal === "__custom__") { alert("Please choose a valid fixture."); return; }' +
+    '        targetDate = selVal;' +
+    '      } else {' +
+    '        var custVal = document.getElementById("customDate").value;' +
+    '        if (!custVal) { alert("Please pick a valid calendar date."); return; }' +
+    '        targetDate = custVal;' +
+    '      }' +
     '      document.getElementById("inputSection").style.display = "none";' +
     '      document.getElementById("spinnerSection").style.display = "block";' +
     '      google.script.run' +
@@ -1968,11 +2183,12 @@ function showDatePickerDialog() {
     '          document.getElementById("resultSection").style.display = "block";' +
     '          document.getElementById("resultMessage").innerText = "Creation failed: " + (err.message || err);' +
     '        })' +
-    '        .executeTabDeployment(d);' +
+    '        .executeTabDeployment(targetDate);' +
     '    }' +
+    '    window.onload = initDialog;' +
     '  </script>' +
     '</body></html>'
-  ).setWidth(460).setHeight(320);
+  ).setWidth(520).setHeight(450);
   SpreadsheetApp.getUi().showModalDialog(htmlOutput, "Initialise Round Selection Tab");
 }
 
@@ -2430,7 +2646,29 @@ function syncNewPlayersToActiveTab(targetTabName) {
     throw new Error("No players found in Master Players tab.");
   }
 
-  var masterData = playerSheet.getRange(2, 1, playerSheet.getLastRow() - 1, playerSheet.getLastColumn()).getValues();
+  var pData = playerSheet.getDataRange().getValues();
+  var pHeaders = pData[0];
+  var pRows = pData.slice(1);
+
+  var idCol = 0;
+  var fNameCol = 1;
+  var lNameCol = 2;
+  var fullCol = 3;
+  var juniorCol = 4;
+  var t20Col = 5;
+  var statusCol = 6;
+
+  pHeaders.forEach(function(h, i) {
+    var ch = String(h || "").trim().toLowerCase();
+    if (ch === "profileid" || ch === "profile id" || ch === "id") idCol = i;
+    else if (ch === "firstname" || ch === "first name") fNameCol = i;
+    else if (ch === "lastname" || ch === "last name") lNameCol = i;
+    else if (ch === "fullname" || ch === "full name") fullCol = i;
+    else if (ch === "juniorlevel" || ch === "junior level") juniorCol = i;
+    else if (ch.indexOf("t20") > -1) t20Col = i;
+    else if (ch === "globalstatus" || ch === "global status" || ch === "status") statusCol = i;
+  });
+
   var existingIds = {};
   [6, 11, 16].forEach(function(col) {
     var ids = ws.getRange(5, col, 100, 1).getValues();
@@ -2439,14 +2677,31 @@ function syncNewPlayersToActiveTab(targetTabName) {
     });
   });
 
-  var newPlayersAdded = 0;
-  masterData.forEach(function(row) {
-    var profileId = String(row[0]).trim();
-    var fullName = row[3] || (row[1] + " " + row[2]);
-    var globalStatus = String(row[6]).trim();
-    var juniorLevel = row[4] || "";
+  var isT20 = false;
+  var a4Val = String(ws.getRange("A4").getValue() || "");
+  var a1Val = String(ws.getRange("A1").getValue() || "");
+  if (a4Val.indexOf("T20") > -1 || a1Val.indexOf("T20") > -1 || /t20/i.test(ws.getName())) {
+    isT20 = true;
+  } else {
+    var fixSheet = ss.getSheetByName("Fixtures");
+    if (fixSheet && fixSheet.getLastRow() > 1) {
+      isT20 = isT20Fixture(ws.getName(), fixSheet.getDataRange().getValues());
+    }
+  }
 
-    if (profileId !== "" && fullName.trim() !== "" && globalStatus === "Active" && !existingIds[profileId]) {
+  var newPlayersAdded = 0;
+  pRows.forEach(function(row) {
+    var profileId = String(row[idCol] || "").trim();
+    var fullName = String(row[fullCol] || (String(row[fNameCol] || "") + " " + String(row[lNameCol] || ""))).trim();
+    var t20Raw = (t20Col !== -1 && t20Col < row.length) ? row[t20Col] : "";
+    var t20Val = String(t20Raw || "").trim().toLowerCase();
+    var isExplicitYes = (t20Val === "yes" || t20Val === "y" || t20Val === "true");
+    var globalStatus = String(row[statusCol] || "Active").trim();
+    var juniorLevel = String(row[juniorCol] || "").trim();
+
+    if (isT20 && !isExplicitYes) return;
+
+    if (profileId !== "" && fullName !== "" && globalStatus === "Active" && !existingIds[profileId]) {
       var destLastRow = 5;
       var destNames = ws.getRange(5, 17, 100, 1).getValues();
       for (var i = 0; i < destNames.length; i++) {
@@ -2892,7 +3147,9 @@ function autoTagSlideElements(ss) {
     { name: "SECOND ELEVEN", prefix: "2ND", defaultIdx: 1, slots: 12 }, 
     { name: "THIRD ELEVEN", prefix: "3RD", defaultIdx: 2, slots: 13 }, 
     { name: "FOURTH ELEVEN", prefix: "4TH", defaultIdx: 3, slots: 13 }, 
-    { name: "FIFTH ELEVEN", prefix: "5TH", defaultIdx: 4, slots: 13 }
+    { name: "FIFTH ELEVEN", prefix: "5TH", defaultIdx: 4, slots: 13 },
+    { name: "T20 1st ELEVEN", prefix: "T20_1ST", defaultIdx: 5, slots: 12 },
+    { name: "T20 SECOND ELEVEN", prefix: "T20_2ND", defaultIdx: 6, slots: 12 }
   ];
 
   var taggedCount = 0;
@@ -2907,6 +3164,8 @@ function autoTagSlideElements(ss) {
 
     elements.forEach(function(el) {
       var type = el.getPageElementType();
+      var tag = String(el.getTitle() || el.getDescription() || "").trim().toUpperCase();
+
       if (type === SlidesApp.PageElementType.GROUP) {
         if (el.getTop() < 430) {
           slotGroups.push(el);
@@ -2920,13 +3179,17 @@ function autoTagSlideElements(ss) {
             txt.toLowerCase().indexOf("third eleven") === -1 &&
             txt.toLowerCase().indexOf("fourth eleven") === -1 &&
             txt.toLowerCase().indexOf("fifth eleven") === -1 &&
+            txt.toLowerCase().indexOf("t20") === -1 &&
             txt.indexOf("{{") === -1 &&
             shp.getTop() < 420) {
           textShapes.push(el);
         }
       } else if (type === SlidesApp.PageElementType.IMAGE) {
-        // Only small avatar images, exclude large central club crest
-        if (el.getWidth() < 120 && el.getHeight() < 120) {
+        // Exclude central Club Crest, background logos, and large badges
+        var isCrest = tag.indexOf("CREST") > -1 || tag.indexOf("LOGO") > -1 || tag.indexOf("BADGE") > -1 || tag.indexOf("BG") > -1;
+        var isLargeCrest = el.getWidth() > 220 || el.getHeight() > 220;
+        var isCenteredCrest = (el.getLeft() > 240 && el.getLeft() < 480 && el.getTop() > 50 && el.getTop() < 240);
+        if (!isCrest && !isLargeCrest && !isCenteredCrest && el.getTop() < 430) {
           avatarImages.push(el);
         }
       }
@@ -2944,20 +3207,20 @@ function autoTagSlideElements(ss) {
       var sortedImages = sortElementsTwoColumns(avatarImages);
 
       sortedShapes.forEach(function(shp, idx) {
-        shp.setTitle("PLAYER_" + (idx + 1));
+        shp.setTitle(f.prefix + "_PLAYER_" + (idx + 1));
         shp.setDescription(f.prefix + "_PLAYER_" + (idx + 1));
         taggedCount++;
       });
 
       sortedImages.forEach(function(img, idx) {
-        img.setTitle("PHOTO_" + (idx + 1));
+        img.setTitle(f.prefix + "_PHOTO_" + (idx + 1));
         img.setDescription(f.prefix + "_PHOTO_" + (idx + 1));
         taggedCount++;
       });
     }
   });
 
-  return "Successfully assigned permanent Alt Text IDs to " + taggedCount + " elements across team slides!";
+  return "Successfully assigned permanent Alt Text IDs to " + taggedCount + " elements across team slides (including T20)!";
 }
 
 
@@ -3023,11 +3286,21 @@ function formatRoundOpponent(round, prefix, opponent) {
   
   var xiLabel = "LCC 1st XI";
   var pLower = String(prefix || "").toLowerCase();
-  if (pLower.indexOf("1") > -1) xiLabel = "LCC 1st XI";
-  else if (pLower.indexOf("2") > -1) xiLabel = "LCC 2nd XI";
-  else if (pLower.indexOf("3") > -1) xiLabel = "LCC 3rd XI";
-  else if (pLower.indexOf("4") > -1) xiLabel = "LCC 4th XI";
-  else if (pLower.indexOf("5") > -1) xiLabel = "LCC 5th XI";
+  if (pLower.indexOf("t20") > -1) {
+    if (pLower.indexOf("1") > -1) xiLabel = "LCC T20 1st XI";
+    else if (pLower.indexOf("2") > -1) xiLabel = "LCC T20 2nd XI";
+    else xiLabel = "LCC T20 XI";
+  } else if (pLower.indexOf("1") > -1) {
+    xiLabel = "LCC 1st XI";
+  } else if (pLower.indexOf("2") > -1) {
+    xiLabel = "LCC 2nd XI";
+  } else if (pLower.indexOf("3") > -1) {
+    xiLabel = "LCC 3rd XI";
+  } else if (pLower.indexOf("4") > -1) {
+    xiLabel = "LCC 4th XI";
+  } else if (pLower.indexOf("5") > -1) {
+    xiLabel = "LCC 5th XI";
+  }
   
   var oppStr = String(opponent || "").trim();
   if (rStr && oppStr) {
@@ -3100,9 +3373,74 @@ function getDriveImageBlob(urlOrId) {
     try {
       return DriveApp.getFileById(fileId).getBlob();
     } catch (e) {
-      Logger.log("getDriveImageBlob error for " + fileId + ": " + e.message);
+      Logger.log("DriveApp.getFileById error for " + fileId + ": " + e.message);
     }
   }
+
+  // 4. If HTTP URL, fetch directly via UrlFetchApp
+  if (str.indexOf("http") === 0) {
+    try {
+      var response = UrlFetchApp.fetch(str, { muteHttpExceptions: true });
+      if (response.getResponseCode() === 200) {
+        return response.getBlob();
+      }
+    } catch (err) {
+      Logger.log("UrlFetchApp error for " + str + ": " + err.message);
+    }
+  }
+
+  return null;
+}
+
+
+/**
+ * Resolves a player photo Blob with multiple robust fallbacks:
+ * 1. Direct photoUrl via getDriveImageBlob(photoUrl)
+ * 2. Lookup in Headshots Drive Folder by Profile ID (<ProfileID>.jpg/png/jpeg)
+ * 3. Lookup in Headshots Drive Folder by Player Name (<FullName>.jpg/png/jpeg)
+ * 4. In-memory Transparent 1x1 PNG Blob
+ */
+function resolvePlayerImageBlob(profileId, name, photoUrl) {
+  // 1. Direct photoUrl
+  if (photoUrl) {
+    var blob = getDriveImageBlob(photoUrl);
+    if (blob) return blob;
+  }
+
+  // 2. Headshots folder lookup
+  var folderId = getHeadshotFolderId();
+  if (folderId) {
+    try {
+      var folder = DriveApp.getFolderById(folderId);
+      if (profileId) {
+        var pid = String(profileId).trim();
+        var pVariations = [pid + ".jpg", pid + ".png", pid + ".jpeg", pid + ".JPG", pid + ".PNG", pid];
+        for (var i = 0; i < pVariations.length; i++) {
+          var files = folder.getFilesByName(pVariations[i]);
+          if (files.hasNext()) return files.next().getBlob();
+        }
+      }
+      if (name) {
+        var cleanName = String(name).replace(/\s*\(.*?\)/g, "").trim();
+        var nVariations = [cleanName + ".jpg", cleanName + ".png", cleanName + ".jpeg", cleanName + ".JPG", cleanName + ".PNG", cleanName];
+        for (var j = 0; j < nVariations.length; j++) {
+          var nFiles = folder.getFilesByName(nVariations[j]);
+          if (nFiles.hasNext()) return nFiles.next().getBlob();
+        }
+      }
+    } catch (e) {
+      Logger.log("resolvePlayerImageBlob error for " + profileId + " / " + name + ": " + e.message);
+    }
+  }
+
+  // 3. Fallback: Search Drive directly by Profile ID or Name if folder lookup didn't find it
+  if (profileId) {
+    try {
+      var dFiles = DriveApp.getFilesByName(String(profileId).trim() + ".jpg");
+      if (dFiles.hasNext()) return dFiles.next().getBlob();
+    } catch (e) {}
+  }
+
   return null;
 }
 
@@ -3148,25 +3486,28 @@ function extractShapeAndImageFromGroup(item) {
 }
 
 
+function isTagForTeam(tag, teamPrefix) {
+  if (!tag) return false;
+  var isT20 = teamPrefix.indexOf("T20") > -1;
+  if (!isT20 && tag.indexOf("T20") > -1) return false;
+  return (tag.indexOf(teamPrefix + "_") === 0 || tag.indexOf(teamPrefix + "__") === 0 || tag.indexOf(teamPrefix + " ") === 0);
+}
+
+
 /**
  * Dynamically finds the correct Slide for a team by checking Alt text tags or Slide title text.
  */
 function findSlideForTeam(prefix, defaultIdx, slides) {
-  var teamNameKeywords = {
-    "1ST": ["FIRST ELEVEN", "1ST XI", "1ST ELEVEN", "FIRSTS"],
-    "2ND": ["SECOND ELEVEN", "2ND XI", "2ND ELEVEN", "SECONDS"],
-    "3RD": ["THIRD ELEVEN", "3RD XI", "3RD ELEVEN", "THIRDS"],
-    "4TH": ["FOURTH ELEVEN", "4TH XI", "4TH ELEVEN", "FOURTHS"],
-    "5TH": ["FIFTH ELEVEN", "5TH XI", "5TH ELEVEN", "FIFTHS"]
-  };
+  var pUpper = String(prefix || "").toUpperCase();
+  var isT20 = pUpper.indexOf("T20") > -1;
 
-  // 1. Check all elements on each slide for explicit prefix Alt Text tag
+  // 1. Check all elements on each slide for explicit prefix Alt Text tag (e.g. T20_1ST_ or 1ST_)
   for (var s = 0; s < slides.length; s++) {
     var els = slides[s].getPageElements();
     for (var e = 0; e < els.length; e++) {
       var el = els[e];
       var tag = String(el.getTitle() || el.getDescription() || "").toUpperCase();
-      if (tag.indexOf(prefix + "_") > -1) {
+      if (isTagForTeam(tag, pUpper)) {
         return slides[s];
       }
       if (el.getPageElementType() === SlidesApp.PageElementType.GROUP) {
@@ -3174,14 +3515,26 @@ function findSlideForTeam(prefix, defaultIdx, slides) {
         for (var g = 0; g < gChildren.length; g++) {
           var gc = gChildren[g];
           var gcTag = String(gc.getTitle() || gc.getDescription() || "").toUpperCase();
-          if (gcTag.indexOf(prefix + "_") > -1) return slides[s];
+          if (isTagForTeam(gcTag, pUpper)) {
+            return slides[s];
+          }
         }
       }
     }
   }
 
   // 2. Check title text on slide shapes
-  var keywords = teamNameKeywords[prefix] || [];
+  var teamNameKeywords = {
+    "1ST": ["FIRST ELEVEN", "1ST XI", "1ST ELEVEN", "FIRSTS"],
+    "2ND": ["SECOND ELEVEN", "2ND XI", "2ND ELEVEN", "SECONDS"],
+    "3RD": ["THIRD ELEVEN", "3RD XI", "3RD ELEVEN", "THIRDS"],
+    "4TH": ["FOURTH ELEVEN", "4TH XI", "4TH ELEVEN", "FOURTHS"],
+    "5TH": ["FIFTH ELEVEN", "5TH XI", "5TH ELEVEN", "FIFTHS"],
+    "T20_1ST": ["T20: FIRST ELEVEN", "T20 1ST ELEVEN", "T20 FIRST ELEVEN", "T20 1ST XI", "T20 1ST", "T20 FIRSTS", "T20 - 1ST ELEVEN", "T20 FIRST", "T20 1ST"],
+    "T20_2ND": ["T20: SECOND ELEVEN", "T20 2ND ELEVEN", "T20 SECOND ELEVEN", "T20 2ND XI", "T20 2ND", "T20 SECONDS", "T20 - 2ND ELEVEN", "T20 SECOND", "T20 2ND"]
+  };
+
+  var keywords = teamNameKeywords[pUpper] || [];
   for (var s = 0; s < slides.length; s++) {
     var els = slides[s].getPageElements();
     for (var e = 0; e < els.length; e++) {
@@ -3190,6 +3543,7 @@ function findSlideForTeam(prefix, defaultIdx, slides) {
         var txt = el.asShape().getText() ? el.asShape().getText().asString().toUpperCase() : "";
         for (var k = 0; k < keywords.length; k++) {
           if (txt.indexOf(keywords[k]) > -1) {
+            if (!isT20 && txt.indexOf("T20") > -1) continue;
             return slides[s];
           }
         }
@@ -3201,6 +3555,7 @@ function findSlideForTeam(prefix, defaultIdx, slides) {
   if (defaultIdx < slides.length) {
     return slides[defaultIdx];
   }
+
   return null;
 }
 
@@ -3231,11 +3586,10 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
   var staging = s.getSheetByName("Presentation_Staging");
   if (!staging) return { success: false, message: "Presentation_Staging tab not found." };
 
-  // If a specific round was chosen in the sync dialog, update Presentation_Staging B1 and flush formulas
-  if (targetRound) {
-    staging.getRange("B1").setValue(targetRound);
-    SpreadsheetApp.flush();
-  }
+  // Always synchronize Presentation_Staging layout and formulas for targetRound
+  var activeRound = targetRound || String(staging.getRange("B1").getValue() || "").trim();
+  syncPresentationStagingHub(s, activeRound);
+  SpreadsheetApp.flush();
 
   // Read player photos map from Players tab (both by Profile ID and Player Name)
   var playerSheet = s.getSheetByName("Players");
@@ -3264,8 +3618,32 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
   var pres = SlidesApp.openById(presId);
   var slides = pres.getSlides();
 
-  // Read data for all 5 teams from Presentation_Staging
-  var frames = [
+  // Check if staging round is a T20 round
+  var isT20 = false;
+  if (activeRound) {
+    var roundSheet = s.getSheetByName(activeRound);
+    if (roundSheet) {
+      var a4Val = String(roundSheet.getRange("A4").getValue() || "");
+      var a1Val = String(roundSheet.getRange("A1").getValue() || "");
+      if (a4Val.indexOf("T20") > -1 || a1Val.indexOf("T20") > -1) isT20 = true;
+    }
+    if (!isT20) {
+      var fixSheet = s.getSheetByName("Fixtures");
+      if (fixSheet && fixSheet.getLastRow() > 1) {
+        isT20 = isT20Fixture(activeRound, fixSheet.getDataRange().getValues());
+      }
+    }
+  }
+  if (!isT20) {
+    var stagingA4 = String(staging.getRange("A4").getValue() || "");
+    if (stagingA4.indexOf("T20") > -1) isT20 = true;
+  }
+
+  // Read data for teams from Presentation_Staging
+  var frames = isT20 ? [
+    { name: "T20 1st ELEVEN", prefix: "T20_1ST", defaultIdx: 0, start: 4, slots: 12 }, 
+    { name: "T20 SECOND ELEVEN", prefix: "T20_2ND", defaultIdx: 1, start: 22, slots: 12 }
+  ] : [
     { name: "FIRST ELEVEN", prefix: "1ST", defaultIdx: 0, start: 4, slots: 12 }, 
     { name: "SECOND ELEVEN", prefix: "2ND", defaultIdx: 1, start: 22, slots: 12 }, 
     { name: "THIRD ELEVEN", prefix: "3RD", defaultIdx: 2, start: 40, slots: 13 }, 
@@ -3306,15 +3684,6 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
     });
   });
 
-  var defaultBlob = null;
-  var defaultPhotoUrl = PropertiesService.getScriptProperties().getProperty('DEFAULT_PHOTO_URL') || "";
-  if (defaultPhotoUrl) {
-    defaultBlob = getDriveImageBlob(defaultPhotoUrl);
-  }
-  if (!defaultBlob) {
-    defaultBlob = getTransparentPngBlob();
-  }
-
   // Update each team's slide using dynamic slide finding, permanent Alt Text IDs & spatial fallbacks
   teamData.forEach(function(t) {
     var slide = findSlideForTeam(t.prefix, t.defaultIdx, slides);
@@ -3330,12 +3699,14 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
     function processSlotElements(pNum, shapeEl, imageEl) {
       if (pNum >= 1 && pNum <= t.players.length) {
         var pInfo = t.players[pNum - 1];
+        var hasPlayer = (pInfo && pInfo.name && pInfo.name.trim() !== "");
         matchedPlayerTags[pNum] = true;
+
         if (shapeEl) {
           try {
             var shp = (typeof shapeEl.asShape === "function") ? shapeEl.asShape() : shapeEl;
             if (shp && typeof shp.getText === "function") {
-              var formattedName = formatPlayerPresentationName(pInfo.name, pInfo.role);
+              var formattedName = hasPlayer ? formatPlayerPresentationName(pInfo.name, pInfo.role) : "";
               shp.getText().setText(formattedName);
             }
           } catch (e) {
@@ -3345,13 +3716,13 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
         if (imageEl) {
           try {
             var img = (typeof imageEl.asImage === "function") ? imageEl.asImage() : imageEl;
-            var blob = (pInfo && pInfo.photoUrl) ? getDriveImageBlob(pInfo.photoUrl) : null;
-            if (!blob) blob = defaultBlob || getTransparentPngBlob();
+            var blob = hasPlayer ? resolvePlayerImageBlob(pInfo.profileId, pInfo.name, pInfo.photoUrl) : null;
+            if (!blob) blob = getTransparentPngBlob();
             if (blob && img && typeof img.replace === "function") {
               img.replace(blob);
             }
           } catch (err) {
-            Logger.log("Image replace warning for " + (pInfo ? pInfo.name : pNum) + ": " + err.message);
+            Logger.log("Image replace warning for slot " + pNum + ": " + err.message);
           }
         }
       }
@@ -3366,39 +3737,37 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
         var grp = el.asGroup();
         var children = grp.getChildren();
 
-        // Check if group itself is tagged with slot ID (e.g. 1ST_SLOT_1, 2ND_SLOT_1, SLOT_1, PLAYER_1)
-        var slotMatch = tag.match(/^(?:.*_)?(?:SLOT|PLAYER)_?(\d+)$/);
-        if (slotMatch) {
-          var pNum = parseInt(slotMatch[1], 10);
+        // 1. Check if group itself is tagged with slot ID
+        var slotNum = extractSlotNumberForTeam(tag, t.prefix);
+        
+        // 2. If group itself is not tagged, check if ANY child inside has the slot ID tag
+        if (slotNum === null) {
+          for (var c = 0; c < children.length; c++) {
+            var cTag = String(children[c].getTitle() || children[c].getDescription() || "").trim().toUpperCase();
+            var foundSlot = extractSlotNumberForTeam(cTag, t.prefix);
+            if (foundSlot !== null) {
+              slotNum = foundSlot;
+              break;
+            }
+          }
+        }
+
+        // 3. If slotNum is found, extract shape and image from the group and process BOTH!
+        if (slotNum !== null) {
           var extracted = extractShapeAndImageFromGroup(grp);
-          processSlotElements(pNum, extracted.shape, extracted.image);
+          processSlotElements(slotNum, extracted.shape, extracted.image);
           return;
         }
 
-        // Otherwise check children individually inside the group
-        children.forEach(function(child) {
-          var cTag = String(child.getTitle() || child.getDescription() || "").trim().toUpperCase();
-          if (!cTag) return;
-          var cPlayerMatch = cTag.match(/^(?:.*_)?PLAYER_?(\d+)$/);
-          if (cPlayerMatch) {
-            processSlotElements(parseInt(cPlayerMatch[1], 10), child, null);
-          }
-          var cPhotoMatch = cTag.match(/^(?:.*_)?PHOTO_?(\d+)$/);
-          if (cPhotoMatch) {
-            processSlotElements(parseInt(cPhotoMatch[1], 10), null, child);
-          }
-        });
         return;
       }
 
-      // B. Match concatenated match tags (e.g. 1ST_ROUND_OPPONENT, 2ND_ROUND_OPPONENT)
-      if (tag === t.prefix + "_ROUND_OPPONENT" || tag === "ROUND_OPPONENT") {
+      // B. Match concatenated match tags
+      if (tag === t.prefix + "_ROUND_OPPONENT" || tag === t.prefix + "__ROUND_OPPONENT" || tag === "ROUND_OPPONENT") {
         if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(roundOpponentText);
-      } else if (tag === t.prefix + "_FORMAT_VENUE" || tag === "FORMAT_VENUE") {
+      } else if (tag === t.prefix + "_FORMAT_VENUE" || tag === t.prefix + "__FORMAT_VENUE" || tag === "FORMAT_VENUE") {
         if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(formatVenueText);
-      }
-      // Match individual info Alt Text tags
-      else if (tag === t.prefix + "_ROUND" || tag === "ROUND") {
+      } else if (tag === t.prefix + "_ROUND" || tag === "ROUND") {
         if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.round);
       } else if (tag === t.prefix + "_OPPONENT" || tag === "OPPONENT") {
         if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.opponent);
@@ -3408,16 +3777,14 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
         if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.format);
       }
 
-      // C. Match standalone PLAYER_1 .. PLAYER_13
-      var pMatch = tag.match(/^(?:.*_)?PLAYER_?(\d+)$/);
-      if (pMatch) {
-        processSlotElements(parseInt(pMatch[1], 10), el, null);
-      }
-
-      // D. Match standalone PHOTO_1 .. PHOTO_13
-      var photoMatch = tag.match(/^(?:.*_)?PHOTO_?(\d+)$/);
-      if (photoMatch) {
-        processSlotElements(parseInt(photoMatch[1], 10), null, el);
+      // C. Match standalone Shape or Image elements tagged with slot ID
+      var elSlotNum = extractSlotNumberForTeam(tag, t.prefix);
+      if (elSlotNum !== null) {
+        if (type === SlidesApp.PageElementType.SHAPE) {
+          processSlotElements(elSlotNum, el, null);
+        } else if (type === SlidesApp.PageElementType.IMAGE) {
+          processSlotElements(elSlotNum, null, el);
+        }
       }
     });
 
@@ -3429,6 +3796,8 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
 
       elements.forEach(function(el) {
         var type = el.getPageElementType();
+        var tag = String(el.getTitle() || el.getDescription() || "").trim().toUpperCase();
+
         if (type === SlidesApp.PageElementType.GROUP) {
           if (el.getTop() < 430) slotGroups.push(el);
         } else if (type === SlidesApp.PageElementType.SHAPE) {
@@ -3440,13 +3809,13 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
               txt.toLowerCase().indexOf("third eleven") === -1 &&
               txt.toLowerCase().indexOf("fourth eleven") === -1 &&
               txt.toLowerCase().indexOf("fifth eleven") === -1 &&
+              txt.toLowerCase().indexOf("t20") === -1 &&
               txt.indexOf("{{") === -1 &&
               shp.getTop() < 420) {
             textShapes.push(el);
           }
         } else if (type === SlidesApp.PageElementType.IMAGE) {
-          // Exclude central Club Crest (width/height < 120)
-          if (el.getWidth() < 120 && el.getHeight() < 120) {
+          if (el.getWidth() < 220 && el.getHeight() < 220 && el.getTop() < 430) {
             avatarImages.push(el);
           }
         }
@@ -3455,32 +3824,25 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
       // A. If slide uses Groups:
       if (slotGroups.length > 0) {
         var sortedGroups = sortElementsTwoColumns(slotGroups);
-        sortedGroups.forEach(function(grpEl, gIdx) {
-          if (gIdx < t.players.length) {
+        var maxGrpSlots = Math.max(sortedGroups.length, t.players.length);
+        for (var gIdx = 0; gIdx < maxGrpSlots; gIdx++) {
+          var grpEl = gIdx < sortedGroups.length ? sortedGroups[gIdx] : null;
+          if (grpEl) {
             var extracted = extractShapeAndImageFromGroup(grpEl);
             processSlotElements(gIdx + 1, extracted.shape, extracted.image);
           }
-        });
+        }
       } else {
         // B. If slide uses separate standalone shapes & images:
         var sortedShapes = sortElementsTwoColumns(textShapes);
         var sortedImages = sortElementsTwoColumns(avatarImages);
 
-        sortedShapes.forEach(function(shpEl, sIdx) {
-          if (sIdx < t.players.length) {
-            shpEl.setTitle("PLAYER_" + (sIdx + 1));
-            shpEl.setDescription(t.prefix + "_PLAYER_" + (sIdx + 1));
-            processSlotElements(sIdx + 1, shpEl, null);
-          }
-        });
-
-        sortedImages.forEach(function(imgEl, sIdx) {
-          if (sIdx < t.players.length) {
-            imgEl.setTitle("PHOTO_" + (sIdx + 1));
-            imgEl.setDescription(t.prefix + "_PHOTO_" + (sIdx + 1));
-            processSlotElements(sIdx + 1, null, imgEl);
-          }
-        });
+        var maxSlots = Math.max(sortedShapes.length, sortedImages.length, t.players.length);
+        for (var sIdx = 0; sIdx < maxSlots; sIdx++) {
+          var shpEl = sIdx < sortedShapes.length ? sortedShapes[sIdx] : null;
+          var imgEl = sIdx < sortedImages.length ? sortedImages[sIdx] : null;
+          processSlotElements(sIdx + 1, shpEl, imgEl);
+        }
       }
     }
 
@@ -3506,7 +3868,7 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
     });
   });
 
-  return { success: true, message: "Successfully synced all 5 teams to Google Slides using permanent element IDs!" };
+  return { success: true, message: "Successfully synced " + (isT20 ? "2 T20 teams" : "all 5 teams") + " to Google Slides using permanent element IDs!" };
 }
 
 
@@ -3531,12 +3893,31 @@ function getSlidesSyncSummary() {
   // Detect all round tabs in the workbook (exclude non-round system sheets)
   var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log"];
   var roundTabs = [];
+  var roundMeta = {};
+  var fixSheet = ss ? ss.getSheetByName("Fixtures") : null;
+  var fixData = (fixSheet && fixSheet.getLastRow() > 1) ? fixSheet.getDataRange().getValues() : null;
+
   if (ss) {
     var allSheets = ss.getSheets();
     allSheets.forEach(function(sh) {
       var name = sh.getName();
       if (nonRoundNames.indexOf(name) === -1) {
         roundTabs.push(name);
+        
+        var isT20 = false;
+        var a4Val = String(sh.getRange("A4").getValue() || "");
+        var a1Val = String(sh.getRange("A1").getValue() || "");
+        if (a4Val.indexOf("T20") > -1 || a1Val.indexOf("T20") > -1 || /t20/i.test(name)) {
+          isT20 = true;
+        } else if (fixData) {
+          isT20 = isT20Fixture(name, fixData);
+        }
+        
+        roundMeta[name] = {
+          isT20: isT20,
+          teamCount: isT20 ? 2 : 5,
+          teamsText: isT20 ? "T20 1st ELEVEN, T20 SECOND ELEVEN (2 Teams)" : "1st, 2nd, 3rd, 4th, 5th Elevens (5 Teams)"
+        };
       }
     });
   }
@@ -3555,7 +3936,7 @@ function getSlidesSyncSummary() {
     presentationUrl: presUrl,
     roundToPresent: currentRound || "(None selected)",
     availableRounds: roundTabs,
-    teamCount: 5
+    roundMeta: roundMeta
   };
 }
 
@@ -3600,9 +3981,9 @@ function showSyncSlidesDialog() {
     '  <div class="card">' +
     '    <div class="info-row">' +
     '      <span class="label">Round to Present:</span>' +
-    '      <select id="roundSelect"><option value="">Loading rounds...</option></select>' +
+    '      <select id="roundSelect" onchange="updateTeamsDisplay()"><option value="">Loading rounds...</option></select>' +
     '    </div>' +
-    '    <div class="info-row"><span class="label">Teams:</span><span class="value">1st, 2nd, 3rd, 4th, 5th Elevens</span></div>' +
+    '    <div class="info-row"><span class="label">Teams:</span><span class="value" id="teamsDisplay">Loading...</span></div>' +
     '    <div class="info-row"><span class="label">Headshot Sync:</span><span class="value">Drive Photos & Transparent fallback</span></div>' +
     '  </div>' +
     '  <div class="actions">' +
@@ -3618,7 +3999,7 @@ function showSyncSlidesDialog() {
     '<div id="successState" style="display: none;" class="state-box">' +
     '  <div style="font-size: 40px; margin-bottom: 12px;">✅</div>' +
     '  <h3 style="color: #4d0012; font-size: 18px; margin-bottom: 8px;">Sync Complete!</h3>' +
-    '  <p id="successMsg" style="font-size: 14px; color: #555; margin-bottom: 24px;">All 5 team slides are now up to date.</p>' +
+    '  <p id="successMsg" style="font-size: 14px; color: #555; margin-bottom: 24px;">All team slides are now up to date.</p>' +
     '  <div class="actions" style="justify-content: center;">' +
     '    <button class="btn-gold" id="openSlidesBtn" onclick="openSlides()">🔗 Open Google Slides</button>' +
     '    <button class="btn-secondary" onclick="google.script.host.close()">Close</button>' +
@@ -3626,8 +4007,18 @@ function showSyncSlidesDialog() {
     '</div>' +
     '<script>' +
     '  var presentationUrl = "";' +
+    '  var roundMeta = {};' +
+    '  function updateTeamsDisplay() {' +
+    '    var sel = document.getElementById("roundSelect");' +
+    '    var val = sel ? sel.value : "";' +
+    '    var meta = roundMeta[val];' +
+    '    var display = meta ? meta.teamsText : "1st, 2nd, 3rd, 4th, 5th Elevens (5 Teams)";' +
+    '    var elem = document.getElementById("teamsDisplay");' +
+    '    if (elem) elem.innerText = display;' +
+    '  }' +
     '  google.script.run.withSuccessHandler(function(summary) {' +
     '    presentationUrl = summary.presentationUrl;' +
+    '    roundMeta = summary.roundMeta || {};' +
     '    var sel = document.getElementById("roundSelect");' +
     '    sel.innerHTML = "";' +
     '    if (summary.availableRounds && summary.availableRounds.length > 0) {' +
@@ -3646,6 +4037,7 @@ function showSyncSlidesDialog() {
     '      opt.text = summary.roundToPresent || "No rounds found";' +
     '      sel.appendChild(opt);' +
     '    }' +
+    '    updateTeamsDisplay();' +
     '  }).getSlidesSyncSummary();' +
     '  function startSync() {' +
     '    var selectedRound = document.getElementById("roundSelect").value;' +
@@ -4038,4 +4430,149 @@ function showPhotoStudioDialog() {
     '</body></html>'
   ).setWidth(740).setHeight(500);
   SpreadsheetApp.getUi().showModalDialog(html, "📸 Player Photo Studio");
+}
+
+
+/**
+ * Inspects all slides and elements in the connected Google Slides deck and returns structured diagnostic JSON.
+ */
+function getSlideDiagnostics() {
+  var presId = getSlidesPresentationId();
+  if (!presId) return { error: "SLIDES_PRESENTATION_ID is not configured." };
+
+  try {
+    var pres = SlidesApp.openById(presId);
+    var slides = pres.getSlides();
+    var report = [];
+
+    slides.forEach(function(slide, sIdx) {
+      var slideInfo = {
+        slideNumber: sIdx + 1,
+        slideId: slide.getObjectId(),
+        elements: []
+      };
+
+      var els = slide.getPageElements();
+      els.forEach(function(el, eIdx) {
+        var type = el.getPageElementType().toString();
+        var title = el.getTitle() || "";
+        var desc = el.getDescription() || "";
+        var left = Math.round(el.getLeft());
+        var top = Math.round(el.getTop());
+        var width = Math.round(el.getWidth());
+        var height = Math.round(el.getHeight());
+        
+        var elInfo = {
+          index: eIdx,
+          type: type,
+          title: title,
+          description: desc,
+          bounds: { left: left, top: top, width: width, height: height },
+          children: []
+        };
+
+        if (type === "SHAPE") {
+          try {
+            elInfo.text = el.asShape().getText() ? el.asShape().getText().asString().trim() : "";
+          } catch (e) {
+            elInfo.text = "";
+          }
+        } else if (type === "GROUP") {
+          try {
+            var grp = el.asGroup();
+            var children = grp.getChildren();
+            children.forEach(function(child, cIdx) {
+              var cType = child.getPageElementType().toString();
+              var cTitle = child.getTitle() || "";
+              var cDesc = child.getDescription() || "";
+              var cText = "";
+              if (cType === "SHAPE") {
+                try {
+                  cText = child.asShape().getText() ? child.asShape().getText().asString().trim() : "";
+                } catch (e) {}
+              }
+              elInfo.children.push({
+                childIndex: cIdx,
+                type: cType,
+                title: cTitle,
+                description: cDesc,
+                text: cText,
+                bounds: { left: Math.round(child.getLeft()), top: Math.round(child.getTop()), width: Math.round(child.getWidth()), height: Math.round(child.getHeight()) }
+              });
+            });
+          } catch (e) {
+            elInfo.childrenError = e.message;
+          }
+        }
+
+        slideInfo.elements.push(elInfo);
+      });
+
+      report.push(slideInfo);
+    });
+
+    return { success: true, presentationId: presId, totalSlides: slides.length, slides: report };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+
+/**
+ * Opens an interactive Google Slides Diagnostic & Debug modal.
+ */
+function showSlideDiagnosticsDialog() {
+  var html = HtmlService.createHtmlOutput(
+    '<!DOCTYPE html>' +
+    '<html><head><base target="_top">' +
+    '<style>' +
+    '  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; }' +
+    '  body { padding: 18px; background: #1e1e1e; color: #d4d4d4; }' +
+    '  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 10px; }' +
+    '  .header h2 { color: #fac218; font-size: 16px; }' +
+    '  button { padding: 6px 14px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }' +
+    '  .btn-gold { background: #fac218; color: #4d0012; }' +
+    '  .btn-gold:hover { background: #e6b216; }' +
+    '  .btn-copy { background: #333; color: #fff; border: 1px solid #555; margin-left: 8px; }' +
+    '  .btn-copy:hover { background: #444; }' +
+    '  pre { background: #141414; border: 1px solid #2d2d2d; border-radius: 6px; padding: 12px; font-size: 12px; line-height: 1.5; color: #9cdcfe; overflow: auto; height: 420px; white-space: pre-wrap; word-break: break-all; }' +
+    '  .status { font-size: 13px; color: #888; margin-top: 8px; }' +
+    '</style>' +
+    '</head><body>' +
+    '<div class="header">' +
+    '  <h2>🔍 Google Slides Diagnostic Inspector</h2>' +
+    '  <div>' +
+    '    <button class="btn-gold" onclick="runScan()">⚡ Scan Deck Now</button>' +
+    '    <button class="btn-copy" id="copyBtn" onclick="copyJson()" disabled>📋 Copy JSON</button>' +
+    '  </div>' +
+    '</div>' +
+    '<pre id="output">Click "Scan Deck Now" to inspect every slide element, Alt Text tag, and grouped child on your presentation deck...</pre>' +
+    '<div class="status" id="status">Ready</div>' +
+    '<script>' +
+    '  var cachedData = "";' +
+    '  function runScan() {' +
+    '    document.getElementById("output").innerText = "Scanning presentation deck, please wait...";' +
+    '    document.getElementById("status").innerText = "⏳ Loading...";' +
+    '    google.script.run.withSuccessHandler(function(res) {' +
+    '      cachedData = JSON.stringify(res, null, 2);' +
+    '      document.getElementById("output").innerText = cachedData;' +
+    '      document.getElementById("status").innerText = "✅ Scan complete! Found " + (res.totalSlides || 0) + " slides.";' +
+    '      document.getElementById("copyBtn").disabled = false;' +
+    '    }).withFailureHandler(function(err) {' +
+    '      document.getElementById("output").innerText = "Error: " + err.message;' +
+    '      document.getElementById("status").innerText = "❌ Scan failed";' +
+    '    }).getSlideDiagnostics();' +
+    '  }' +
+    '  function copyJson() {' +
+    '    if (!cachedData) return;' +
+    '    navigator.clipboard.writeText(cachedData).then(function() {' +
+    '      var btn = document.getElementById("copyBtn");' +
+    '      btn.innerText = "✅ Copied!";' +
+    '      setTimeout(function() { btn.innerText = "📋 Copy JSON"; }, 2000);' +
+    '    });' +
+    '  }' +
+    '</script>' +
+    '</body></html>'
+  ).setWidth(800).setHeight(520);
+  SpreadsheetApp.getUi().showModalDialog(html, "🔍 Google Slides Diagnostic Inspector");
 }
