@@ -1225,8 +1225,6 @@ function onOpen() {
     .addItem("Player Photo Studio", "showPhotoStudioDialog")
     .addItem("Import Players from PlayHQ export", "showImportPlayHQDialog")
     .addItem("Import fixtures from PlayHQ export", "showImportFixturesDialog")
-    .addSeparator()
-    .addItem("🔍 Slide Diagnostics & Element Inspector", "showSlideDiagnosticsDialog")
     .addToUi();
 
   // Auto-sync selection validation rules & WhatsApp columns on existing round sheets
@@ -2126,10 +2124,7 @@ function showDatePickerDialog() {
     '          var matchParts = [];' +
     '          if (tm.opponent) matchParts.push("vs " + tm.opponent);' +
     '          if (tm.venue) matchParts.push("@ " + tm.venue);' +
-    '          var meta = [];' +
-    '          if (tm.format) meta.push(tm.format);' +
-    '          if (tm.round) meta.push(tm.round);' +
-    '          var metaStr = meta.length > 0 ? (" (" + meta.join(" • ") + ")") : "";' +
+    '          var metaStr = tm.format ? (" (" + tm.format + ")") : "";' +
     '          var desc = (matchParts.join(" ") || "Fixture Scheduled") + metaStr;' +
     '          matchesHtml += "<div class=\\"match-row\\"><span class=\\"match-team\\">" + tm.team + "</span><span class=\\"match-desc\\">" + desc + "</span></div>";' +
     '        }' +
@@ -2188,7 +2183,7 @@ function showDatePickerDialog() {
     '    window.onload = initDialog;' +
     '  </script>' +
     '</body></html>'
-  ).setWidth(520).setHeight(450);
+  ).setWidth(560).setHeight(560);
   SpreadsheetApp.getUi().showModalDialog(htmlOutput, "Initialise Round Selection Tab");
 }
 
@@ -4016,6 +4011,21 @@ function showSyncSlidesDialog() {
     '    var elem = document.getElementById("teamsDisplay");' +
     '    if (elem) elem.innerText = display;' +
     '  }' +
+    '  function formatRoundLabel(rnd) {' +
+    '    if (!rnd) return "";' +
+    '    var parts = rnd.split("-");' +
+    '    if (parts.length === 3) {' +
+    '      var y = parseInt(parts[0], 10);' +
+    '      var m = parseInt(parts[1], 10) - 1;' +
+    '      var d = parseInt(parts[2], 10);' +
+    '      var dateObj = new Date(y, m, d);' +
+    '      if (!isNaN(dateObj.getTime())) {' +
+    '        var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];' +
+    '        return rnd + " (" + days[dateObj.getDay()] + ")";' +
+    '      }' +
+    '    }' +
+    '    return rnd;' +
+    '  }' +
     '  google.script.run.withSuccessHandler(function(summary) {' +
     '    presentationUrl = summary.presentationUrl;' +
     '    roundMeta = summary.roundMeta || {};' +
@@ -4025,7 +4035,7 @@ function showSyncSlidesDialog() {
     '      summary.availableRounds.forEach(function(rnd) {' +
     '        var opt = document.createElement("option");' +
     '        opt.value = rnd;' +
-    '        opt.text = rnd;' +
+    '        opt.text = formatRoundLabel(rnd);' +
     '        if (rnd === summary.roundToPresent) {' +
     '          opt.selected = true;' +
     '        }' +
@@ -4034,7 +4044,7 @@ function showSyncSlidesDialog() {
     '    } else {' +
     '      var opt = document.createElement("option");' +
     '      opt.value = summary.roundToPresent || "";' +
-    '      opt.text = summary.roundToPresent || "No rounds found";' +
+    '      opt.text = formatRoundLabel(summary.roundToPresent) || "No rounds found";' +
     '      sel.appendChild(opt);' +
     '    }' +
     '    updateTeamsDisplay();' +
