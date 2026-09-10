@@ -87,14 +87,14 @@ describe('T20 Round & Selection Support', () => {
   describe('filterPlayersForRoundSnapshot', () => {
     const masterPlayersData = [
       ['ProfileID', 'FirstName', 'LastName', 'FullName', 'JuniorLevel', 'T20Squad', 'GlobalStatus', 'ExpectedReturnDate'],
-      ['P001', 'Neil', 'Kloot', 'Neil Kloot', '', 'Yes', 'Active', ''],
-      ['P002', 'Jimi', 'Kloot', 'Jimi Kloot', 'U16', 'yes', 'Active', ''],
+      ['P001', 'Alex', 'Taylor', 'Alex Taylor', '', 'Yes', 'Active', ''],
+      ['P002', 'Jordan', 'Taylor', 'Jordan Taylor', 'U16', 'yes', 'Active', ''],
       ['P003', 'John', 'Smith', 'John Smith', '', 'No', 'Active', ''],
       ['P004', 'Mark', 'Taylor', 'Mark Taylor', '', '  YES  ', 'Injured', '2026-02-01'],
       ['P005', 'Sam', 'Brown', 'Sam Brown', '', '', 'Injured', '2026-02-01'],
-      ['P006', 'Aaron', 'Alaimo', 'Aaron Alaimo', '', '', 'Active', ''],
-      ['P007', 'Adam', 'Doungas', 'Adam Doungas', '', null, 'Active', ''],
-      ['P008', 'Gus', 'Schwarz', 'Gus Schwarz', '', 'NO', 'Active', '']
+      ['P006', 'Chris', 'Morgan', 'Chris Morgan', '', '', 'Active', ''],
+      ['P007', 'Pat', 'Davies', 'Pat Davies', '', null, 'Active', ''],
+      ['P008', 'Gus', 'Wilson', 'Gus Wilson', '', 'NO', 'Active', '']
     ];
 
     test('strictly filters only players with explicit "Yes" in T20Squad for T20 rounds', () => {

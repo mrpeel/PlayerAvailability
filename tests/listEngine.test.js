@@ -2,9 +2,9 @@ const { moveItemBetweenLists } = require('../src/logic.js');
 
 describe('moveItemBetweenLists()', () => {
   const sourceUnknown = [
-    ['GUID-100', 'Ross Theunissen', ''],
-    ['GUID-200', 'Ollie Jenkins', ''],
-    ['GUID-300', 'Taylor Merrigan', '']
+    ['GUID-100', 'Player Alpha', ''],
+    ['GUID-200', 'Player Beta', ''],
+    ['GUID-300', 'Player Gamma', '']
   ];
   const destAvailable = [];
 
@@ -18,9 +18,9 @@ describe('moveItemBetweenLists()', () => {
 
     expect(moved).toBe(true);
     expect(sourceList).toHaveLength(2);
-    expect(sourceList.map(r => r[1])).toEqual(['Ross Theunissen', 'Taylor Merrigan']);
+    expect(sourceList.map(r => r[1])).toEqual(['Player Alpha', 'Player Gamma']);
     expect(destList).toHaveLength(1);
-    expect(destList[0]).toEqual(['GUID-200', 'Ollie Jenkins', 'Available Week 1 only']);
+    expect(destList[0]).toEqual(['GUID-200', 'Player Beta', 'Available Week 1 only']);
   });
 
   test('returns original lists unchanged when player not found', () => {

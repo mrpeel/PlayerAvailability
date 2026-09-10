@@ -490,7 +490,7 @@ function simulateRoundAvailability(dateStr) {
   }
   if (!ws) {
     ws = ss.getActiveSheet();
-    var forbidden = ["Presentation_Staging", "Players", "Fixtures", "Config", "Availability_Log", "Admins"];
+    var forbidden = ["Presentation_Staging", "Players", "Fixtures", "Config", "Availability_Log", "Admins", "WhatsApp_Contacts"];
     if (forbidden.indexOf(ws.getName()) === -1) {
       targetDate = ws.getName();
     } else {
@@ -941,7 +941,18 @@ function importPlayHQPlayers(csvContent) {
   // Apply generous, sensible column widths
   applyAllStandardColumnWidths(ss);
 
-  return "Imported " + newRows.length + " new player(s). " + skipped + " skipped.\n\nSheet: " + ss.getUrl();
+  // Automatically sync pending WhatsApp contacts with updated players roster
+  var syncMsg = "";
+  try {
+    var syncResult = syncWhatsAppContactsWithPlayers(ss);
+    if (syncResult && syncResult.summary && syncResult.summary.addedToPlayer > 0) {
+      syncMsg = "\n\nWhatsApp Sync: Linked " + syncResult.summary.matched + " contacts (" + syncResult.summary.addedToPlayer + " new phone numbers added to player profiles).";
+    }
+  } catch (syncErr) {
+    Logger.log("Auto WhatsApp sync warning: " + syncErr.message);
+  }
+
+  return "Imported " + newRows.length + " new player(s). " + skipped + " skipped." + syncMsg + "\n\nSheet: " + ss.getUrl();
 }
 
 
@@ -1225,6 +1236,9 @@ function onOpen() {
     .addItem("Player Photo Studio", "showPhotoStudioDialog")
     .addItem("Import Players from PlayHQ export", "showImportPlayHQDialog")
     .addItem("Import fixtures from PlayHQ export", "showImportFixturesDialog")
+    .addSeparator()
+    .addItem("Import WhatsApp contacts", "showWhatsAppContactsDialog")
+    .addItem("Sync WhatsApp contacts with players", "syncWhatsAppContactsMenu")
     .addToUi();
 
   // Auto-sync selection validation rules & WhatsApp columns on existing round sheets
@@ -1237,7 +1251,7 @@ function onOpen() {
       }
 
       var sheets = ss.getSheets();
-      var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log"];
+      var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log", "WhatsApp_Contacts"];
       sheets.forEach(function(s) {
         if (nonRoundNames.indexOf(s.getName()) === -1) {
           applySelectionValidationRules(s);
@@ -2470,7 +2484,7 @@ function showImportFixturesDialog() {
 function getRoundTabsForDialog() {
   var ss = getSS();
   if (!ss) return { activeIsRound: false, activeTab: "", roundTabs: [] };
-  var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log"];
+  var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log", "WhatsApp_Contacts"];
   var activeTab = ss.getActiveSheet().getName();
   var activeIsRound = nonRoundNames.indexOf(activeTab) === -1;
   var roundTabs = [];
@@ -3237,7 +3251,7 @@ function menuAutoTagSlides() {
 
 /**
  * Formats a player name with presentation role tags: (C), (VC), (Wk).
- * Supports dual roles (e.g. "VC & WK" -> "Neil Kloot (VC) (Wk)") and split keeping.
+ * Supports dual roles (e.g. "VC & WK" -> "Alex Taylor (VC) (Wk)") and split keeping.
  */
 function formatPlayerPresentationName(name, role) {
   if (!name || typeof name !== "string" || name.trim() === "") return "";
@@ -4585,4 +4599,454 @@ function showSlideDiagnosticsDialog() {
     '</body></html>'
   ).setWidth(800).setHeight(520);
   SpreadsheetApp.getUi().showModalDialog(html, "🔍 Google Slides Diagnostic Inspector");
+}
+
+
+/**
+ * ============================================================================
+ * WHATSAPP CONTACTS INTEGRATION & RE-SYNC ENGINE
+ * ============================================================================
+ */
+
+/**
+ * Ensures the WhatsApp_Contacts sheet exists with correct headers and validations.
+ */
+function ensureWhatsAppContactsSheet(ss) {
+  if (!ss) ss = getSS();
+  if (!ss) return null;
+  var sheet = ss.getSheetByName("WhatsApp_Contacts");
+  if (!sheet) {
+    sheet = ss.insertSheet("WhatsApp_Contacts");
+    var headers = [[
+      "Source", "WhatsAppName", "Phone", "MatchStatus", "MatchedProfileID",
+      "MatchedPlayerName", "MatchMethod", "AddedToPlayer", "DateAdded", "Notes"
+    ]];
+    sheet.getRange(1, 1, 1, 10).setValues(headers)
+      .setFontWeight("bold")
+      .setBackground(LCC_SETUP_PALETTE.maroonBg)
+      .setFontColor(LCC_SETUP_PALETTE.maroonFg);
+
+    var matchStatusRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(["Matched", "Unmatched", "Manual Match", "Ambiguous"], true)
+      .setAllowInvalid(true)
+      .build();
+    sheet.getRange("D2:D500").setDataValidation(matchStatusRule);
+    applyAllStandardColumnWidths(ss);
+  }
+  return sheet;
+}
+
+/**
+ * Synchronizes all entries in WhatsApp_Contacts with the Master Players tab.
+ * Uses pure matching algorithm (matchContactsToPlayers) from logic.js.
+ * - Where numbers are additional, writes them to Phone2, Phone3, or Phone4.
+ * - Updates WhatsApp_Contacts with match status and audit notes.
+ */
+function syncWhatsAppContactsWithPlayers(optionalSS) {
+  var ss = optionalSS || getSS();
+  if (!ss) throw new Error("Spreadsheet not found.");
+
+  var playerSheet = ss.getSheetByName("Players");
+  if (!playerSheet || playerSheet.getLastRow() < 2) {
+    return {
+      status: "warning",
+      message: "No players found in Players tab.",
+      summary: { totalContacts: 0, matched: 0, unmatched: 0, ambiguous: 0, addedToPlayer: 0, alreadyPresent: 0 }
+    };
+  }
+
+  var contactSheet = ensureWhatsAppContactsSheet(ss);
+  if (!contactSheet || contactSheet.getLastRow() < 2) {
+    return {
+      status: "success",
+      message: "No WhatsApp contacts in sheet to sync.",
+      summary: { totalContacts: 0, matched: 0, unmatched: 0, ambiguous: 0, addedToPlayer: 0, alreadyPresent: 0 }
+    };
+  }
+
+  // Read Players data
+  var pValues = playerSheet.getDataRange().getValues();
+  var pHeaders = pValues[0];
+  var pIdIdx = pHeaders.indexOf("ProfileID");
+  var fnIdx = pHeaders.indexOf("FirstName");
+  var lnIdx = pHeaders.indexOf("LastName");
+  var fullIdx = pHeaders.indexOf("FullName");
+  var p1Idx = pHeaders.indexOf("Phone");
+  var p2Idx = pHeaders.indexOf("Phone2");
+  var p3Idx = pHeaders.indexOf("Phone3");
+  var p4Idx = pHeaders.indexOf("Phone4");
+
+  var playerRowsMap = {};
+  var playerObjects = [];
+
+  for (var r = 1; r < pValues.length; r++) {
+    var pRow = pValues[r];
+    var profId = String(pRow[pIdIdx] || "").trim();
+    if (!profId) continue;
+    var rowNum = r + 1;
+    playerRowsMap[profId] = rowNum;
+
+    playerObjects.push({
+      profileId: profId,
+      firstName: fnIdx !== -1 ? String(pRow[fnIdx] || "").trim() : "",
+      lastName: lnIdx !== -1 ? String(pRow[lnIdx] || "").trim() : "",
+      fullName: fullIdx !== -1 ? String(pRow[fullIdx] || "").trim() : "",
+      phone: p1Idx !== -1 ? String(pRow[p1Idx] || "").trim() : "",
+      phone2: p2Idx !== -1 ? String(pRow[p2Idx] || "").trim() : "",
+      phone3: p3Idx !== -1 ? String(pRow[p3Idx] || "").trim() : "",
+      phone4: p4Idx !== -1 ? String(pRow[p4Idx] || "").trim() : ""
+    });
+  }
+
+  // Read WhatsApp_Contacts data
+  var cValues = contactSheet.getDataRange().getValues();
+  var contactObjects = [];
+
+  for (var c = 1; c < cValues.length; c++) {
+    var cRow = cValues[c];
+    contactObjects.push({
+      rowIndex: c + 1,
+      source: String(cRow[0] || "").trim(),
+      rawName: String(cRow[1] || "").trim(),
+      phone: String(cRow[2] || "").trim(),
+      matchStatus: String(cRow[3] || "").trim(),
+      matchedProfileId: String(cRow[4] || "").trim(),
+      matchedPlayerName: String(cRow[5] || "").trim(),
+      matchMethod: String(cRow[6] || "").trim(),
+      addedToPlayer: String(cRow[7] || "").trim(),
+      dateAdded: String(cRow[8] || "").trim(),
+      notes: String(cRow[9] || "").trim()
+    });
+  }
+
+  // Run pure matching logic
+  var matchResult = matchContactsToPlayers(contactObjects, playerObjects);
+
+  // Apply mutations to Players sheet (Phone slots: Col 9, 10, 11, 12)
+  var slotColMap = {
+    "Phone": p1Idx !== -1 ? p1Idx + 1 : 9,
+    "Phone2": p2Idx !== -1 ? p2Idx + 1 : 10,
+    "Phone3": p3Idx !== -1 ? p3Idx + 1 : 11,
+    "Phone4": p4Idx !== -1 ? p4Idx + 1 : 12
+  };
+
+  matchResult.playerMutations.forEach(function(mut) {
+    var pRowNum = playerRowsMap[mut.profileId];
+    var colNum = slotColMap[mut.slot];
+    if (pRowNum && colNum) {
+      playerSheet.getRange(pRowNum, colNum).setValue(mut.phone);
+    }
+  });
+
+  // Apply updates to WhatsApp_Contacts sheet
+  var contactUpdateRows = [];
+  matchResult.matchedContacts.forEach(function(mc) {
+    contactUpdateRows.push([
+      mc.source,
+      mc.rawName,
+      mc.phone,
+      mc.matchStatus,
+      mc.matchedProfileId,
+      mc.matchedPlayerName,
+      mc.matchMethod,
+      mc.addedToPlayer,
+      mc.dateAdded,
+      mc.notes
+    ]);
+  });
+
+  if (contactUpdateRows.length > 0) {
+    contactSheet.getRange(2, 1, contactUpdateRows.length, 10).setValues(contactUpdateRows);
+  }
+
+  return {
+    status: "success",
+    summary: matchResult.summary,
+    message: "Synced " + matchResult.summary.totalContacts + " contacts with player directory: " +
+             matchResult.summary.matched + " matched, " +
+             matchResult.summary.addedToPlayer + " new phone numbers added, " +
+             matchResult.summary.alreadyPresent + " already present, " +
+             matchResult.summary.unmatched + " unmatched."
+  };
+}
+
+/**
+ * Parses raw contacts input, appends new entries to WhatsApp_Contacts tab,
+ * and automatically triggers matching against the Players master tab.
+ */
+function importWhatsAppContacts(inputText, defaultSource) {
+  var ss = getSS();
+  if (!ss) return "ERROR: Spreadsheet not found.";
+
+  var contactSheet = ensureWhatsAppContactsSheet(ss);
+  if (!contactSheet) return "ERROR: Could not access or create WhatsApp_Contacts tab.";
+
+  var parsedContacts = parseWhatsAppContactsInput(inputText, defaultSource);
+  if (!parsedContacts || parsedContacts.length === 0) {
+    return "ERROR: No valid contact phone numbers found in input. Please verify format.";
+  }
+
+  // Deduplicate against existing contacts in sheet
+  var existingKeys = {};
+  if (contactSheet.getLastRow() > 1) {
+    var cVals = contactSheet.getDataRange().getValues();
+    for (var i = 1; i < cVals.length; i++) {
+      var existPhone = normalizePhone(cVals[i][2]);
+      var existName = String(cVals[i][1] || "").trim().toLowerCase();
+      var key = existPhone + "|" + existName;
+      existingKeys[key] = true;
+    }
+  }
+
+  var newRows = [];
+  var skipped = 0;
+  var todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "GMT+10", "yyyy-MM-dd");
+
+  parsedContacts.forEach(function(c) {
+    var key = c.phone + "|" + c.rawName.toLowerCase();
+    if (existingKeys[key]) {
+      skipped++;
+    } else {
+      existingKeys[key] = true;
+      newRows.push([
+        c.source || defaultSource || "WhatsApp",
+        c.rawName,
+        c.phone,
+        "Unmatched",
+        "",
+        "",
+        "None",
+        "No",
+        todayStr,
+        "Imported"
+      ]);
+    }
+  });
+
+  if (newRows.length > 0) {
+    var nextRow = contactSheet.getLastRow() + 1;
+    contactSheet.getRange(nextRow, 1, newRows.length, 10).setValues(newRows);
+  }
+
+  // Automatically run player matching & phone sync
+  var syncResult = syncWhatsAppContactsWithPlayers(ss);
+
+  var msg = "Imported " + newRows.length + " new contact(s) (" + skipped + " duplicate(s) skipped).\n\n" +
+            "Sync Results with Master Players Tab:\n" +
+            "• Total contacts in register: " + syncResult.summary.totalContacts + "\n" +
+            "• Matched to player profiles: " + syncResult.summary.matched + "\n" +
+            "• New phone numbers added to players: " + syncResult.summary.addedToPlayer + "\n" +
+            "• Phone numbers already on record: " + syncResult.summary.alreadyPresent + "\n" +
+            "• Unmatched (awaiting registration): " + syncResult.summary.unmatched + "\n" +
+            "• Ambiguous matches needing review: " + syncResult.summary.ambiguous + "\n\n" +
+            "View WhatsApp_Contacts tab for full status and audit log.";
+
+  return msg;
+}
+
+/**
+ * Menu wrapper to trigger WhatsApp contacts sync on demand.
+ */
+function syncWhatsAppContactsMenu() {
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var ss = getSS();
+    var res = syncWhatsAppContactsWithPlayers(ss);
+    ui.alert(
+      "WhatsApp Contacts Sync",
+      "Contacts synced successfully.\n\n" +
+      "Total Contacts in Register: " + res.summary.totalContacts + "\n" +
+      "Matched to Player Profiles: " + res.summary.matched + "\n" +
+      "Unmatched (Awaiting Registration): " + res.summary.unmatched + "\n" +
+      "Ambiguous (Needs Review): " + res.summary.ambiguous + "\n\n" +
+      "New Phone Numbers Added to Players: " + res.summary.addedToPlayer + "\n" +
+      "Phone Numbers Already on Record: " + res.summary.alreadyPresent,
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    ui.alert("Sync Error", "Failed to sync WhatsApp contacts: " + (err.message || err), ui.ButtonSet.OK);
+  }
+}
+
+/**
+ * DIALOG: WhatsApp Contacts Import & Sync modal.
+ */
+function showWhatsAppContactsDialog() {
+  var htmlOutput = HtmlService.createHtmlOutput(
+    '<html><head>' +
+    '<link rel="preconnect" href="https://fonts.googleapis.com">' +
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
+    '<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&display=swap" rel="stylesheet">' +
+    '<style>' +
+    '  body { font-family: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 16px; color: #222; margin: 0; background: #fff; box-sizing: border-box; }' +
+    '  input, button, select, textarea { font-family: inherit; }' +
+    '  h3 { color: #6A1B29; margin-top: 0; margin-bottom: 4px; font-size: 16px; font-weight: 800; }' +
+    '  p { font-size: 12px; color: #555; line-height: 1.4; margin: 0 0 10px; }' +
+    '  .card { background: #fdfdfd; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }' +
+    '  .card-title { font-weight: bold; font-size: 12px; color: #6A1B29; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; }' +
+    '  .badge { background: #eee; color: #666; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: bold; }' +
+    '  .badge.ready { background: #dcfce7; color: #166534; }' +
+    '  select, input[type=file], textarea { width: 100%; font-size: 12px; box-sizing: border-box; }' +
+    '  select { padding: 6px; border: 1px solid #ccc; border-radius: 4px; }' +
+    '  textarea { padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical; height: 75px; font-family: monospace; font-size: 11px; }' +
+    '  .btn { padding: 8px 14px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; font-size: 12px; transition: all 0.2s; }' +
+    '  .btn-primary { background: #6A1B29; color: white; }' +
+    '  .btn-primary:hover { background: #52131e; }' +
+    '  .btn-secondary { background: #e5e7eb; color: #333; margin-right: 6px; }' +
+    '  .btn-gold { background: #F4B41A; color: #111; margin-right: 6px; }' +
+    '  .btn-gold:hover { background: #d99e12; }' +
+    '  .actions { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }' +
+    '  .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #6A1B29; border-radius: 50%; width: 32px; height: 32px; animation: spin 1s linear infinite; margin: 15px auto; }' +
+    '  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }' +
+    '  .result-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px; font-size: 12px; white-space: pre-wrap; color: #333; max-height: 240px; overflow-y: auto; box-sizing: border-box; }' +
+    '  .help-box { background: #fffdf5; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; font-size: 11px; color: #78350f; }' +
+    '  .help-box summary { font-weight: bold; cursor: pointer; outline: none; }' +
+    '  .copy-chip { display: inline-block; background: #fef3c7; border: 1px solid #f59e0b; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 4px; font-size: 11px; color: #92400e; }' +
+    '</style>' +
+    '</head><body>' +
+    '  <h3>WhatsApp Contacts & Player Matching</h3>' +
+    '  <p>Import contacts from captain WhatsApp groups to link direct player mobile numbers into master records.</p>' +
+    '' +
+    '  <details class="help-box">' +
+    '    <summary>📱 How to export contacts from WhatsApp</summary>' +
+    '    <div style="margin-top:6px; line-height:1.4;">' +
+    '      <strong>Option 1 (Fastest — 1-Click WhatsApp Web Extractor):</strong><br>' +
+    '      In WhatsApp Web on your computer, click your group name to open Group Info, then run this bookmarklet:<br>' +
+    '      <span id="copyBmBtn" class="copy-chip" onclick="copyBookmarklet()">📋 Copy Extractor Bookmarklet</span><br>' +
+    '      <small>It automatically downloads a ready-to-import CSV of all group members!</small><br><br>' +
+    '      <strong>Option 2 (Mobile App Chat Export):</strong><br>' +
+    '      Open Group -> Group Info -> <em>Export Chat</em> -> <em>Without Media</em>. Select or upload the <code>.txt</code> file here.<br><br>' +
+    '      <strong>Option 3 (Copy/Paste):</strong><br>' +
+    '      Paste lines formatted as <code>Name, Phone</code> or <code>Name - 04xx xxx xxx</code> into the box below.' +
+    '    </div>' +
+    '  </details>' +
+    '' +
+    '  <div id="inputSection">' +
+    '    <div class="card">' +
+    '      <div class="card-title"><span>1. Select Team / Chat Source</span></div>' +
+    '      <select id="sourceSelect">' +
+    '        <option value="1st XI">1st XI</option>' +
+    '        <option value="2nd XI" selected>2nd XI</option>' +
+    '        <option value="3rd XI">3rd XI</option>' +
+    '        <option value="4th XI">4th XI</option>' +
+    '        <option value="5th XI">5th XI</option>' +
+    '        <option value="T20 Squad">T20 Squad</option>' +
+    '        <option value="Juniors">Juniors</option>' +
+    '        <option value="General">General / Other</option>' +
+    '      </select>' +
+    '    </div>' +
+    '' +
+    '    <div class="card">' +
+    '      <div class="card-title"><span>2. Upload File (CSV, Chat .txt, or .vcf)</span><span id="fileBadge" class="badge">Optional</span></div>' +
+    '      <input type="file" id="contactsFile" accept=".csv,.txt,.vcf">' +
+    '    </div>' +
+    '' +
+    '    <div class="card">' +
+    '      <div class="card-title"><span>3. Or Paste Contacts / Text</span></div>' +
+    '      <textarea id="pasteText" placeholder="Jack Kloot, 0412 345 678&#10;Daniel Morgan: 0400 000 004&#10;Sam Wilson - 0422 111 222"></textarea>' +
+    '    </div>' +
+    '' +
+    '    <div class="actions">' +
+    '      <button class="btn btn-gold" onclick="startSyncOnly()">🔄 Re-sync All</button>' +
+    '      <div>' +
+    '        <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>' +
+    '        <button id="importBtn" class="btn btn-primary" onclick="startImport()">Import & Sync</button>' +
+    '      </div>' +
+    '    </div>' +
+    '  </div>' +
+    '' +
+    '  <div id="spinnerSection" style="display:none; text-align:center; padding:15px;">' +
+    '    <div class="spinner"></div>' +
+    '    <p style="font-weight:bold; color:#6A1B29;" id="spinnerText">Processing WhatsApp contacts...</p>' +
+    '  </div>' +
+    '' +
+    '  <div id="resultSection" style="display:none;">' +
+    '    <div id="resultMessage" class="result-box"></div>' +
+    '    <div class="actions" style="justify-content: flex-end; margin-top: 10px;">' +
+    '      <button class="btn btn-primary" onclick="google.script.host.close()">Done</button>' +
+    '    </div>' +
+    '  </div>' +
+    '' +
+    '  <script>' +
+    '    var BM_CODE = "javascript:(function(){var g=(document.querySelector(\'header span[title]\')||document.querySelector(\'header h1\')||{}).innerText||\'WhatsApp Group\';var l=[];var r=document.querySelectorAll(\'div[role=\\\"listitem\\\"],div[role=\\\"row\\\"]\');r.forEach(function(x){var t=x.querySelector(\'span[title]\');var n=t?t.getAttribute(\'title\'):\'\';var txt=x.innerText||\'\';var m=txt.match(/(?:\\\\+?61|0)?4\\\\d{2}[\\\\s\\\\-]?\\\\d{3}[\\\\s\\\\-]?\\\\d{3}/);if(m){l.push((n||m[0])+\',\'+m[0].replace(/[^\\\\d+]/g,\'\')+\',\'+g);}});if(l.length===0){var b=document.body.innerText;var ms=b.match(/(?:\\\\+?61|0)?4\\\\d{2}[\\\\s\\\\-]?\\\\d{3}[\\\\s\\\\-]?\\\\d{3}/g)||[];var seen={};ms.forEach(function(m){var c=m.replace(/[^\\\\d+]/g,\'\');if(!seen[c]){seen[c]=true;l.push(\',\'+c+\',\'+g);}});}if(l.length===0){alert(\'Please open Group Info in WhatsApp Web first.\');return;}var blob=new Blob([\'Name,Phone,Source\\\\n\'+l.join(\'\\\\n\')],{type:\'text/csv;charset=utf-8;\'});var a=document.createElement(\'a\');a.href=URL.createObjectURL(blob);a.download=\'whatsapp_contacts_\'+g.replace(/[^\\\\w]/g,\'_\')+\'.csv\';a.click();})();";' +
+    '' +
+    '    function copyBookmarklet() {' +
+    '      navigator.clipboard.writeText(BM_CODE).then(function() {' +
+    '        var btn = document.getElementById("copyBmBtn");' +
+    '        btn.innerText = "✅ Bookmarklet Copied!";' +
+    '        setTimeout(function() { btn.innerText = "📋 Copy Extractor Bookmarklet"; }, 2500);' +
+    '      });' +
+    '    }' +
+    '' +
+    '    var fileInput = document.getElementById("contactsFile");' +
+    '    var fileBadge = document.getElementById("fileBadge");' +
+    '    fileInput.addEventListener("change", function() {' +
+    '      var file = fileInput.files && fileInput.files[0];' +
+    '      if (file) {' +
+    '        fileBadge.className = "badge ready";' +
+    '        fileBadge.innerText = file.name;' +
+    '      } else {' +
+    '        fileBadge.className = "badge";' +
+    '        fileBadge.innerText = "Optional";' +
+    '      }' +
+    '    });' +
+    '' +
+    '    function showSpinner(text) {' +
+    '      document.getElementById("inputSection").style.display = "none";' +
+    '      document.getElementById("resultSection").style.display = "none";' +
+    '      document.getElementById("spinnerText").innerText = text || "Processing...";' +
+    '      document.getElementById("spinnerSection").style.display = "block";' +
+    '    }' +
+    '' +
+    '    function showResult(msg) {' +
+    '      document.getElementById("spinnerSection").style.display = "none";' +
+    '      document.getElementById("resultSection").style.display = "block";' +
+    '      document.getElementById("resultMessage").innerText = msg;' +
+    '    }' +
+    '' +
+    '    function startSyncOnly() {' +
+    '      showSpinner("Synchronizing contacts with player register...");' +
+    '      google.script.run' +
+    '        .withSuccessHandler(function(res) { showResult(res.message || "Sync complete."); })' +
+    '        .withFailureHandler(function(err) { showResult("Sync failed: " + (err.message || err)); })' +
+    '        .syncWhatsAppContactsWithPlayers();' +
+    '    }' +
+    '' +
+    '    function startImport() {' +
+    '      var source = document.getElementById("sourceSelect").value;' +
+    '      var file = fileInput.files && fileInput.files[0];' +
+    '      var text = document.getElementById("pasteText").value.trim();' +
+    '' +
+    '      if (!file && !text) {' +
+    '        alert("Please select a file or paste contact text to import.");' +
+    '        return;' +
+    '      }' +
+    '' +
+    '      showSpinner("Importing and matching contacts...");' +
+    '' +
+    '      if (file) {' +
+    '        var reader = new FileReader();' +
+    '        reader.onload = function(e) {' +
+    '          var combined = (text ? text + "\\n" : "") + e.target.result;' +
+    '          runImportBackend(combined, source);' +
+    '        };' +
+    '        reader.onerror = function() {' +
+    '          showResult("Failed to read file.");' +
+    '        };' +
+    '        reader.readAsText(file);' +
+    '      } else {' +
+    '        runImportBackend(text, source);' +
+    '      }' +
+    '    }' +
+    '' +
+    '    function runImportBackend(rawInput, source) {' +
+    '      google.script.run' +
+    '        .withSuccessHandler(function(msg) { showResult(msg); })' +
+    '        .withFailureHandler(function(err) { showResult("Import failed: " + (err.message || err)); })' +
+    '        .importWhatsAppContacts(rawInput, source);' +
+    '    }' +
+    '  </script>' +
+    '</body></html>'
+  ).setWidth(540).setHeight(580);
+  SpreadsheetApp.getUi().showModalDialog(htmlOutput, "WhatsApp Contacts Import");
 }

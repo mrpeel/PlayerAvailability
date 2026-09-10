@@ -7,7 +7,7 @@ const res = {
   json: (data) => { console.log('JSON Response:', JSON.stringify(data, null, 2)); return res; }
 };
 // Mock the Firebase environment
-process.env.SPREADSHEET_ID = '1H4vBKYaZTNVrLilcoEFVkzGKF43wYmetKLACPnrnA7A';
+process.env.SPREADSHEET_ID = 'SAMPLE_SPREADSHEET_ID';
 // GOOGLE_SERVICE_ACCOUNT is already set in secrets for production, 
 // locally it uses service-account.json automatically in my getSheetsClient() logic.
 

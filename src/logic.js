@@ -716,7 +716,7 @@ function stripJuniorTag(fullName) {
 
 /**
  * Formats a player name with presentation role tags: (C), (VC), (Wk).
- * Supports dual roles (e.g. "VC & WK" -> "Neil Kloot (VC) (Wk)") and split keeping.
+ * Supports dual roles (e.g. "VC & WK" -> "Alex Taylor (VC) (Wk)") and split keeping.
  *
  * @param {string} name - Player full name
  * @param {string} role - Slot role string
@@ -1199,6 +1199,537 @@ function getFixtureOptionsForRoundInit(fixturesData, existingSheetNames) {
   return optionsList;
 }
 
+/**
+ * ============================================================================
+ * WHATSAPP CONTACTS PARSING & PLAYER MATCHING
+ * ============================================================================
+ */
+
+/**
+ * Dictionary of common Australian first names and nicknames.
+ */
+var COMMON_NICKNAMES = {
+  "alex": ["alexander", "alexandra"],
+  "alexander": ["alex"],
+  "dan": ["daniel"],
+  "daniel": ["dan", "danny"],
+  "sam": ["samuel", "samantha"],
+  "samuel": ["sam"],
+  "matt": ["matthew"],
+  "matthew": ["matt"],
+  "chris": ["christopher"],
+  "christopher": ["chris"],
+  "gus": ["augustus", "august"],
+  "augustus": ["gus"],
+  "dave": ["david"],
+  "david": ["dave"],
+  "tom": ["thomas", "tommy"],
+  "thomas": ["tom", "tommy"],
+  "ben": ["benjamin"],
+  "benjamin": ["ben"],
+  "will": ["william", "bill", "billy"],
+  "william": ["will", "bill", "billy"],
+  "josh": ["joshua"],
+  "joshua": ["josh"],
+  "nick": ["nicholas", "nicolas"],
+  "nicholas": ["nick"],
+  "cam": ["cameron"],
+  "cameron": ["cam"],
+  "tim": ["timothy"],
+  "timothy": ["tim"],
+  "mitch": ["mitchell"],
+  "mitchell": ["mitch"],
+  "rob": ["robert", "bob", "bobby"],
+  "robert": ["rob", "bob", "bobby"],
+  "pat": ["patrick"],
+  "patrick": ["pat"],
+  "ed": ["edward", "eddie"],
+  "edward": ["ed", "eddie"],
+  "ollie": ["oliver"],
+  "oliver": ["ollie"],
+  "zach": ["zachary", "zack"],
+  "zachary": ["zach", "zack"],
+  "jack": ["john", "jackson"],
+  "john": ["jack", "johnny"],
+  "joe": ["joseph"],
+  "joseph": ["joe", "joey"],
+  "steve": ["steven", "stephen"],
+  "stephen": ["steve"],
+  "steven": ["steve"],
+  "greg": ["gregory"],
+  "gregory": ["greg"],
+  "pete": ["peter"],
+  "peter": ["pete"],
+  "mike": ["michael", "mick"],
+  "michael": ["mike", "mick"],
+  "mick": ["michael", "mike"],
+  "andy": ["andrew"],
+  "andrew": ["andy", "drew"],
+  "lachie": ["lachlan"],
+  "lachlan": ["lachie", "lockie"],
+  "nate": ["nathan", "nathaniel"],
+  "nathan": ["nate"],
+  "harry": ["henry", "harrison"],
+  "harrison": ["harry"],
+  "henry": ["harry"],
+  "charlie": ["charles"],
+  "charles": ["charlie"],
+  "max": ["maxwell"],
+  "maxwell": ["max"],
+  "arch": ["archie", "archibald"],
+  "archie": ["archibald", "arch"]
+};
+
+/**
+ * Normalizes contact names by stripping emojis, punctuation, brackets,
+ * and club/role tags (e.g., "(LCC)", "(Coach)", "- 2nd XI").
+ * Converts "Last, First" into "First Last".
+ *
+ * @param {string} name
+ * @returns {string} Lowercase, trimmed clean name string.
+ */
+function cleanContactName(name) {
+  if (!name || typeof name !== "string") return "";
+  var clean = name.trim();
+
+  // If in "Last, First" format without digits, flip to "First Last"
+  if (clean.indexOf(",") > -1 && clean.indexOf(";") === -1) {
+    var commaParts = clean.split(",");
+    if (commaParts.length === 2 && !/\d/.test(clean)) {
+      clean = (commaParts[1].trim() + " " + commaParts[0].trim()).trim();
+    }
+  }
+
+  // Remove emojis and symbols
+  clean = clean.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, " ");
+
+  // Remove bracketed/parenthetical club, role, or team tags like (LCC), (Coach), (2s), [1st XI]
+  clean = clean.replace(/[\(\[\{][^\)\]\}]*[\)\]\}]/g, " ");
+
+  // Remove common role/club suffixes after hyphens or slashes e.g. "- Coach", "/ 2nd XI", "- LCC"
+  clean = clean.replace(/[-/]\s*(?:coach|capt|captain|lcc|laburnum|\d(?:st|nd|rd|th)?\s*xi|u\d{2}).*$/i, " ");
+
+  // Remove non-word characters except hyphens and apostrophes
+  clean = clean.replace(/[^a-zA-Z\s\-']/g, " ");
+
+  // Collapse consecutive whitespaces and lowercase
+  clean = clean.replace(/\s+/g, " ").trim().toLowerCase();
+
+  return clean;
+}
+
+/**
+ * Checks if two first names match, directly or via common nickname/diminutive.
+ *
+ * @param {string} name1
+ * @param {string} name2
+ * @returns {boolean}
+ */
+function isFirstNameMatch(name1, name2) {
+  if (!name1 || !name2) return false;
+  var n1 = cleanContactName(name1);
+  var n2 = cleanContactName(name2);
+  if (n1 === n2) return true;
+
+  if (COMMON_NICKNAMES[n1] && COMMON_NICKNAMES[n1].indexOf(n2) !== -1) return true;
+  if (COMMON_NICKNAMES[n2] && COMMON_NICKNAMES[n2].indexOf(n1) !== -1) return true;
+
+  if (n1.length >= 4 && n2.length >= 4) {
+    if (n1.indexOf(n2) === 0 || n2.indexOf(n1) === 0) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Parses diverse WhatsApp contacts inputs:
+ * 1. CSV / TSV files (with or without headers)
+ * 2. WhatsApp chat export text (.txt)
+ * 3. Freeform multiline paste ("Name - 04xx xxx xxx" or "Name: 04xx xxx xxx")
+ * 4. vCard format (.vcf)
+ *
+ * @param {string} rawInput Raw text or CSV contents.
+ * @param {string} [defaultSource="WhatsApp"] Source label (e.g., "1st XI", "2nd XI").
+ * @returns {Array<{ rawName: string, phone: string, source: string }>} Standardized contact list.
+ */
+function parseWhatsAppContactsInput(rawInput, defaultSource) {
+  if (!rawInput || typeof rawInput !== "string") return [];
+  var src = (defaultSource || "WhatsApp").trim();
+  var contacts = [];
+  var seenKeys = {};
+
+  function addContact(name, rawPhone, sourceOverride) {
+    var norm = normalizePhone(rawPhone);
+    // Require valid normalized phone (starts with +61, length >= 11 for +614xxxxxxxx)
+    if (!norm || norm.length < 10) return;
+
+    var contactName = (name || "").trim();
+    var contactSource = (sourceOverride || src).trim();
+    var key = norm + "|" + contactName.toLowerCase();
+
+    if (!seenKeys[key]) {
+      seenKeys[key] = true;
+      contacts.push({
+        rawName: contactName,
+        phone: norm,
+        source: contactSource
+      });
+    }
+  }
+
+  // Check if input is vCard format
+  if (rawInput.indexOf("BEGIN:VCARD") > -1) {
+    var cards = rawInput.split(/BEGIN:VCARD/i);
+    cards.forEach(function(card) {
+      if (!card.trim()) return;
+      var nameMatch = card.match(/FN(?:;[^:]*)?:([^\r\n]+)/i);
+      var telMatches = card.matchAll(/TEL(?:;[^:]*)?:([^\r\n]+)/gi);
+      var cName = nameMatch ? nameMatch[1].trim() : "";
+      for (var tm of telMatches) {
+        if (tm[1]) addContact(cName, tm[1]);
+      }
+    });
+    return contacts;
+  }
+
+  var lines = rawInput.split(/\r?\n/);
+  if (lines.length === 0) return [];
+
+  // Check for CSV / TSV header in first row
+  var firstLine = lines[0].toLowerCase();
+  var isCsvHeader = (firstLine.indexOf("name") > -1 && firstLine.indexOf("phone") > -1) ||
+                    (firstLine.indexOf("mobile") > -1) ||
+                    (firstLine.indexOf("contact") > -1);
+
+  var nameCol = -1;
+  var phoneCol = -1;
+  var sourceCol = -1;
+
+  if (isCsvHeader) {
+    var sep = lines[0].indexOf("\t") > -1 ? "\t" : ",";
+    var headers = parseCsvString(lines[0])[0] || [];
+    headers.forEach(function(h, idx) {
+      var col = h.toLowerCase().trim();
+      if (col.indexOf("name") > -1 && nameCol === -1) nameCol = idx;
+      else if ((col.indexOf("phone") > -1 || col.indexOf("mobile") > -1 || col.indexOf("number") > -1) && phoneCol === -1) phoneCol = idx;
+      else if ((col.indexOf("source") > -1 || col.indexOf("group") > -1 || col.indexOf("team") > -1) && sourceCol === -1) sourceCol = idx;
+    });
+
+    for (var i = 1; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (!line) continue;
+      var parsedRow = parseCsvString(line)[0] || [];
+      var n = nameCol !== -1 ? (parsedRow[nameCol] || "") : "";
+      var p = phoneCol !== -1 ? (parsedRow[phoneCol] || "") : "";
+      var s = sourceCol !== -1 ? (parsedRow[sourceCol] || "") : src;
+      addContact(n, p, s);
+    }
+    return contacts;
+  }
+
+  // Regex patterns for line-by-line parsing
+  var phoneRegex = /(?:\+?61\s?4[\d\s-]{8,11}|04[\d\s-]{8,11}|4\d{8})/g;
+
+  // WhatsApp chat export patterns:
+  // e.g. "[12/09/2026, 14:24] +61 412 345 678 joined..."
+  // or "12/09/2026, 2:24 pm - +61 412 345 678: message"
+  // or "12/09/2026, 2:25 pm - John Smith added +61 412 345 678"
+  var chatSenderRegex = /(?:\[\d{1,2}\/\d{1,2}\/\d{2,4},?\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]m)?\]|\d{1,2}\/\d{1,2}\/\d{2,4},?\s+\d{1,2}:\d{2}(?:\s*[ap]m)?\s*-\s*)([^:]+):/i;
+  var chatSystemAddedRegex = /(?:added|joined using|added you)\s+([+\d\s-]+)/i;
+
+  for (var j = 0; j < lines.length; j++) {
+    var rawLine = lines[j].trim();
+    if (!rawLine) continue;
+
+    // Check WhatsApp chat export pattern
+    var chatSender = rawLine.match(chatSenderRegex);
+    if (chatSender) {
+      var sender = chatSender[1].trim();
+      var senderPhones = sender.match(phoneRegex);
+      if (senderPhones && senderPhones.length > 0) {
+        addContact("", senderPhones[0]);
+      }
+      continue;
+    }
+
+    var chatAdded = rawLine.match(chatSystemAddedRegex);
+    if (chatAdded) {
+      var addedPhones = chatAdded[1].match(phoneRegex);
+      if (addedPhones && addedPhones.length > 0) {
+        addContact("", addedPhones[0]);
+      }
+      continue;
+    }
+
+    // Standard delimited row or freeform: "Name, Phone" or "Name: Phone" or "Name - Phone"
+    var pMatches = rawLine.match(phoneRegex);
+    if (pMatches && pMatches.length > 0) {
+      var phoneFound = pMatches[0];
+      // Remaining part of line is name
+      var remaining = rawLine.replace(phoneFound, "")
+        .replace(/^[\s,;:\-–—\t]+|[\s,;:\-–—\t]+$/g, "")
+        .trim();
+      addContact(remaining, phoneFound);
+    }
+  }
+
+  return contacts;
+}
+
+/**
+ * Matches WhatsApp contacts to master player records and determines
+ * additional phone numbers to insert into Phone / Phone2 / Phone3 / Phone4.
+ *
+ * @param {Array<Object>} contacts WhatsApp contact objects:
+ *   { rawName, phone, source, matchStatus, matchedProfileId, matchedPlayerName, matchMethod, addedToPlayer, notes }
+ * @param {Array<Object>} players Player objects from Players tab:
+ *   { profileId, firstName, lastName, fullName, juniorLevel, globalStatus, phone, phone2, phone3, phone4 }
+ * @returns {{
+ *   matchedContacts: Array<Object>,
+ *   playerMutations: Array<{ profileId: string, slot: string, phone: string, fullName: string }>,
+ *   summary: { totalContacts: number, matched: number, unmatched: number, ambiguous: number, addedToPlayer: number, alreadyPresent: number }
+ * }}
+ */
+function matchContactsToPlayers(contacts, players) {
+  var matchedContacts = [];
+  var playerMutations = [];
+  var summary = {
+    totalContacts: (contacts || []).length,
+    matched: 0,
+    unmatched: 0,
+    ambiguous: 0,
+    addedToPlayer: 0,
+    alreadyPresent: 0
+  };
+
+  // Build indexed map of players by profileId for mutating phone slots
+  var playersMap = {};
+  (players || []).forEach(function(p) {
+    playersMap[String(p.profileId).trim()] = {
+      profileId: String(p.profileId).trim(),
+      firstName: p.firstName || "",
+      lastName: p.lastName || "",
+      fullName: p.fullName || ((p.firstName || "") + " " + (p.lastName || "")).trim(),
+      phone: p.phone || "",
+      phone2: p.phone2 || "",
+      phone3: p.phone3 || "",
+      phone4: p.phone4 || ""
+    };
+  });
+
+  (contacts || []).forEach(function(contact) {
+    var cPhone = normalizePhone(contact.phone);
+    var cName = cleanContactName(contact.rawName);
+
+    var res = {
+      source: contact.source || "",
+      rawName: contact.rawName || "",
+      phone: cPhone,
+      matchStatus: "Unmatched",
+      matchedProfileId: "",
+      matchedPlayerName: "",
+      matchMethod: "None",
+      addedToPlayer: "No",
+      dateAdded: contact.dateAdded || new Date().toISOString().slice(0, 10),
+      notes: ""
+    };
+
+    if (!cPhone) {
+      res.matchStatus = "Invalid Phone";
+      res.notes = "No valid phone number provided";
+      matchedContacts.push(res);
+      summary.unmatched++;
+      return;
+    }
+
+    var matchedPlayer = null;
+    var matchMethod = "None";
+    var isAmbiguous = false;
+
+    // PASS 0: Check manual override
+    var manualId = String(contact.matchedProfileId || "").trim();
+    if (manualId && (contact.matchStatus === "Manual Match" || contact.matchStatus === "Manual")) {
+      if (playersMap[manualId]) {
+        matchedPlayer = playersMap[manualId];
+        matchMethod = "Manual";
+      }
+    }
+
+    // PASS 1: Existing Phone Match (highest confidence)
+    if (!matchedPlayer && cPhone) {
+      var playersWithPhone = Object.keys(playersMap).filter(function(id) {
+        var p = playersMap[id];
+        return normalizePhone(p.phone) === cPhone ||
+               normalizePhone(p.phone2) === cPhone ||
+               normalizePhone(p.phone3) === cPhone ||
+               normalizePhone(p.phone4) === cPhone;
+      }).map(function(id) { return playersMap[id]; });
+
+      if (playersWithPhone.length === 1) {
+        matchedPlayer = playersWithPhone[0];
+        matchMethod = "Phone Already Linked";
+      } else if (playersWithPhone.length > 1) {
+        // Shared phone (household). If contact name matches one of them, pick that specific player!
+        if (cName) {
+          var specificMatch = playersWithPhone.filter(function(p) {
+            return cleanContactName(p.fullName) === cName ||
+                   isFirstNameMatch(cName.split(" ")[0], p.firstName);
+          });
+          if (specificMatch.length === 1) {
+            matchedPlayer = specificMatch[0];
+            matchMethod = "Phone Already Linked";
+          }
+        }
+        if (!matchedPlayer) {
+          matchedPlayer = playersWithPhone[0];
+          matchMethod = "Phone Already Linked";
+        }
+      }
+    }
+
+    // PASS 2: Exact Full Name Match
+    if (!matchedPlayer && cName) {
+      var exactMatches = Object.keys(playersMap).filter(function(id) {
+        var p = playersMap[id];
+        return cleanContactName(p.fullName) === cName;
+      }).map(function(id) { return playersMap[id]; });
+
+      if (exactMatches.length === 1) {
+        matchedPlayer = exactMatches[0];
+        matchMethod = "Exact Full Name";
+      } else if (exactMatches.length > 1) {
+        isAmbiguous = true;
+      }
+    }
+
+    // PASS 3: Preferred Name / Nickname + Last Name Match
+    if (!matchedPlayer && !isAmbiguous && cName) {
+      var tokens = cName.split(" ");
+      if (tokens.length >= 2) {
+        var cFirst = tokens[0];
+        var cLast = tokens[tokens.length - 1];
+
+        var nickMatches = Object.keys(playersMap).filter(function(id) {
+          var p = playersMap[id];
+          var pLast = cleanContactName(p.lastName);
+          var pFirst = cleanContactName(p.firstName) || cleanContactName(p.fullName).split(" ")[0];
+          return pLast === cLast && isFirstNameMatch(cFirst, pFirst);
+        }).map(function(id) { return playersMap[id]; });
+
+        if (nickMatches.length === 1) {
+          matchedPlayer = nickMatches[0];
+          matchMethod = "Preferred/Nickname Match";
+        } else if (nickMatches.length > 1) {
+          isAmbiguous = true;
+        }
+      }
+    }
+
+    // PASS 4: Fuzzy Token Overlap Match
+    if (!matchedPlayer && !isAmbiguous && cName) {
+      var tList = cName.split(" ");
+      if (tList.length >= 2) {
+        var fuzzyMatches = Object.keys(playersMap).filter(function(id) {
+          var p = playersMap[id];
+          var pFullClean = cleanContactName(p.fullName);
+          return tList.every(function(token) {
+            return token.length >= 3 && pFullClean.indexOf(token) > -1;
+          });
+        }).map(function(id) { return playersMap[id]; });
+
+        if (fuzzyMatches.length === 1) {
+          matchedPlayer = fuzzyMatches[0];
+          matchMethod = "Fuzzy Name";
+        } else if (fuzzyMatches.length > 1) {
+          isAmbiguous = true;
+        }
+      }
+    }
+
+    // Determine outcomes and phone slot updates
+    if (matchedPlayer) {
+      res.matchStatus = "Matched";
+      res.matchedProfileId = matchedPlayer.profileId;
+      res.matchedPlayerName = matchedPlayer.fullName;
+      res.matchMethod = matchMethod;
+      summary.matched++;
+
+      // Check if player already has this phone number
+      var currentPhones = [
+        normalizePhone(matchedPlayer.phone),
+        normalizePhone(matchedPlayer.phone2),
+        normalizePhone(matchedPlayer.phone3),
+        normalizePhone(matchedPlayer.phone4)
+      ].filter(Boolean);
+
+      if (currentPhones.indexOf(cPhone) !== -1) {
+        res.addedToPlayer = "Already Present";
+        res.notes = "Phone already on record";
+        summary.alreadyPresent++;
+      } else {
+        // Find slot to add the new phone number
+        var slotToFill = null;
+        if (!matchedPlayer.phone) slotToFill = "Phone";
+        else if (!matchedPlayer.phone2) slotToFill = "Phone2";
+        else if (!matchedPlayer.phone3) slotToFill = "Phone3";
+        else if (!matchedPlayer.phone4) slotToFill = "Phone4";
+        else {
+          // If all 4 slots are occupied, check for redundant duplicates
+          var p1 = normalizePhone(matchedPlayer.phone);
+          var p2 = normalizePhone(matchedPlayer.phone2);
+          var p3 = normalizePhone(matchedPlayer.phone3);
+          var p4 = normalizePhone(matchedPlayer.phone4);
+
+          if (p1 && p2 && p1 === p2) slotToFill = "Phone2";
+          else if (p1 && p3 && p1 === p3) slotToFill = "Phone3";
+          else if (p2 && p3 && p2 === p3) slotToFill = "Phone3";
+          else if (p1 && p4 && p1 === p4) slotToFill = "Phone4";
+          else if (p2 && p4 && p2 === p4) slotToFill = "Phone4";
+          else if (p3 && p4 && p3 === p4) slotToFill = "Phone4";
+        }
+
+        if (slotToFill) {
+          res.addedToPlayer = "Yes";
+          res.notes = "Added to " + slotToFill;
+          summary.addedToPlayer++;
+
+          // Mutate the in-memory player representation
+          matchedPlayer[slotToFill.toLowerCase()] = cPhone;
+          playerMutations.push({
+            profileId: matchedPlayer.profileId,
+            slot: slotToFill,
+            phone: cPhone,
+            fullName: matchedPlayer.fullName
+          });
+        } else {
+          res.addedToPlayer = "No (Slots Full)";
+          res.notes = "All 4 phone slots full with distinct numbers";
+        }
+      }
+    } else if (isAmbiguous) {
+      res.matchStatus = "Ambiguous";
+      res.matchMethod = "None";
+      res.addedToPlayer = "No";
+      res.notes = "Multiple matching players found";
+      summary.ambiguous++;
+    } else {
+      res.matchStatus = "Unmatched";
+      res.matchMethod = "None";
+      res.addedToPlayer = "No";
+      res.notes = "Unmatched - awaiting registration in PlayHQ";
+      summary.unmatched++;
+    }
+
+    matchedContacts.push(res);
+  });
+
+  return {
+    matchedContacts: matchedContacts,
+    playerMutations: playerMutations,
+    summary: summary
+  };
+}
+
 // Node/Jest interop — Apps Script ignores this guard.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -1228,7 +1759,12 @@ if (typeof module !== 'undefined' && module.exports) {
     filterPlayersForRoundSnapshot,
     simulatePlayerAvailability,
     generateAvailabilityCalloutMessage,
-    generateWallOfShameMessage
+    generateWallOfShameMessage,
+    cleanContactName,
+    isFirstNameMatch,
+    COMMON_NICKNAMES,
+    parseWhatsAppContactsInput,
+    matchContactsToPlayers
   };
 }
 

@@ -2,8 +2,8 @@ const { simulatePlayerAvailability } = require('../src/logic.js');
 
 describe('Player Availability Simulation (simulatePlayerAvailability)', () => {
   const mockPlayers = [
-    { profileId: 'P001', fullName: 'Neil Kloot', globalStatus: 'Active' },
-    { profileId: 'P002', fullName: 'Jimi Kloot', globalStatus: 'Active' },
+    { profileId: 'P001', fullName: 'Player One', globalStatus: 'Active' },
+    { profileId: 'P002', fullName: 'Player Two', globalStatus: 'Active' },
     { profileId: 'P003', fullName: 'Sam Jones', globalStatus: 'Active' },
     { profileId: 'P004', fullName: 'Injured Player', globalStatus: 'Injured' },
     { profileId: 'P005', fullName: 'Inactive Player', globalStatus: 'Inactive' }
@@ -14,7 +14,7 @@ describe('Player Availability Simulation (simulatePlayerAvailability)', () => {
       const results = simulatePlayerAvailability(mockPlayers.slice(0, 1), 'One Day', () => 0.50);
       expect(results[0]).toEqual({
         profileId: 'P001',
-        fullName: 'Neil Kloot',
+        fullName: 'Player One',
         response: 'Available',
         notes: ''
       });
@@ -24,7 +24,7 @@ describe('Player Availability Simulation (simulatePlayerAvailability)', () => {
       const results = simulatePlayerAvailability(mockPlayers.slice(0, 1), 'One Day', () => 0.95);
       expect(results[0]).toEqual({
         profileId: 'P001',
-        fullName: 'Neil Kloot',
+        fullName: 'Player One',
         response: 'Unavailable',
         notes: 'Unavailable for Round'
       });
@@ -44,7 +44,7 @@ describe('Player Availability Simulation (simulatePlayerAvailability)', () => {
       const results = simulatePlayerAvailability(mockPlayers.slice(0, 1), 'Two Day', () => 0.80);
       expect(results[0]).toEqual({
         profileId: 'P001',
-        fullName: 'Neil Kloot',
+        fullName: 'Player One',
         response: 'Available',
         notes: ''
       });
@@ -54,7 +54,7 @@ describe('Player Availability Simulation (simulatePlayerAvailability)', () => {
       const results = simulatePlayerAvailability(mockPlayers.slice(0, 1), 'Two Day', () => 0.87);
       expect(results[0]).toEqual({
         profileId: 'P001',
-        fullName: 'Neil Kloot',
+        fullName: 'Player One',
         response: 'Available',
         notes: 'Day 1 Only'
       });
@@ -64,7 +64,7 @@ describe('Player Availability Simulation (simulatePlayerAvailability)', () => {
       const results = simulatePlayerAvailability(mockPlayers.slice(0, 1), 'Two Day', () => 0.92);
       expect(results[0]).toEqual({
         profileId: 'P001',
-        fullName: 'Neil Kloot',
+        fullName: 'Player One',
         response: 'Available',
         notes: 'Day 2 Only'
       });
@@ -74,7 +74,7 @@ describe('Player Availability Simulation (simulatePlayerAvailability)', () => {
       const results = simulatePlayerAvailability(mockPlayers.slice(0, 1), 'Two Day', () => 0.98);
       expect(results[0]).toEqual({
         profileId: 'P001',
-        fullName: 'Neil Kloot',
+        fullName: 'Player One',
         response: 'Unavailable',
         notes: 'Unavailable for Round'
       });

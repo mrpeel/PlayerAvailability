@@ -8,9 +8,9 @@ Maintains the player database, synchronized from PlayHQ exports.
 | Column Name | Description | Example |
 | :--- | :--- | :--- |
 | **ProfileID** | PlayHQ GUID or unique player ID | `dbe01945-2937-4fa1-87fa-7e11e223e599` |
-| **FirstName** | Player's first name / preferred name | `Jimi` |
-| **LastName** | Player's surname | `Kloot` |
-| **FullName** | Complete display name | `Jimi Kloot` |
+| **FirstName** | Player's first name / preferred name | `John` |
+| **LastName** | Player's surname | `Smith` |
+| **FullName** | Complete display name | `John Smith` |
 | **JuniorLevel** | Junior age group tag (`U18`, `U16`, `U14`, or blank) | `U18` |
 | **T20Squad** | T20 squad designation (optional) | |
 | **GlobalStatus** | Current state: `Active`, `Injured`, `Long-Term Away`, `Inactive` | `Active` |
@@ -86,8 +86,8 @@ Used for restricted selector/admin access.
 
 | Column Name | Description | Example |
 | :--- | :--- | :--- |
-| **Name** | Admin full name | `Neil Kloot` |
-| **Phone** | Mobile number (normalized) | `+61417663518` |
+| **Name** | Admin full name | `Alex Taylor` |
+| **Phone** | Mobile number (normalized) | `+61412345678` |
 
 ---
 
@@ -101,4 +101,57 @@ Audit log recording every availability submission from the web app.
 | **MatchDate** | Match date (`YYYY-MM-DD`) |
 | **Response** | Selection (`Available`, `Unavailable`) |
 | **Notes** | Optional player context notes |
+
+---
+
+## Sheet 6: `WhatsApp_Contacts`
+Maintains contact details extracted from team captain WhatsApp groups. Matches contacts against the master `Players` tab and links additional player phone numbers (e.g. older juniors whose PlayHQ account lists only a parent's mobile).
+
+| Column Name | Description | Example |
+| :--- | :--- | :--- |
+| **Source** | Team or chat origin | `2nd XI`, `1st XI`, `T20 Squad` |
+| **WhatsAppName** | Display name in WhatsApp group | `Jack Kloot`, `Dan Morgan (LCC)` |
+| **Phone** | Mobile number (normalized E164) | `+61422222222` |
+| **MatchStatus** | Match state (`Matched`, `Unmatched`, `Manual Match`, `Ambiguous`) | `Matched` |
+| **MatchedProfileID** | PlayHQ GUID of matched player profile | `10000001-0000-4000-8000-000000000005` |
+| **MatchedPlayerName** | Matched player's full name | `Jack Kloot` |
+| **MatchMethod** | Method used (`Phone Already Linked`, `Exact Full Name`, `Preferred/Nickname Match`, `Fuzzy Name`, `Manual`) | `Exact Full Name` |
+| **AddedToPlayer** | Added state (`Yes`, `Already Present`, `No`) | `Yes` |
+| **DateAdded** | Import date (`YYYY-MM-DD`) | `2026-09-10` |
+| **Notes** | Audit description | `Added to Phone3` |
+
+### How WhatsApp Matching & Extra Phone Numbers Work
+
+1. **Multi-Pass Matching Algorithm**:
+   - **Manual Override**: Respects manual matches or ProfileIDs entered in the sheet (`MatchStatus = "Manual Match"`).
+   - **Phone Check**: If the phone number is already attached to any player, links them immediately.
+   - **Exact Name**: Matches cleaned WhatsApp name against `FullName` in `Players`.
+   - **Preferred / Nickname**: Recognizes common Australian nicknames (e.g. *Gus* → *Augustus*, *Dan* → *Daniel*, *Sam* → *Samuel*, *Matt* → *Matthew*, *Chris* → *Christopher*).
+   - **Fuzzy Token Overlap**: Matches if name tokens align despite formatting differences or extra text.
+   - **Ambiguity Guard**: If multiple players match, flags as `Ambiguous` instead of misattributing.
+   - **Awaiting Registration**: If no player matches, marked as `Unmatched` (`Unmatched - awaiting registration in PlayHQ`).
+
+2. **Phone Slot Allocation (`Phone`, `Phone2`, `Phone3`, `Phone4`)**:
+   - If the player already has this phone number in any column, marked as `Already Present` (no duplicates added).
+   - If the player has an empty slot (`Phone2`, `Phone3`, or `Phone4`), the number is added to the first free slot.
+   - If `Phone` and `Phone2` contain redundant duplicates from the PlayHQ import (e.g., Account Holder Mobile = Parent 1 Mobile), the new distinct number replaces the duplicate.
+
+3. **Continuous Re-Sync (New Registrations Over 4–6 Weeks)**:
+   - When new players register and the admin runs **🏏 LCC Selection > Import Players from PlayHQ export**, the system automatically triggers a sync against `WhatsApp_Contacts`.
+   - Any previously unmatched WhatsApp contacts that belong to the newly registered players are instantly linked and extra phone numbers populated.
+   - Admins can also click **🏏 LCC Selection > Sync WhatsApp contacts with players** at any time.
+
+### How Captains Export Contacts from WhatsApp
+
+1. **Option 1: 1-Click WhatsApp Web Extractor (Fastest)**
+   - Open WhatsApp Web on a computer.
+   - Click the group header to open the Group Info drawer.
+   - Click the **WhatsApp Extractor Bookmarklet** (available in the import modal dialog).
+   - A `.csv` file (`whatsapp_contacts_<team>.csv`) is automatically downloaded and ready to upload.
+2. **Option 2: Mobile App Chat Export**
+   - In WhatsApp mobile app: Open Group → Group Info → **Export Chat** → **Without Media**.
+   - Upload the resulting `.txt` file into the import modal.
+3. **Option 3: Direct Copy / Paste**
+   - Copy member lines from WhatsApp or an address book and paste into the text box in format `Name, Phone` or `Name - 04xx xxx xxx`.
+
 

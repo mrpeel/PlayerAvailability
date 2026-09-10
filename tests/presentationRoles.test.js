@@ -11,43 +11,43 @@ describe('formatPlayerPresentationName', () => {
   });
 
   test('formats regular player with no role badges', () => {
-    expect(formatPlayerPresentationName('Isaac Wicklein', 'Player')).toBe('Isaac Wicklein');
-    expect(formatPlayerPresentationName('Isaac Wicklein', '4. Player')).toBe('Isaac Wicklein');
-    expect(formatPlayerPresentationName('Isaac Wicklein', '')).toBe('Isaac Wicklein');
+    expect(formatPlayerPresentationName('Player One', 'Player')).toBe('Player One');
+    expect(formatPlayerPresentationName('Player One', '4. Player')).toBe('Player One');
+    expect(formatPlayerPresentationName('Player One', '')).toBe('Player One');
   });
 
   test('formats Captain correctly', () => {
-    expect(formatPlayerPresentationName('Adam Doungas', 'Captain')).toBe('Adam Doungas (C)');
-    expect(formatPlayerPresentationName('Adam Doungas', '1. Captain')).toBe('Adam Doungas (C)');
-    expect(formatPlayerPresentationName('Adam Doungas', 'Captain (C)')).toBe('Adam Doungas (C)');
+    expect(formatPlayerPresentationName('Player Captain', 'Captain')).toBe('Player Captain (C)');
+    expect(formatPlayerPresentationName('Player Captain', '1. Captain')).toBe('Player Captain (C)');
+    expect(formatPlayerPresentationName('Player Captain', 'Captain (C)')).toBe('Player Captain (C)');
   });
 
   test('formats Vice Captain correctly', () => {
-    expect(formatPlayerPresentationName('Neil Kloot', 'VC')).toBe('Neil Kloot (VC)');
-    expect(formatPlayerPresentationName('Neil Kloot', 'Vice Captain')).toBe('Neil Kloot (VC)');
-    expect(formatPlayerPresentationName('Neil Kloot', '2. VC')).toBe('Neil Kloot (VC)');
+    expect(formatPlayerPresentationName('Alex Taylor', 'VC')).toBe('Alex Taylor (VC)');
+    expect(formatPlayerPresentationName('Alex Taylor', 'Vice Captain')).toBe('Alex Taylor (VC)');
+    expect(formatPlayerPresentationName('Alex Taylor', '2. VC')).toBe('Alex Taylor (VC)');
   });
 
   test('formats standalone Wicket Keeper', () => {
-    expect(formatPlayerPresentationName('Jimi Kloot', 'WK')).toBe('Jimi Kloot (Wk)');
-    expect(formatPlayerPresentationName('Jimi Kloot', 'Wicket Keeper')).toBe('Jimi Kloot (Wk)');
-    expect(formatPlayerPresentationName('Jimi Kloot', '3. WK')).toBe('Jimi Kloot (Wk)');
+    expect(formatPlayerPresentationName('Jordan Taylor', 'WK')).toBe('Jordan Taylor (Wk)');
+    expect(formatPlayerPresentationName('Jordan Taylor', 'Wicket Keeper')).toBe('Jordan Taylor (Wk)');
+    expect(formatPlayerPresentationName('Jordan Taylor', '3. WK')).toBe('Jordan Taylor (Wk)');
   });
 
   test('formats Dual Role: Vice Captain & Wicket Keeper (VC & WK)', () => {
-    expect(formatPlayerPresentationName('Neil Kloot', 'VC & WK')).toBe('Neil Kloot (VC) (Wk)');
-    expect(formatPlayerPresentationName('Neil Kloot', 'VC / WK')).toBe('Neil Kloot (VC) (Wk)');
-    expect(formatPlayerPresentationName('Neil Kloot', 'Vice Captain & Wicket Keeper')).toBe('Neil Kloot (VC) (Wk)');
+    expect(formatPlayerPresentationName('Alex Taylor', 'VC & WK')).toBe('Alex Taylor (VC) (Wk)');
+    expect(formatPlayerPresentationName('Alex Taylor', 'VC / WK')).toBe('Alex Taylor (VC) (Wk)');
+    expect(formatPlayerPresentationName('Alex Taylor', 'Vice Captain & Wicket Keeper')).toBe('Alex Taylor (VC) (Wk)');
   });
 
   test('formats Dual Role: Captain & Wicket Keeper (Captain & WK)', () => {
-    expect(formatPlayerPresentationName('Adam Doungas', 'Captain & WK')).toBe('Adam Doungas (C) (Wk)');
-    expect(formatPlayerPresentationName('Adam Doungas', 'Captain / WK')).toBe('Adam Doungas (C) (Wk)');
+    expect(formatPlayerPresentationName('Player Captain', 'Captain & WK')).toBe('Player Captain (C) (Wk)');
+    expect(formatPlayerPresentationName('Player Captain', 'Captain / WK')).toBe('Player Captain (C) (Wk)');
   });
 
   test('strips existing junior tags from player name before applying role', () => {
-    expect(formatPlayerPresentationName('Shahmeer Hassaan (U16)', 'WK')).toBe('Shahmeer Hassaan (Wk)');
-    expect(formatPlayerPresentationName('Heath Elias (U18)', 'VC & WK')).toBe('Heath Elias (VC) (Wk)');
+    expect(formatPlayerPresentationName('Player Junior 1 (U16)', 'WK')).toBe('Player Junior 1 (Wk)');
+    expect(formatPlayerPresentationName('Player Junior 2 (U18)', 'VC & WK')).toBe('Player Junior 2 (VC) (Wk)');
   });
 });
 

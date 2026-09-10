@@ -109,6 +109,25 @@ function createCoreDatabaseSheets(ss) {
     adminSheet.getRange(1, 1, 1, 2).setValues(adminHeaders).setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.maroonBg).setFontColor(LCC_SETUP_PALETTE.maroonFg);
   }
 
+  // 6. WHATSAPP CONTACTS TAB
+  var contactSheet = ss.getSheetByName("WhatsApp_Contacts") || ss.insertSheet("WhatsApp_Contacts");
+  if (contactSheet.getLastRow() === 0) {
+    var contactHeaders = [[
+      "Source", "WhatsAppName", "Phone", "MatchStatus", "MatchedProfileID",
+      "MatchedPlayerName", "MatchMethod", "AddedToPlayer", "DateAdded", "Notes"
+    ]];
+    contactSheet.getRange(1, 1, 1, 10).setValues(contactHeaders)
+      .setFontWeight("bold")
+      .setBackground(LCC_SETUP_PALETTE.maroonBg)
+      .setFontColor(LCC_SETUP_PALETTE.maroonFg);
+
+    var matchStatusRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(["Matched", "Unmatched", "Manual Match", "Ambiguous"], true)
+      .setAllowInvalid(true)
+      .build();
+    contactSheet.getRange("D2:D500").setDataValidation(matchStatusRule);
+  }
+
   // Pre-set sensible column widths for all tabs
   applyAllStandardColumnWidths(ss);
 }
@@ -161,6 +180,14 @@ function applyAllStandardColumnWidths(ss) {
   if (adminSheet) {
     adminSheet.setColumnWidth(1, 180); // Name
     adminSheet.setColumnWidth(2, 150); // Phone
+  }
+
+  var contactSheet = ss.getSheetByName("WhatsApp_Contacts");
+  if (contactSheet) {
+    var contactWidths = [120, 160, 140, 120, 260, 160, 160, 120, 110, 240];
+    for (var w = 0; w < contactWidths.length; w++) {
+      contactSheet.setColumnWidth(w + 1, contactWidths[w]);
+    }
   }
 
   // Apply clean Hanken Grotesk typography across all tabs

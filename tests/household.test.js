@@ -2,22 +2,22 @@ const { findHouseholdPlayers } = require('../src/logic.js');
 
 describe('findHouseholdPlayers()', () => {
   const mockRoster = [
-    { ProfileID: 'GUID-1', FullName: 'Neil Kloot', Phone: '0417663518', Phone2: '', Phone3: '', Phone4: '' },
-    { ProfileID: 'GUID-2', FullName: 'Jimi Kloot', Phone: '0479157372', Phone2: '0417663518', Phone3: '', Phone4: '' },
-    { ProfileID: 'GUID-3', FullName: 'Harvey Kloot', Phone: '0493674547', Phone2: '0417663518', Phone3: '0422433824', Phone4: '' },
-    { ProfileID: 'GUID-4', FullName: 'Aaron Alaimo', Phone: '0412146758', Phone2: '', Phone3: '', Phone4: '' }
+    { ProfileID: 'GUID-1', FullName: 'Alex Taylor', Phone: '0412345678', Phone2: '', Phone3: '', Phone4: '' },
+    { ProfileID: 'GUID-2', FullName: 'Jordan Taylor', Phone: '0411111111', Phone2: '0412345678', Phone3: '', Phone4: '' },
+    { ProfileID: 'GUID-3', FullName: 'Sam Taylor', Phone: '0422222222', Phone2: '0412345678', Phone3: '0433333333', Phone4: '' },
+    { ProfileID: 'GUID-4', FullName: 'Chris Morgan', Phone: '0444444444', Phone2: '', Phone3: '', Phone4: '' }
   ];
 
   test('matches parent phone across Phone2 and Phone3 for juniors', () => {
-    const parentPhone = '0417663518';
+    const parentPhone = '0412345678';
     const result = findHouseholdPlayers(mockRoster, parentPhone);
 
-    expect(result).toHaveLength(3); // Neil, Jimi, and Harvey
-    expect(result.map(p => p.FullName)).toEqual(['Neil Kloot', 'Jimi Kloot', 'Harvey Kloot']);
+    expect(result).toHaveLength(3); // Alex, Jordan, and Sam
+    expect(result.map(p => p.FullName)).toEqual(['Alex Taylor', 'Jordan Taylor', 'Sam Taylor']);
   });
 
   test('matches formatted input phone (spaces) against stored E164', () => {
-    const result = findHouseholdPlayers(mockRoster, '0417 663 518');
+    const result = findHouseholdPlayers(mockRoster, '0412 345 678');
     expect(result).toHaveLength(3);
   });
 

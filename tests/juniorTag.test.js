@@ -2,11 +2,11 @@ const { formatNameWithJuniorTag, pickFirstName, stripJuniorTag } = require('../s
 
 describe('stripJuniorTag()', () => {
   test('strips U16 suffix', () => {
-    expect(stripJuniorTag('Shahmeer Hassaan (U16)')).toBe('Shahmeer Hassaan');
+    expect(stripJuniorTag('Junior One (U16)')).toBe('Junior One');
   });
 
   test('strips U18 suffix', () => {
-    expect(stripJuniorTag('Heath Elias (U18)')).toBe('Heath Elias');
+    expect(stripJuniorTag('Junior Two (U18)')).toBe('Junior Two');
   });
 
   test('strips U14 suffix', () => {
@@ -14,8 +14,8 @@ describe('stripJuniorTag()', () => {
   });
 
   test('leaves names without suffix unchanged', () => {
-    expect(stripJuniorTag('Liam Wootten')).toBe('Liam Wootten');
-    expect(stripJuniorTag('Neil Kloot')).toBe('Neil Kloot');
+    expect(stripJuniorTag('Player One')).toBe('Player One');
+    expect(stripJuniorTag('Player Two')).toBe('Player Two');
   });
 
   test('handles blank or non-string input safely', () => {
@@ -31,7 +31,7 @@ describe('formatNameWithJuniorTag()', () => {
   });
 
   test('U18 gets (U18) suffix', () => {
-    expect(formatNameWithJuniorTag('Jimi Kloot', 'U18')).toBe('Jimi Kloot (U18)');
+    expect(formatNameWithJuniorTag('Junior Player', 'U18')).toBe('Junior Player (U18)');
   });
 
   test('U16 gets (U16) suffix', () => {
@@ -63,7 +63,7 @@ describe('pickFirstName()', () => {
   });
 
   test('ignores Preferred Name when same length or longer (redundant copy)', () => {
-    expect(pickFirstName('Isaac', 'Isaac Wicklein')).toBe('Isaac');
+    expect(pickFirstName('Isaac', 'Isaac Smith')).toBe('Isaac');
     expect(pickFirstName('Matt', 'Matthew')).toBe('Matt');
   });
 
