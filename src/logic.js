@@ -25,7 +25,11 @@ function normalizePhone(phone) {
   if (!phone) return "";
   let clean = String(phone).replace(/[^\d]/g, '');
 
-  if (clean.startsWith('04') && clean.length === 10) {
+  if (clean.startsWith('6104') && clean.length === 12) {
+    clean = '61' + clean.slice(3);
+  } else if (clean.startsWith('00614') && clean.length === 13) {
+    clean = clean.slice(2);
+  } else if (clean.startsWith('04') && clean.length === 10) {
     clean = '61' + clean.slice(1);
   } else if (clean.length === 9 && clean.startsWith('4')) {
     clean = '61' + clean;
@@ -127,8 +131,9 @@ var DEFAULT_TEAM_CONFIGS = [
  * @param {string} text Raw CSV text.
  * @returns {Array<Array<string>>} 2D array of string cells.
  */
-function parseCsvString(text) {
+function parseCsvString(text, delimiter) {
   if (!text || typeof text !== "string") return [];
+  var delim = delimiter || ",";
   var rows = [];
   var row = [];
   var cur = "";
@@ -143,7 +148,7 @@ function parseCsvString(text) {
       } else {
         inQuotes = !inQuotes;
       }
-    } else if (c === "," && !inQuotes) {
+    } else if (c === delim && !inQuotes) {
       row.push(cur.trim());
       cur = "";
     } else if ((c === "\r" || c === "\n") && !inQuotes) {
@@ -1360,8 +1365,13 @@ function parseWhatsAppContactsInput(rawInput, defaultSource) {
 
   function addContact(name, rawPhone, sourceOverride) {
     var norm = normalizePhone(rawPhone);
-    // Require valid normalized phone (starts with +61, length >= 11 for +614xxxxxxxx)
-    if (!norm || norm.length < 10) return;
+    if (!norm) return;
+
+    // Reject Australian landlines (starts with +02, +03, +07, +08)
+    if (/^\+0[2378]/.test(norm)) return;
+    // For Australian numbers, require valid mobile (+614xxxxxxxx)
+    if (norm.startsWith("+61") && !norm.startsWith("+614")) return;
+    if (norm.length < 10) return;
 
     var contactName = (name || "").trim();
     var contactSource = (sourceOverride || src).trim();
@@ -1392,48 +1402,153 @@ function parseWhatsAppContactsInput(rawInput, defaultSource) {
     return contacts;
   }
 
-  var lines = rawInput.split(/\r?\n/);
-  if (lines.length === 0) return [];
-
-  // Check for CSV / TSV header in first row
-  var firstLine = lines[0].toLowerCase();
-  var isCsvHeader = (firstLine.indexOf("name") > -1 && firstLine.indexOf("phone") > -1) ||
-                    (firstLine.indexOf("mobile") > -1) ||
-                    (firstLine.indexOf("contact") > -1);
-
-  var nameCol = -1;
-  var phoneCol = -1;
-  var sourceCol = -1;
-
-  if (isCsvHeader) {
-    var sep = lines[0].indexOf("\t") > -1 ? "\t" : ",";
-    var headers = parseCsvString(lines[0])[0] || [];
-    headers.forEach(function(h, idx) {
-      var col = h.toLowerCase().trim();
-      if (col.indexOf("name") > -1 && nameCol === -1) nameCol = idx;
-      else if ((col.indexOf("phone") > -1 || col.indexOf("mobile") > -1 || col.indexOf("number") > -1) && phoneCol === -1) phoneCol = idx;
-      else if ((col.indexOf("source") > -1 || col.indexOf("group") > -1 || col.indexOf("team") > -1) && sourceCol === -1) sourceCol = idx;
-    });
-
-    for (var i = 1; i < lines.length; i++) {
-      var line = lines[i].trim();
-      if (!line) continue;
-      var parsedRow = parseCsvString(line)[0] || [];
-      var n = nameCol !== -1 ? (parsedRow[nameCol] || "") : "";
-      var p = phoneCol !== -1 ? (parsedRow[phoneCol] || "") : "";
-      var s = sourceCol !== -1 ? (parsedRow[sourceCol] || "") : src;
-      addContact(n, p, s);
-    }
-    return contacts;
+  // Helper to detect Australian mobile numbers
+  function isAusMobile(str) {
+    if (!str) return false;
+    var digits = String(str).replace(/[^\d]/g, '');
+    if (digits.length === 10 && digits.startsWith('04')) return true;
+    if (digits.length === 11 && digits.startsWith('614')) return true;
+    if (digits.length === 9 && digits.startsWith('4')) return true;
+    if (digits.length === 12 && digits.startsWith('6104')) return true;
+    if (digits.length === 13 && digits.startsWith('00614')) return true;
+    return false;
   }
 
-  // Regex patterns for line-by-line parsing
-  var phoneRegex = /(?:\+?61\s?4[\d\s-]{8,11}|04[\d\s-]{8,11}|4\d{8})/g;
+  // Check for CSV / TSV formatting
+  var firstNewline = rawInput.indexOf("\n");
+  var firstLineStr = (firstNewline > -1 ? rawInput.slice(0, firstNewline) : rawInput).trim();
+  var sep = (firstLineStr.indexOf("\t") > -1 && (firstLineStr.indexOf(",") === -1 || firstLineStr.split("\t").length > firstLineStr.split(",").length)) ? "\t" : ",";
 
-  // WhatsApp chat export patterns:
-  // e.g. "[12/09/2026, 14:24] +61 412 345 678 joined..."
-  // or "12/09/2026, 2:24 pm - +61 412 345 678: message"
-  // or "12/09/2026, 2:25 pm - John Smith added +61 412 345 678"
+  var parsedRows = parseCsvString(rawInput, sep);
+
+  var isCsvHeader = false;
+  if (parsedRows.length >= 2) {
+    var h0 = parsedRows[0].map(function(c) { return String(c || "").trim().toLowerCase(); });
+    var hasPhoneHdr = h0.some(function(c) {
+      return c.indexOf("phone") > -1 || c.indexOf("mobile") > -1 || c.indexOf("cell") > -1 || c.indexOf("number") > -1 || c.indexOf("tel") > -1;
+    });
+    var hasNameHdr = h0.some(function(c) {
+      return c.indexOf("name") > -1 || c.indexOf("first") > -1 || c.indexOf("last") > -1 || c.indexOf("given") > -1 || c.indexOf("family") > -1 || c.indexOf("contact") > -1;
+    });
+
+    var isChatLine = /^\[?\d{1,2}\/\d{1,2}\/\d{2,4}/.test(parsedRows[0][0] || "");
+    if (!isChatLine && (hasPhoneHdr || (hasNameHdr && parsedRows[0].length >= 2))) {
+      isCsvHeader = true;
+    }
+  }
+
+  if (isCsvHeader) {
+    var headers = parsedRows[0].map(function(c) { return String(c || "").trim().toLowerCase(); });
+
+    var firstCol = -1;
+    var lastCol = -1;
+    var nameCol = -1;
+    var sourceCol = -1;
+    var genericPhoneCol = -1;
+    var phonePairs = {};
+
+    headers.forEach(function(h, idx) {
+      // 1. Name detection
+      if (h === "first name" || h === "given name" || h === "first") {
+        if (firstCol === -1) firstCol = idx;
+      } else if (h === "last name" || h === "family name" || h === "surname" || h === "last") {
+        if (lastCol === -1) lastCol = idx;
+      } else if (h === "name" || h === "full name" || h === "player name" || h === "contact name" || h === "player") {
+        if (nameCol === -1) nameCol = idx;
+      } else if (h.indexOf("name") > -1 && nameCol === -1 && firstCol === -1) {
+        nameCol = idx;
+      }
+
+      // 2. Source / Group detection
+      if ((h.indexOf("source") > -1 || h.indexOf("group") > -1 || h.indexOf("team") > -1) && sourceCol === -1) {
+        sourceCol = idx;
+      }
+
+      // 3. Google Contacts paired Phone columns (Phone X - Value & Phone X - Label/Type)
+      var mVal = h.match(/^phone\s*(\d+)?\s*[-:]?\s*value$/i);
+      var mLbl = h.match(/^phone\s*(\d+)?\s*[-:]?\s*(?:label|type)$/i);
+      var mDirect = h.match(/^phone\s*(\d+)$/i);
+
+      if (mVal) {
+        var num = mVal[1] || "1";
+        phonePairs[num] = phonePairs[num] || { valCol: -1, lblCol: -1, isExplicitMobile: false };
+        phonePairs[num].valCol = idx;
+      } else if (mLbl) {
+        var num2 = mLbl[1] || "1";
+        phonePairs[num2] = phonePairs[num2] || { valCol: -1, lblCol: -1, isExplicitMobile: false };
+        phonePairs[num2].lblCol = idx;
+      } else if (mDirect) {
+        var num3 = mDirect[1];
+        phonePairs[num3] = phonePairs[num3] || { valCol: -1, lblCol: -1, isExplicitMobile: false };
+        if (phonePairs[num3].valCol === -1) phonePairs[num3].valCol = idx;
+      } else if (/^(?:mobile\s*phone|cell\s*phone|cellular\s*phone|mobile|cell)$/i.test(h)) {
+        var mKey = "m_" + idx;
+        phonePairs[mKey] = { valCol: idx, lblCol: -1, isExplicitMobile: true };
+      } else if ((h.indexOf("phone") > -1 || h.indexOf("number") > -1 || h.indexOf("tel") > -1) && genericPhoneCol === -1) {
+        genericPhoneCol = idx;
+      }
+    });
+
+    var hasPairs = Object.keys(phonePairs).length > 0;
+
+    for (var r = 1; r < parsedRows.length; r++) {
+      var row = parsedRows[r];
+      if (!row || row.length === 0 || (row.length === 1 && !row[0])) continue;
+
+      var contactName = "";
+      var fVal = firstCol !== -1 ? (row[firstCol] || "").trim() : "";
+      var lVal = lastCol !== -1 ? (row[lastCol] || "").trim() : "";
+      if (fVal || lVal) {
+        contactName = [fVal, lVal].filter(Boolean).join(" ");
+      } else if (nameCol !== -1) {
+        contactName = (row[nameCol] || "").trim();
+      }
+
+      var contactSrc = sourceCol !== -1 ? (row[sourceCol] || "").trim() : src;
+      if (!contactSrc) contactSrc = src;
+
+      var addedFromPairs = false;
+      if (hasPairs) {
+        var keys = Object.keys(phonePairs);
+        for (var k = 0; k < keys.length; k++) {
+          var pair = phonePairs[keys[k]];
+          if (pair.valCol === -1) continue;
+          var phoneVal = (row[pair.valCol] || "").trim();
+          if (!phoneVal) continue;
+
+          var phoneLbl = pair.lblCol !== -1 ? (row[pair.lblCol] || "").trim().toLowerCase() : "";
+          var isMobileLbl = phoneLbl.indexOf("mobile") > -1 ||
+                            phoneLbl.indexOf("cell") > -1 ||
+                            phoneLbl.indexOf("iphone") > -1;
+
+          var isExplicitNonMobile = phoneLbl.indexOf("work") > -1 ||
+                                    phoneLbl.indexOf("home") > -1 ||
+                                    phoneLbl.indexOf("fax") > -1 ||
+                                    phoneLbl.indexOf("landline") > -1 ||
+                                    phoneLbl.indexOf("pager") > -1 ||
+                                    phoneLbl.indexOf("office") > -1;
+
+          if (pair.isExplicitMobile || isMobileLbl || (!isExplicitNonMobile && isAusMobile(phoneVal))) {
+            addContact(contactName, phoneVal, contactSrc);
+            addedFromPairs = true;
+          }
+        }
+      }
+
+      if (!addedFromPairs && genericPhoneCol !== -1) {
+        var gPhone = (row[genericPhoneCol] || "").trim();
+        if (gPhone) {
+          addContact(contactName, gPhone, contactSrc);
+        }
+      }
+    }
+
+    if (contacts.length > 0) return contacts;
+  }
+
+  // Fallback: Line-by-line parsing for freeform text or WhatsApp chat exports
+  var lines = rawInput.split(/\r?\n/);
+  var phoneRegex = /(?:\+?61\s?4[\d\s-]{8,11}|04[\d\s-]{8,11}|4\d{8})/g;
   var chatSenderRegex = /(?:\[\d{1,2}\/\d{1,2}\/\d{2,4},?\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]m)?\]|\d{1,2}\/\d{1,2}\/\d{2,4},?\s+\d{1,2}:\d{2}(?:\s*[ap]m)?\s*-\s*)([^:]+):/i;
   var chatSystemAddedRegex = /(?:added|joined using|added you)\s+([+\d\s-]+)/i;
 
@@ -1441,7 +1556,6 @@ function parseWhatsAppContactsInput(rawInput, defaultSource) {
     var rawLine = lines[j].trim();
     if (!rawLine) continue;
 
-    // Check WhatsApp chat export pattern
     var chatSender = rawLine.match(chatSenderRegex);
     if (chatSender) {
       var sender = chatSender[1].trim();
@@ -1461,11 +1575,9 @@ function parseWhatsAppContactsInput(rawInput, defaultSource) {
       continue;
     }
 
-    // Standard delimited row or freeform: "Name, Phone" or "Name: Phone" or "Name - Phone"
     var pMatches = rawLine.match(phoneRegex);
     if (pMatches && pMatches.length > 0) {
       var phoneFound = pMatches[0];
-      // Remaining part of line is name
       var remaining = rawLine.replace(phoneFound, "")
         .replace(/^[\s,;:\-–—\t]+|[\s,;:\-–—\t]+$/g, "")
         .trim();

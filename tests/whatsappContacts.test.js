@@ -105,6 +105,57 @@ END:VCARD
     expect(result[0].rawName).toBe('Jack Kloot');
     expect(result[0].phone).toBe('+61422111222');
   });
+
+  test('parses Google Contacts CSV with Phone 1 - Label (Mobile) and Phone 1 - Value', () => {
+    const googleCsv = `First Name,Last Name,Phone 1 - Label,Phone 1 - Value,Phone 2 - Label,Phone 2 - Value
+Wayne,Cheetham,Mobile,+61 412 004 830,Work,03 9890 1234
+Rhett,Orr,Mobile,0412 333 444,,
+Ross,Digby,Mobile,0412 555 666,Home,03 9800 1111`;
+
+    const result = parseWhatsAppContactsInput(googleCsv, 'Google Contacts');
+    expect(result).toHaveLength(3);
+
+    expect(result[0]).toEqual({
+      rawName: 'Wayne Cheetham',
+      phone: '+61412004830',
+      source: 'Google Contacts'
+    });
+    expect(result[1]).toEqual({
+      rawName: 'Rhett Orr',
+      phone: '+61412333444',
+      source: 'Google Contacts'
+    });
+    expect(result[2]).toEqual({
+      rawName: 'Ross Digby',
+      phone: '+61412555666',
+      source: 'Google Contacts'
+    });
+
+    // Ensure landlines (03 9890 1234, 03 9800 1111) were strictly ignored
+    const phones = result.map(c => c.phone);
+    expect(phones).not.toContain('+0398901234');
+    expect(phones).not.toContain('+0398001111');
+  });
+
+  test('parses Google Contacts when mobile is in Phone 2 and Phone 1 is landline', () => {
+    const csv = `First Name,Last Name,Phone 1 - Label,Phone 1 - Value,Phone 2 - Label,Phone 2 - Value
+Terry,Hall,Work,03 9890 9999,Mobile,0400 111 222`;
+
+    const result = parseWhatsAppContactsInput(csv, 'Google Contacts');
+    expect(result).toHaveLength(1);
+    expect(result[0].rawName).toBe('Terry Hall');
+    expect(result[0].phone).toBe('+61400111222');
+  });
+
+  test('parses Google CSV format with Given Name, Family Name, and Phone 1 - Type (* Mobile)', () => {
+    const csv = `Name,Given Name,Family Name,Phone 1 - Type,Phone 1 - Value,Phone 2 - Type,Phone 2 - Value
+Angus White,Angus,White,* Mobile,0487 372 922,Work,03 9888 7777`;
+
+    const result = parseWhatsAppContactsInput(csv, 'Google Contacts');
+    expect(result).toHaveLength(1);
+    expect(result[0].rawName).toBe('Angus White');
+    expect(result[0].phone).toBe('+61487372922');
+  });
 });
 
 describe('matchContactsToPlayers()', () => {
@@ -312,6 +363,32 @@ describe('filterAndEnrichFromAddressBook()', () => {
     expect(retainedNames).not.toContain('Dave The Plumber');
     expect(retainedNames).not.toContain('Auntie Mary');
     expect(result.skippedPersonalContactsCount).toBe(3);
+  });
+
+  test('end-to-end: parses Google Contacts CSV and strictly filters to club roster', () => {
+    const googleCsv = `First Name,Last Name,Phone 1 - Label,Phone 1 - Value,Phone 2 - Label,Phone 2 - Value
+Wayne,Cheetham,Mobile,+61 412 004 830,Work,03 9890 1234
+Rhett,Orr,Mobile,0412 333 444,,
+Ross,Digby,Mobile,0412 555 666,Home,03 9800 1111
+Dave,Plumber,Mobile,0499 222 333,,
+Dr John,Dentist,Mobile,0499 000 111,,
+Auntie,Mary,Home,03 9876 5432,,`;
+
+    const parsed = parseWhatsAppContactsInput(googleCsv, 'Google Contacts');
+    // Parsed should contain 5 mobile contacts (Auntie Mary landline skipped automatically)
+    expect(parsed).toHaveLength(5);
+
+    const { filterAndEnrichFromAddressBook } = require('../src/logic.js');
+    const filtered = filterAndEnrichFromAddressBook(parsed, existingPlayers, existingWhatsAppContacts);
+
+    // Whitelist filter only keeps Wayne, Rhett, and Ross
+    expect(filtered.retainedContacts).toHaveLength(3);
+    const retainedNames = filtered.retainedContacts.map(c => c.rawName);
+    expect(retainedNames).toEqual(['Wayne Cheetham', 'Rhett Orr', 'Ross Digby']);
+    expect(filtered.retainedContacts[0].phone).toBe('+61412004830');
+
+    // Plumber and Dentist are discarded
+    expect(filtered.skippedPersonalContactsCount).toBe(2);
   });
 });
 
