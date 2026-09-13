@@ -1730,6 +1730,100 @@ function matchContactsToPlayers(contacts, players) {
   };
 }
 
+/**
+ * Filters an external address book (e.g. Google Contacts or phone export)
+ * so that ONLY contacts that match an existing WhatsApp member or Master Player
+ * are retained and used to enrich missing phone numbers.
+ *
+ * All non-club personal contacts (e.g. doctors, plumbers, friends) are STRICTLY DISCARDED.
+ *
+ * @param {Array<Object>} incomingContacts Contacts parsed from external file ({ rawName, phone, source })
+ * @param {Array<Object>} existingPlayers Players from Master Players tab
+ * @param {Array<Object>} existingWhatsAppContacts Contacts from WhatsApp_Contacts tab
+ * @returns {{
+ *   retainedContacts: Array<Object>,
+ *   skippedPersonalContactsCount: number
+ * }}
+ */
+function filterAndEnrichFromAddressBook(incomingContacts, existingPlayers, existingWhatsAppContacts) {
+  var retainedContacts = [];
+  var skippedPersonal = 0;
+
+  var playerNamesMap = {};
+  (existingPlayers || []).forEach(function(p) {
+    var pFull = cleanContactName(p.fullName);
+    var pLast = cleanContactName(p.lastName);
+    var pFirst = cleanContactName(p.firstName);
+    if (pFull) playerNamesMap[pFull] = p;
+    if (pFirst && pLast) playerNamesMap[pFirst + " " + pLast] = p;
+  });
+
+  var waNamesMap = {};
+  (existingWhatsAppContacts || []).forEach(function(w) {
+    var wName = cleanContactName(w.rawName || w.WhatsAppName || w.name);
+    if (wName) waNamesMap[wName] = w;
+  });
+
+  (incomingContacts || []).forEach(function(c) {
+    var cName = cleanContactName(c.rawName);
+    var cPhone = normalizePhone(c.phone);
+    if (!cPhone || !cName) {
+      skippedPersonal++;
+      return;
+    }
+
+    var isClubMember = false;
+
+    // 1. Check if matches a WhatsApp group member
+    if (waNamesMap[cName]) {
+      isClubMember = true;
+    } else {
+      var tokens = cName.split(" ");
+      if (tokens.length >= 2) {
+        var cFirst = tokens[0];
+        var cLast = tokens[tokens.length - 1];
+        var waFound = Object.keys(waNamesMap).find(function(k) {
+          var kTokens = k.split(" ");
+          return kTokens.length >= 2 && kTokens[kTokens.length - 1] === cLast && isFirstNameMatch(cFirst, kTokens[0]);
+        });
+        if (waFound) isClubMember = true;
+      }
+    }
+
+    // 2. Check if matches a registered Player
+    if (!isClubMember) {
+      if (playerNamesMap[cName]) {
+        isClubMember = true;
+      } else {
+        var tokens2 = cName.split(" ");
+        if (tokens2.length >= 2) {
+          var cFirst2 = tokens2[0];
+          var cLast2 = tokens2[tokens2.length - 1];
+          var pFound = (existingPlayers || []).find(function(p) {
+            return cleanContactName(p.lastName) === cLast2 && isFirstNameMatch(cFirst2, p.firstName || p.fullName.split(" ")[0]);
+          });
+          if (pFound) isClubMember = true;
+        }
+      }
+    }
+
+    if (isClubMember) {
+      retainedContacts.push({
+        rawName: c.rawName,
+        phone: cPhone,
+        source: c.source || "Google Contacts"
+      });
+    } else {
+      skippedPersonal++;
+    }
+  });
+
+  return {
+    retainedContacts: retainedContacts,
+    skippedPersonalContactsCount: skippedPersonal
+  };
+}
+
 // Node/Jest interop — Apps Script ignores this guard.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -1764,7 +1858,8 @@ if (typeof module !== 'undefined' && module.exports) {
     isFirstNameMatch,
     COMMON_NICKNAMES,
     parseWhatsAppContactsInput,
-    matchContactsToPlayers
+    matchContactsToPlayers,
+    filterAndEnrichFromAddressBook
   };
 }
 

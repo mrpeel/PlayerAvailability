@@ -274,3 +274,44 @@ describe('matchContactsToPlayers()', () => {
     expect(result.matchedContacts[0].matchMethod).toBe('Manual');
   });
 });
+
+describe('filterAndEnrichFromAddressBook()', () => {
+  const existingPlayers = [
+    { profileId: 'GUID-1', firstName: 'Wayne', lastName: 'Cheetham', fullName: 'Wayne Cheetham', phone: '' },
+    { profileId: 'GUID-2', firstName: 'Rhett', lastName: 'Orr', fullName: 'Rhett Orr', phone: '' }
+  ];
+
+  const existingWhatsAppContacts = [
+    { rawName: 'Ross Digby', phone: '' },
+    { rawName: 'Angus', phone: '+61487372922' }
+  ];
+
+  test('only retains contacts that match a player or WhatsApp member, strictly discarding personal contacts', () => {
+    const rawGoogleContacts = [
+      { rawName: 'Wayne Cheetham', phone: '0412 111 222', source: 'Google Contacts' },
+      { rawName: 'Rhett Orr', phone: '0412 333 444', source: 'Google Contacts' },
+      { rawName: 'Ross Digby', phone: '0412 555 666', source: 'Google Contacts' },
+      // Personal contacts that MUST be ignored:
+      { rawName: 'Dr. John Smith (Dentist)', phone: '0499 000 111', source: 'Google Contacts' },
+      { rawName: 'Dave The Plumber', phone: '0499 222 333', source: 'Google Contacts' },
+      { rawName: 'Auntie Mary', phone: '0499 444 555', source: 'Google Contacts' }
+    ];
+
+    const { filterAndEnrichFromAddressBook } = require('../src/logic.js');
+    const result = filterAndEnrichFromAddressBook(rawGoogleContacts, existingPlayers, existingWhatsAppContacts);
+
+    // Only Wayne, Rhett, and Ross are retained
+    expect(result.retainedContacts).toHaveLength(3);
+    const retainedNames = result.retainedContacts.map(c => c.rawName);
+    expect(retainedNames).toContain('Wayne Cheetham');
+    expect(retainedNames).toContain('Rhett Orr');
+    expect(retainedNames).toContain('Ross Digby');
+
+    // Dentist, Plumber, Auntie Mary are completely discarded
+    expect(retainedNames).not.toContain('Dr. John Smith (Dentist)');
+    expect(retainedNames).not.toContain('Dave The Plumber');
+    expect(retainedNames).not.toContain('Auntie Mary');
+    expect(result.skippedPersonalContactsCount).toBe(3);
+  });
+});
+
