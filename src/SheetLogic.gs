@@ -284,6 +284,10 @@ function doPost(e) {
     }
 
     if (action === 'simulateRoundAvailability' || action === 'simulateAvailability') {
+      var ss = getSS();
+      if (!isAdminUser(ss, payload.phone)) {
+        return jsonResponse({ status: "error", error: "Access Denied: Admin privileges required to simulate availability." });
+      }
       var simResult = simulateRoundAvailability(payload.dateStr || payload.date);
       return jsonResponse(simResult);
     }
@@ -353,6 +357,24 @@ function updateGlobalStatus(profileId, status, returnDate) {
 
 
 /**
+ * Checks if a phone number belongs to an authorised admin in the Admins tab.
+ */
+function isAdminUser(ss, phone) {
+  if (!phone) return false;
+  var normPhone = normalizePhone(phone);
+  var adminSheet = ss ? ss.getSheetByName("Admins") : null;
+  if (!adminSheet || adminSheet.getLastRow() <= 1) return false;
+  var adminData = adminSheet.getDataRange().getValues();
+  var aHeaders = adminData[0];
+  var phoneIdx = aHeaders.indexOf("Phone");
+  if (phoneIdx === -1) return false;
+  return adminData.slice(1).some(function(row) {
+    return normalizePhone(row[phoneIdx]) === normPhone;
+  });
+}
+
+
+/**
  * Returns available rounds for admin selector console.
  */
 function getAdminRounds(phone) {
@@ -360,19 +382,8 @@ function getAdminRounds(phone) {
   if (!ss) return { error: "Spreadsheet not found." };
 
   var normPhone = normalizePhone(phone);
-  var adminSheet = ss.getSheetByName("Admins");
-  if (adminSheet && adminSheet.getLastRow() > 1) {
-    var adminData = adminSheet.getDataRange().getValues();
-    var aHeaders = adminData[0];
-    var phoneIdx = aHeaders.indexOf("Phone");
-    if (phoneIdx !== -1) {
-      var isAdmin = adminData.slice(1).some(function(row) {
-        return normalizePhone(row[phoneIdx]) === normPhone;
-      });
-      if (!isAdmin) {
-        return { error: "Access Denied: Phone number " + normPhone + " is not registered in the Admins tab." };
-      }
-    }
+  if (!isAdminUser(ss, phone)) {
+    return { error: "Access Denied: Phone number " + normPhone + " is not registered in the Admins tab." };
   }
 
   var fixSheet = ss.getSheetByName("Fixtures");
@@ -419,6 +430,11 @@ function getAdminRounds(phone) {
 function getAdminData(phone, dateStrOrRoundNum) {
   var ss = getSS();
   if (!ss) return { error: "Spreadsheet not found." };
+
+  var normPhone = normalizePhone(phone);
+  if (!isAdminUser(ss, phone)) {
+    return { error: "Access Denied: Phone number " + normPhone + " is not registered in the Admins tab." };
+  }
 
   var fixSheet = ss.getSheetByName("Fixtures");
   var targetDate = String(dateStrOrRoundNum || "").trim();
@@ -4192,65 +4208,123 @@ function showPhotoStudioDialog() {
     '<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>' +
     '<style>' +
     '  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }' +
-    '  body { padding: 14px 18px; background: #fafafa; color: #222; overflow-y: hidden; user-select: none; }' +
-    '  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }' +
-    '  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }' +
-    '  .card h3 { font-size: 13px; font-weight: 700; color: #4d0012; margin-bottom: 8px; }' +
-    '  label { font-size: 11px; font-weight: 600; color: #555; display: block; margin-bottom: 3px; }' +
-    '  select, input[type="text"] { width: 100%; padding: 7px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; margin-bottom: 8px; }' +
-    '  .drop-zone { border: 2px dashed #4d0012; border-radius: 8px; padding: 16px; text-align: center; background: #fff9e6; cursor: pointer; transition: all 0.2s; }' +
+    '  body { padding: 12px 16px; background: #fafafa; color: #222; overflow-y: hidden; user-select: none; }' +
+    '  .grid { display: grid; grid-template-columns: 290px 1fr; gap: 14px; height: 490px; }' +
+    '  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }' +
+    '  .card h3 { font-size: 13px; font-weight: 700; color: #4d0012; margin-bottom: 2px; }' +
+    '  label { font-size: 11px; font-weight: 600; color: #555; display: block; margin-bottom: 2px; }' +
+    '  select { width: 100%; padding: 7px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; font-weight: 600; }' +
+    '  .drop-zone { border: 2px dashed #4d0012; border-radius: 8px; padding: 14px 10px; text-align: center; background: #fff9e6; cursor: pointer; transition: all 0.2s; }' +
     '  .drop-zone:hover { background: #fff2cc; }' +
-    '  .canvas-container { position: relative; width: 100%; height: 210px; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 12px 12px; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd; }' +
-    '  canvas { max-width: 100%; max-height: 100%; cursor: grab; }' +
-    '  .preview-circle { width: 80px; height: 80px; border-radius: 50%; border: 3px solid #fac218; box-shadow: 0 2px 6px rgba(0,0,0,0.15); overflow: hidden; margin: 0 auto 4px; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 12px 12px; }' +
-    '  .preview-circle img { width: 100%; height: 100%; object-fit: cover; }' +
-    '  .controls { display: flex; gap: 8px; align-items: center; margin-top: 6px; }' +
-    '  .controls button { padding: 5px 10px; font-size: 11px; font-weight: 600; border-radius: 5px; cursor: pointer; }' +
-    '  .actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee; }' +
+    '  .canvas-container { position: relative; width: 360px; height: 360px; margin: 0 auto; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 14px 14px; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }' +
+    '  canvas#cropCanvas { width: 100%; height: 100%; cursor: grab; display: block; }' +
+    '  canvas#cropCanvas.grabbing { cursor: grabbing; }' +
+    '  canvas#cropCanvas.eraser-mode { cursor: crosshair; }' +
+    '  .preview-row { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; padding: 8px 12px; margin-top: 4px; }' +
+    '  .preview-circle { width: 64px; height: 64px; min-width: 64px; border-radius: 50%; border: 3px solid #fac218; box-shadow: 0 2px 6px rgba(0,0,0,0.15); overflow: hidden; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 8px 8px; }' +
+    '  .preview-circle img { width: 100%; height: 100%; object-fit: cover; display: block; }' +
+    '  .tip-box { font-size: 11px; color: #4d0012; background: #fffdf5; border-left: 3px solid #fac218; padding: 6px 8px; border-radius: 4px; line-height: 1.35; }' +
+    '  .controls-bar { display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-wrap: wrap; }' +
+    '  .pill-group { display: flex; gap: 2px; background: #eee; padding: 2px; border-radius: 6px; }' +
+    '  .pill-btn { padding: 4px 8px; font-size: 11px; font-weight: 700; border-radius: 4px; border: none; background: transparent; color: #555; cursor: pointer; }' +
+    '  .pill-btn.active { background: #4d0012; color: #fff; }' +
+    '  .tool-btn { padding: 4px 8px; font-size: 11px; font-weight: 600; border-radius: 5px; border: 1px solid #ccc; background: #fff; color: #333; cursor: pointer; }' +
+    '  .tool-btn:hover { background: #f0f0f0; }' +
+    '  .slider-row { display: flex; align-items: center; gap: 6px; width: 100%; background: #f5f5f5; padding: 6px 10px; border-radius: 6px; }' +
+    '  .slider-row input[type="range"] { flex: 1; accent-color: #4d0012; cursor: pointer; }' +
+    '  .eraser-panel { display: none; align-items: center; justify-content: space-between; gap: 6px; background: #fff0f3; border: 1px solid #ffd0d8; padding: 6px 10px; border-radius: 6px; font-size: 11px; }' +
+    '  .eraser-panel.show { display: flex; }' +
+    '  .brush-dot { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #ccc; background: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }' +
+    '  .brush-dot.active { border-color: #4d0012; background: #fff0be; }' +
+    '  .brush-dot-inner { background: #4d0012; border-radius: 50%; }' +
+    '  .actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e0e0e0; }' +
     '  button { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }' +
     '  .btn-primary { background: #4d0012; color: #fff; }' +
-    '  .btn-primary:hover { background: #35000c; }' +
+    '  .btn-primary:hover:not(:disabled) { background: #35000c; }' +
     '  .btn-primary:disabled { background: #ccc; cursor: not-allowed; }' +
     '  .btn-secondary { background: #e0e0e0; color: #333; }' +
-    '  .btn-gold { background: #fac218; color: #4d0012; font-weight: bold; border: 1px solid #dfac13; }' +
     '  .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; }' +
     '  .badge-has { background: #e6f4ea; color: #137333; }' +
     '  .badge-none { background: #fce8e6; color: #c5221f; }' +
-    '  .toast { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; }' +
+    '  .toast { padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; }' +
     '  .toast-success { background: #e6f4ea; color: #137333; border: 1px solid #ceead6; }' +
     '  .toast-error { background: #fce8e6; color: #c5221f; border: 1px solid #fad2cf; }' +
+    '  .loading-overlay { position: absolute; inset: 0; background: rgba(77,0,18,0.88); color: #fac218; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; z-index: 10; font-size: 13px; font-weight: 700; text-align: center; padding: 14px; }' +
+    '  .spinner { width: 32px; height: 32px; border: 3px solid rgba(250,194,24,0.3); border-top-color: #fac218; border-radius: 50%; animation: spin 0.8s linear infinite; }' +
+    '  @keyframes spin { to { transform: rotate(360deg); } }' +
     '</style>' +
     '</head><body>' +
     '<div class="grid">' +
     '  <div class="card">' +
-    '    <h3>1. Select Player</h3>' +
-    '    <label for="playerSelect">Player:</label>' +
-    '    <select id="playerSelect" onchange="onPlayerChange()"><option value="">Loading players...</option></select>' +
-    '    <div id="playerStatus" style="font-size: 11px; margin-bottom: 8px;"></div>' +
-    '    <h3>2. Choose Photo</h3>' +
-    '    <div class="drop-zone" onclick="document.getElementById(\'fileInput\').click()">' +
-    '      <div style="font-size: 22px; margin-bottom: 2px;">📷</div>' +
-    '      <p style="font-size: 12px; font-weight: 600; color: #4d0012;">Click to Upload or Snap</p>' +
-    '      <p style="font-size: 10px; color: #777;">PNG or JPG</p>' +
+    '    <div>' +
+    '      <h3>1. Select Player</h3>' +
+    '      <select id="playerSelect" onchange="onPlayerChange()"><option value="">Loading players...</option></select>' +
+    '      <div id="playerStatus" style="font-size: 11px; margin-top: 2px;"></div>' +
     '    </div>' +
-    '    <input type="file" id="fileInput" accept="image/*" style="display:none;" onchange="handleFile(this.files[0])">' +
+    '    <div>' +
+    '      <h3>2. Upload Photo</h3>' +
+    '      <div class="drop-zone" onclick="document.getElementById(\'fileInput\').click()">' +
+    '        <div style="font-size: 24px; margin-bottom: 2px;">📷</div>' +
+    '        <p style="font-size: 12px; font-weight: 700; color: #4d0012;">Click to Upload or Snap</p>' +
+    '        <p style="font-size: 10px; color: #666;">AI automatically removes background</p>' +
+    '      </div>' +
+    '      <input type="file" id="fileInput" accept="image/*" style="display:none;" onchange="handleFile(this.files[0])">' +
+    '    </div>' +
+    '    <div class="tip-box">' +
+    '      <strong>📏 Framing Rule:</strong> Fit head between <strong>▲ TOP OF HEAD</strong> and <strong>▼ CHIN</strong> markers so every player has the exact same head size across team slides.' +
+    '    </div>' +
+    '    <div>' +
+    '      <label>Editing Tool:</label>' +
+    '      <div class="pill-group" style="width:100%;">' +
+    '        <button class="pill-btn active" id="btnModePan" onclick="setMode(\'pan\')" style="flex:1;">🖐️ Move / Zoom</button>' +
+    '        <button class="pill-btn" id="btnModeErase" onclick="setMode(\'erase\')" style="flex:1;">🧹 Erase Noise</button>' +
+    '      </div>' +
+    '    </div>' +
+    '    <div class="eraser-panel" id="eraserPanel">' +
+    '      <div style="display:flex; gap:4px; align-items:center;">' +
+    '        <span>Size:</span>' +
+    '        <div class="brush-dot active" id="bSmall" onclick="setBrush(16)"><div class="brush-dot-inner" style="width:6px;height:6px;"></div></div>' +
+    '        <div class="brush-dot" id="bMed" onclick="setBrush(30)"><div class="brush-dot-inner" style="width:12px;height:12px;"></div></div>' +
+    '        <div class="brush-dot" id="bLarge" onclick="setBrush(48)"><div class="brush-dot-inner" style="width:16px;height:16px;"></div></div>' +
+    '      </div>' +
+    '      <button class="tool-btn" onclick="undo()" id="undoBtn" disabled>↩ Undo</button>' +
+    '    </div>' +
+    '    <div>' +
+    '      <label>Cutout Noise Filter:</label>' +
+    '      <button class="tool-btn" id="noiseBtn" onclick="toggleNoise()" style="width:100%; text-align:center;">Noise Cutoff: Standard</button>' +
+    '    </div>' +
     '  </div>' +
-    '  <div class="card">' +
-    '    <h3>3. Position & AI Cutout</h3>' +
+    '  <div class="card" style="align-items:center;">' +
+    '    <div class="controls-bar" style="width:100%;">' +
+    '      <span style="font-size:12px; font-weight:700; color:#4d0012;">3. Head Alignment Studio</span>' +
+    '      <div style="display:flex; gap:4px;">' +
+    '        <button class="tool-btn" id="guidesBtn" onclick="toggleGuides()">👁️ Guides: ON</button>' +
+    '        <button class="tool-btn" onclick="autoFitToGuides()" title="Automatically fit head to markers">🎯 Auto-Fit</button>' +
+    '        <button class="tool-btn" onclick="resetFraming()" title="Reset zoom and center">↺ Reset</button>' +
+    '      </div>' +
+    '    </div>' +
     '    <div class="canvas-container">' +
     '      <canvas id="cropCanvas" width="400" height="400"></canvas>' +
+    '      <div class="loading-overlay" id="loadingOverlay" style="display:none;">' +
+    '        <div class="spinner"></div>' +
+    '        <div>AI Removing Background...</div>' +
+    '        <div style="font-size:10px; opacity:0.8;">MediaPipe Portrait Segmentation</div>' +
+    '      </div>' +
     '    </div>' +
-    '    <div style="font-size: 10px; color: #777; margin-top: 4px; text-align: center;">🖐️ Drag photo to center face • Scroll/Slider to zoom</div>' +
-    '    <div class="controls">' +
+    '    <div class="slider-row">' +
     '      <label style="margin:0; font-size:11px;">Zoom:</label>' +
-    '      <input type="range" id="zoomSlider" min="0.5" max="3.5" step="0.02" value="1" oninput="drawCanvas()" style="flex:1;">' +
-    '      <button class="btn-gold" id="bgBtn" onclick="removeBackground()" title="AI Human Portrait Background Removal">🪄 AI Cutout BG</button>' +
+    '      <button class="tool-btn" onclick="stepZoom(-0.08)" style="padding:2px 8px;">-</button>' +
+    '      <input type="range" id="zoomSlider" min="0.4" max="3.5" step="0.02" value="1" oninput="onZoom(this.value)">' +
+    '      <button class="tool-btn" onclick="stepZoom(0.08)" style="padding:2px 8px;">+</button>' +
     '    </div>' +
-    '    <div style="text-align: center; margin-top: 4px;">' +
+    '    <div class="preview-row" style="width:100%;">' +
     '      <div class="preview-circle">' +
     '        <img id="previewImg" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">' +
     '      </div>' +
-    '      <span style="font-size: 10px; color: #666;">Circle Avatar Output (400×400 Transparent PNG)</span>' +
+    '      <div style="font-size:11px; color:#555; line-height:1.3;">' +
+    '        <strong style="color:#4d0012;">Circle Avatar Output</strong><br>' +
+    '        Uniform 400×400 transparent PNG synced to Google Drive & Slides.' +
+    '      </div>' +
     '    </div>' +
     '  </div>' +
     '</div>' +
@@ -4265,14 +4339,32 @@ function showPhotoStudioDialog() {
     '  var playersData = [];' +
     '  var rawImg = new Image();' +
     '  var imgLoaded = false;' +
+    '  var cachedMask = null;' +
+    '  var noiseSensitivity = "normal";' +
+    '  var showGuides = true;' +
+    '  var toolMode = "pan";' +
+    '  var brushSize = 28;' +
+    '  var undoStack = [];' +
     '  var baseScale = 1;' +
     '  var zoomMultiplier = 1;' +
     '  var panX = 0, panY = 0;' +
     '  var isDragging = false;' +
+    '  var isErasing = false;' +
     '  var startMouseX = 0, startMouseY = 0;' +
     '  var startPanX = 0, startPanY = 0;' +
+    '  var cursorCoord = null;' +
+    '  var GUIDE_TOP_Y = 60, GUIDE_CHIN_Y = 270, GUIDE_EYE_Y = 160, GUIDE_CENTER_X = 200, GUIDE_CIRCLE_R = 192;' +
     '  var canvas = document.getElementById("cropCanvas");' +
     '  var ctx = canvas.getContext("2d");' +
+    '  var normCanvas = document.createElement("canvas");' +
+    '  var normCtx = normCanvas.getContext("2d");' +
+    '  var maskCanvas = document.createElement("canvas");' +
+    '  var maskCtx = maskCanvas.getContext("2d");' +
+    '  var cutoutCanvas = document.createElement("canvas");' +
+    '  var cutoutCtx = cutoutCanvas.getContext("2d");' +
+    '  var exportCanvas = document.createElement("canvas");' +
+    '  exportCanvas.width = 400; exportCanvas.height = 400;' +
+    '  var exportCtx = exportCanvas.getContext("2d");' +
     '  var selfieSegmentation = null;' +
     '  try {' +
     '    selfieSegmentation = new SelfieSegmentation({ locateFile: function(f) { return "https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/" + f; } });' +
@@ -4304,129 +4396,315 @@ function showPhotoStudioDialog() {
     '  }' +
     '  function handleFile(file) {' +
     '    if (!file) return;' +
+    '    document.getElementById("loadingOverlay").style.display = "flex";' +
     '    var reader = new FileReader();' +
     '    reader.onload = function(e) {' +
+    '      rawImg = new Image();' +
     '      rawImg.onload = function() {' +
     '        imgLoaded = true;' +
-    '        baseScale = 400 / Math.max(rawImg.width, rawImg.height);' +
-    '        zoomMultiplier = 1;' +
-    '        panX = 0; panY = 0;' +
-    '        document.getElementById("zoomSlider").value = 1;' +
-    '        drawCanvas();' +
-    '        checkReady();' +
+    '        undoStack = [];' +
+    '        updateUndoBtn();' +
+    '        var maxDim = 960;' +
+    '        var scale = Math.min(1, maxDim / Math.max(rawImg.width, rawImg.height));' +
+    '        var nw = Math.round(rawImg.width * scale);' +
+    '        var nh = Math.round(rawImg.height * scale);' +
+    '        normCanvas.width = nw; normCanvas.height = nh;' +
+    '        normCtx.clearRect(0, 0, nw, nh);' +
+    '        normCtx.drawImage(rawImg, 0, 0, nw, nh);' +
+    '        if (selfieSegmentation) {' +
+    '          selfieSegmentation.send({ image: normCanvas }).catch(function(err) {' +
+    '            console.error("MediaPipe error:", err);' +
+    '            fallbackCutout();' +
+    '          });' +
+    '        } else {' +
+    '          fallbackCutout();' +
+    '        }' +
     '      };' +
     '      rawImg.src = e.target.result;' +
     '    };' +
     '    reader.readAsDataURL(file);' +
     '  }' +
-    '  function drawCanvas() {' +
-    '    if (!imgLoaded) return;' +
-    '    zoomMultiplier = parseFloat(document.getElementById("zoomSlider").value);' +
-    '    var curScale = baseScale * zoomMultiplier;' +
-    '    var w = rawImg.width * curScale;' +
-    '    var h = rawImg.height * curScale;' +
-    '    var cx = 200 + panX;' +
-    '    var cy = 200 + panY;' +
-    '    ctx.clearRect(0, 0, canvas.width, canvas.height);' +
-    '    ctx.drawImage(rawImg, cx - w / 2, cy - h / 2, w, h);' +
-    '    updatePreview();' +
-    '  }' +
-    '  canvas.addEventListener("mousedown", function(e) {' +
-    '    if (!imgLoaded) return;' +
-    '    isDragging = true;' +
-    '    startMouseX = e.clientX; startMouseY = e.clientY;' +
-    '    startPanX = panX; startPanY = panY;' +
-    '    canvas.style.cursor = "grabbing";' +
-    '  });' +
-    '  window.addEventListener("mousemove", function(e) {' +
-    '    if (!isDragging) return;' +
-    '    panX = startPanX + (e.clientX - startMouseX);' +
-    '    panY = startPanY + (e.clientY - startMouseY);' +
-    '    drawCanvas();' +
-    '  });' +
-    '  window.addEventListener("mouseup", function() {' +
-    '    if (isDragging) { isDragging = false; canvas.style.cursor = "grab"; }' +
-    '  });' +
-    '  canvas.addEventListener("touchstart", function(e) {' +
-    '    if (!imgLoaded || e.touches.length !== 1) return;' +
-    '    isDragging = true;' +
-    '    startMouseX = e.touches[0].clientX; startMouseY = e.touches[0].clientY;' +
-    '    startPanX = panX; startPanY = panY;' +
-    '  }, { passive: true });' +
-    '  window.addEventListener("touchmove", function(e) {' +
-    '    if (!isDragging || e.touches.length !== 1) return;' +
-    '    panX = startPanX + (e.touches[0].clientX - startMouseX);' +
-    '    panY = startPanY + (e.touches[0].clientY - startMouseY);' +
-    '    drawCanvas();' +
-    '  }, { passive: true });' +
-    '  window.addEventListener("touchend", function() { isDragging = false; });' +
-    '  canvas.addEventListener("wheel", function(e) {' +
-    '    if (!imgLoaded) return;' +
-    '    e.preventDefault();' +
-    '    var slider = document.getElementById("zoomSlider");' +
-    '    var val = parseFloat(slider.value) + (e.deltaY < 0 ? 0.08 : -0.08);' +
-    '    slider.value = Math.max(0.5, Math.min(3.5, val));' +
-    '    drawCanvas();' +
-    '  }, { passive: false });' +
-    '  function updatePreview() {' +
-    '    document.getElementById("previewImg").src = canvas.toDataURL("image/png");' +
-    '  }' +
-    '  function removeBackground() {' +
-    '    if (!imgLoaded) return;' +
-    '    var btn = document.getElementById("bgBtn");' +
-    '    btn.innerText = "⏳ AI Working...";' +
-    '    btn.disabled = true;' +
-    '    var tempCanvas = document.createElement("canvas");' +
-    '    tempCanvas.width = 400; tempCanvas.height = 400;' +
-    '    var tempCtx = tempCanvas.getContext("2d");' +
-    '    var curScale = baseScale * zoomMultiplier;' +
-    '    var w = rawImg.width * curScale;' +
-    '    var h = rawImg.height * curScale;' +
-    '    var cx = 200 + panX;' +
-    '    var cy = 200 + panY;' +
-    '    tempCtx.drawImage(rawImg, cx - w / 2, cy - h / 2, w, h);' +
-    '    if (selfieSegmentation) {' +
-    '      selfieSegmentation.send({ image: tempCanvas }).catch(function(err) {' +
-    '        console.error(err);' +
-    '        fallbackCutout();' +
-    '      });' +
-    '    } else {' +
-    '      fallbackCutout();' +
-    '    }' +
-    '  }' +
     '  function onSegmentationResults(results) {' +
-    '    var w = canvas.width, h = canvas.height;' +
-    '    ctx.save();' +
-    '    ctx.clearRect(0, 0, w, h);' +
-    '    ctx.drawImage(results.segmentationMask, 0, 0, w, h);' +
-    '    ctx.globalCompositeOperation = "source-in";' +
-    '    var curScale = baseScale * zoomMultiplier;' +
-    '    var sw = rawImg.width * curScale;' +
-    '    var sh = rawImg.height * curScale;' +
-    '    var cx = 200 + panX;' +
-    '    var cy = 200 + panY;' +
-    '    ctx.drawImage(rawImg, cx - sw / 2, cy - sh / 2, sw, sh);' +
-    '    ctx.restore();' +
-    '    updatePreview();' +
-    '    var btn = document.getElementById("bgBtn");' +
-    '    btn.innerText = "✨ AI Cutout Done!";' +
-    '    btn.disabled = false;' +
+    '    cachedMask = results.segmentationMask;' +
+    '    applyCutout();' +
+    '    autoFitToGuides();' +
+    '    document.getElementById("loadingOverlay").style.display = "none";' +
+    '    checkReady();' +
+    '  }' +
+    '  function applyCutout() {' +
+    '    if (!cachedMask) return;' +
+    '    var w = normCanvas.width, h = normCanvas.height;' +
+    '    maskCanvas.width = w; maskCanvas.height = h;' +
+    '    maskCtx.clearRect(0, 0, w, h);' +
+    '    maskCtx.drawImage(cachedMask, 0, 0, w, h);' +
+    '    var imgData = maskCtx.getImageData(0, 0, w, h);' +
+    '    var d = imgData.data;' +
+    '    var isAggressive = (noiseSensitivity === "aggressive");' +
+    '    var lowThresh = isAggressive ? 122 : 84;' +
+    '    var highThresh = isAggressive ? 184 : 166;' +
+    '    var range = highThresh - lowThresh;' +
+    '    for (var i = 0; i < d.length; i += 4) {' +
+    '      var a = d[i + 3];' +
+    '      if (a === 255 && d[i] !== 255) a = d[i];' +
+    '      if (a <= lowThresh) {' +
+    '        d[i + 3] = 0;' +
+    '      } else if (a >= highThresh) {' +
+    '        d[i + 3] = 255;' +
+    '      } else {' +
+    '        var t = (a - lowThresh) / range;' +
+    '        d[i + 3] = Math.round(t * t * (3 - 2 * t) * 255);' +
+    '      }' +
+    '    }' +
+    '    maskCtx.putImageData(imgData, 0, 0);' +
+    '    cutoutCanvas.width = w; cutoutCanvas.height = h;' +
+    '    cutoutCtx.clearRect(0, 0, w, h);' +
+    '    cutoutCtx.drawImage(maskCanvas, 0, 0);' +
+    '    cutoutCtx.globalCompositeOperation = "source-in";' +
+    '    cutoutCtx.drawImage(normCanvas, 0, 0);' +
+    '    cutoutCtx.globalCompositeOperation = "source-over";' +
+    '    pushUndo();' +
+    '    render();' +
     '  }' +
     '  function fallbackCutout() {' +
-    '    var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);' +
+    '    var w = normCanvas.width, h = normCanvas.height;' +
+    '    cutoutCanvas.width = w; cutoutCanvas.height = h;' +
+    '    cutoutCtx.clearRect(0, 0, w, h);' +
+    '    cutoutCtx.drawImage(normCanvas, 0, 0);' +
+    '    var imgData = cutoutCtx.getImageData(0, 0, w, h);' +
     '    var data = imgData.data;' +
     '    var cornerR = data[0], cornerG = data[1], cornerB = data[2];' +
     '    for (var i = 0; i < data.length; i += 4) {' +
     '      var r = data[i], g = data[i+1], b = data[i+2];' +
     '      var diff = Math.abs(r - cornerR) + Math.abs(g - cornerG) + Math.abs(b - cornerB);' +
-    '      if (diff < 75) data[i+3] = 0;' +
+    '      if (diff < 80) data[i+3] = 0;' +
     '    }' +
-    '    ctx.putImageData(imgData, 0, 0);' +
-    '    updatePreview();' +
-    '    var btn = document.getElementById("bgBtn");' +
-    '    btn.innerText = "🪄 AI Cutout BG";' +
-    '    btn.disabled = false;' +
+    '    cutoutCtx.putImageData(imgData, 0, 0);' +
+    '    autoFitToGuides();' +
+    '    document.getElementById("loadingOverlay").style.display = "none";' +
+    '    checkReady();' +
     '  }' +
+    '  function autoFitToGuides() {' +
+    '    if (!imgLoaded) return;' +
+    '    var w = cutoutCanvas.width, h = cutoutCanvas.height;' +
+    '    var imgData = cutoutCtx.getImageData(0, 0, w, h);' +
+    '    var d = imgData.data;' +
+    '    var topY = -1, bottomY = -1, minX = w, maxX = 0;' +
+    '    for (var y = 0; y < h; y += 2) {' +
+    '      var rowHas = false;' +
+    '      for (var x = 0; x < w; x += 4) {' +
+    '        var idx = (y * w + x) * 4;' +
+    '        if (d[idx + 3] > 60) {' +
+    '          if (topY === -1) topY = y;' +
+    '          rowHas = true;' +
+    '          if (x < minX) minX = x;' +
+    '          if (x > maxX) maxX = x;' +
+    '        }' +
+    '      }' +
+    '      if (rowHas) bottomY = y;' +
+    '    }' +
+    '    if (topY !== -1 && bottomY > topY) {' +
+    '      var subH = bottomY - topY, subW = maxX - minX, centerX = (minX + maxX) / 2;' +
+    '      var estHeadH = Math.min(subH * 0.48, subW * 1.15);' +
+    '      if (estHeadH < 50) estHeadH = subH;' +
+    '      var desiredScale = (GUIDE_CHIN_Y - GUIDE_TOP_Y) / estHeadH;' +
+    '      baseScale = Math.max(0.35, Math.min(2.8, desiredScale));' +
+    '      zoomMultiplier = 1;' +
+    '      document.getElementById("zoomSlider").value = 1;' +
+    '      panX = -(centerX - w / 2) * baseScale;' +
+    '      panY = GUIDE_TOP_Y - 200 + (h / 2 - topY) * baseScale;' +
+    '    } else {' +
+    '      baseScale = 400 / Math.max(w, h);' +
+    '      zoomMultiplier = 1; panX = 0; panY = 0;' +
+    '      document.getElementById("zoomSlider").value = 1;' +
+    '    }' +
+    '    render();' +
+    '  }' +
+    '  function resetFraming() {' +
+    '    if (!imgLoaded) return;' +
+    '    baseScale = 400 / Math.max(cutoutCanvas.width, cutoutCanvas.height);' +
+    '    zoomMultiplier = 1; panX = 0; panY = 0;' +
+    '    document.getElementById("zoomSlider").value = 1;' +
+    '    render();' +
+    '  }' +
+    '  function render() {' +
+    '    if (!imgLoaded) return;' +
+    '    var curScale = baseScale * zoomMultiplier;' +
+    '    var w = cutoutCanvas.width * curScale;' +
+    '    var h = cutoutCanvas.height * curScale;' +
+    '    var cx = 200 + panX;' +
+    '    var cy = 200 + panY;' +
+    '    exportCtx.clearRect(0, 0, 400, 400);' +
+    '    exportCtx.drawImage(cutoutCanvas, cx - w / 2, cy - h / 2, w, h);' +
+    '    document.getElementById("previewImg").src = exportCanvas.toDataURL("image/png");' +
+    '    ctx.clearRect(0, 0, 400, 400);' +
+    '    ctx.drawImage(exportCanvas, 0, 0);' +
+    '    if (showGuides) drawGuides(ctx);' +
+    '    if (toolMode === "erase" && cursorCoord) drawEraser(ctx, cursorCoord.x, cursorCoord.y);' +
+    '  }' +
+    '  function drawGuides(c) {' +
+    '    c.save();' +
+    '    c.beginPath();' +
+    '    c.rect(0, 0, 400, 400);' +
+    '    c.arc(200, 200, GUIDE_CIRCLE_R, 0, Math.PI * 2, true);' +
+    '    c.closePath();' +
+    '    c.fillStyle = "rgba(15, 0, 5, 0.58)";' +
+    '    c.fill();' +
+    '    c.beginPath();' +
+    '    c.arc(200, 200, GUIDE_CIRCLE_R, 0, Math.PI * 2);' +
+    '    c.strokeStyle = "rgba(250, 194, 24, 0.85)";' +
+    '    c.lineWidth = 2.5;' +
+    '    c.stroke();' +
+    '    c.beginPath();' +
+    '    c.ellipse(GUIDE_CENTER_X, (GUIDE_TOP_Y + GUIDE_CHIN_Y) / 2, 78, 105, 0, 0, Math.PI * 2);' +
+    '    c.setLineDash([4, 4]);' +
+    '    c.strokeStyle = "rgba(250, 194, 24, 0.4)";' +
+    '    c.lineWidth = 1.5;' +
+    '    c.stroke();' +
+    '    c.setLineDash([]);' +
+    '    c.beginPath();' +
+    '    c.moveTo(GUIDE_CENTER_X, 36);' +
+    '    c.lineTo(GUIDE_CENTER_X, 320);' +
+    '    c.setLineDash([3, 4]);' +
+    '    c.strokeStyle = "rgba(255, 255, 255, 0.4)";' +
+    '    c.lineWidth = 1;' +
+    '    c.stroke();' +
+    '    c.setLineDash([]);' +
+    '    c.beginPath();' +
+    '    c.moveTo(110, GUIDE_EYE_Y); c.lineTo(290, GUIDE_EYE_Y);' +
+    '    c.setLineDash([2, 3]);' +
+    '    c.strokeStyle = "rgba(255, 255, 255, 0.65)";' +
+    '    c.lineWidth = 1; c.stroke(); c.setLineDash([]);' +
+    '    drawBadge(c, "EYE LEVEL", GUIDE_CENTER_X, GUIDE_EYE_Y, "rgba(20, 0, 5, 0.65)", "#fff", 9);' +
+    '    c.beginPath();' +
+    '    c.moveTo(90, GUIDE_TOP_Y + 8); c.lineTo(90, GUIDE_TOP_Y); c.lineTo(310, GUIDE_TOP_Y); c.lineTo(310, GUIDE_TOP_Y + 8);' +
+    '    c.strokeStyle = "#fac218"; c.lineWidth = 2; c.stroke();' +
+    '    drawBadge(c, "▲ TOP OF HEAD", GUIDE_CENTER_X, GUIDE_TOP_Y - 12, "#4d0012", "#fac218", 10, true);' +
+    '    c.beginPath();' +
+    '    c.moveTo(100, GUIDE_CHIN_Y - 8); c.lineTo(100, GUIDE_CHIN_Y); c.lineTo(300, GUIDE_CHIN_Y); c.lineTo(300, GUIDE_CHIN_Y - 8);' +
+    '    c.strokeStyle = "#fac218"; c.lineWidth = 2; c.stroke();' +
+    '    drawBadge(c, "▼ CHIN", GUIDE_CENTER_X, GUIDE_CHIN_Y + 12, "#4d0012", "#fac218", 10, true);' +
+    '    c.restore();' +
+    '  }' +
+    '  function drawBadge(c, text, x, y, bg, fg, fontSize, border) {' +
+    '    c.save();' +
+    '    c.font = "bold " + fontSize + "px sans-serif";' +
+    '    var tw = c.measureText(text).width;' +
+    '    var rx = x - (tw + 16) / 2, ry = y - (fontSize + 8) / 2;' +
+    '    c.fillStyle = bg;' +
+    '    c.fillRect(rx, ry, tw + 16, fontSize + 8);' +
+    '    if (border) { c.strokeStyle = fg; c.lineWidth = 1; c.strokeRect(rx, ry, tw + 16, fontSize + 8); }' +
+    '    c.fillStyle = fg; c.textAlign = "center"; c.textBaseline = "middle";' +
+    '    c.fillText(text, x, y + 0.5);' +
+    '    c.restore();' +
+    '  }' +
+    '  function drawEraser(c, x, y) {' +
+    '    c.save();' +
+    '    c.beginPath(); c.arc(x, y, brushSize / 2, 0, Math.PI * 2);' +
+    '    c.strokeStyle = "#ff0033"; c.lineWidth = 2; c.stroke();' +
+    '    c.fillStyle = "rgba(255,0,51,0.15)"; c.fill();' +
+    '    c.restore();' +
+    '  }' +
+    '  function setMode(mode) {' +
+    '    toolMode = mode;' +
+    '    document.getElementById("btnModePan").className = "pill-btn" + (mode === "pan" ? " active" : "");' +
+    '    document.getElementById("btnModeErase").className = "pill-btn" + (mode === "erase" ? " active" : "");' +
+    '    document.getElementById("eraserPanel").className = "eraser-panel" + (mode === "erase" ? " show" : "");' +
+    '    canvas.className = (mode === "erase" ? "eraser-mode" : "");' +
+    '    render();' +
+    '  }' +
+    '  function toggleGuides() {' +
+    '    showGuides = !showGuides;' +
+    '    document.getElementById("guidesBtn").innerText = showGuides ? "👁️ Guides: ON" : "👁️ Guides: OFF";' +
+    '    render();' +
+    '  }' +
+    '  function toggleNoise() {' +
+    '    noiseSensitivity = (noiseSensitivity === "normal") ? "aggressive" : "normal";' +
+    '    document.getElementById("noiseBtn").innerText = (noiseSensitivity === "aggressive") ? "Noise Cutoff: Clean 🔥" : "Noise Cutoff: Standard";' +
+    '    applyCutout();' +
+    '  }' +
+    '  function setBrush(size) {' +
+    '    brushSize = size;' +
+    '    document.getElementById("bSmall").className = "brush-dot" + (size === 16 ? " active" : "");' +
+    '    document.getElementById("bMed").className = "brush-dot" + (size === 30 ? " active" : "");' +
+    '    document.getElementById("bLarge").className = "brush-dot" + (size === 48 ? " active" : "");' +
+    '    render();' +
+    '  }' +
+    '  function pushUndo() {' +
+    '    if (undoStack.length >= 6) undoStack.shift();' +
+    '    undoStack.push(cutoutCtx.getImageData(0, 0, cutoutCanvas.width, cutoutCanvas.height));' +
+    '    updateUndoBtn();' +
+    '  }' +
+    '  function undo() {' +
+    '    if (undoStack.length > 1) {' +
+    '      undoStack.pop();' +
+    '      var prev = undoStack[undoStack.length - 1];' +
+    '      cutoutCtx.putImageData(prev, 0, 0);' +
+    '      render();' +
+    '    }' +
+    '    updateUndoBtn();' +
+    '  }' +
+    '  function updateUndoBtn() {' +
+    '    document.getElementById("undoBtn").disabled = (undoStack.length <= 1);' +
+    '  }' +
+    '  function applyEraser(cx, cy) {' +
+    '    var curScale = baseScale * zoomMultiplier;' +
+    '    var w = cutoutCanvas.width * curScale, h = cutoutCanvas.height * curScale;' +
+    '    var centerX = 200 + panX, centerY = 200 + panY;' +
+    '    var imgX = (cx - (centerX - w / 2)) / curScale;' +
+    '    var imgY = (cy - (centerY - h / 2)) / curScale;' +
+    '    var r = (brushSize / 2) / curScale;' +
+    '    cutoutCtx.save();' +
+    '    cutoutCtx.globalCompositeOperation = "destination-out";' +
+    '    cutoutCtx.beginPath(); cutoutCtx.arc(imgX, imgY, r, 0, Math.PI * 2); cutoutCtx.fill();' +
+    '    cutoutCtx.restore();' +
+    '    render();' +
+    '  }' +
+    '  function onZoom(val) { zoomMultiplier = parseFloat(val); render(); }' +
+    '  function stepZoom(d) {' +
+    '    var sl = document.getElementById("zoomSlider");' +
+    '    var v = Math.max(0.4, Math.min(3.5, parseFloat(sl.value) + d));' +
+    '    sl.value = v; onZoom(v);' +
+    '  }' +
+    '  function getPos(e) {' +
+    '    var r = canvas.getBoundingClientRect();' +
+    '    return { x: (e.clientX - r.left) * (canvas.width / r.width), y: (e.clientY - r.top) * (canvas.height / r.height) };' +
+    '  }' +
+    '  canvas.addEventListener("mousedown", function(e) {' +
+    '    if (!imgLoaded) return;' +
+    '    var p = getPos(e);' +
+    '    if (toolMode === "erase") {' +
+    '      isErasing = true; pushUndo(); applyEraser(p.x, p.y);' +
+    '    } else {' +
+    '      isDragging = true;' +
+    '      startMouseX = e.clientX; startMouseY = e.clientY;' +
+    '      startPanX = panX; startPanY = panY;' +
+    '      canvas.classList.add("grabbing");' +
+    '    }' +
+    '  });' +
+    '  window.addEventListener("mousemove", function(e) {' +
+    '    if (!imgLoaded) return;' +
+    '    var p = getPos(e);' +
+    '    cursorCoord = p;' +
+    '    if (isErasing && toolMode === "erase") {' +
+    '      applyEraser(p.x, p.y);' +
+    '    } else if (isDragging && toolMode === "pan") {' +
+    '      var r = canvas.getBoundingClientRect();' +
+    '      panX = startPanX + (e.clientX - startMouseX) * (canvas.width / r.width);' +
+    '      panY = startPanY + (e.clientY - startMouseY) * (canvas.height / r.height);' +
+    '      render();' +
+    '    } else if (toolMode === "erase") {' +
+    '      render();' +
+    '    }' +
+    '  });' +
+    '  window.addEventListener("mouseup", function() {' +
+    '    isDragging = false; isErasing = false; canvas.classList.remove("grabbing");' +
+    '  });' +
+    '  canvas.addEventListener("mouseleave", function() { cursorCoord = null; if (toolMode === "erase") render(); });' +
+    '  canvas.addEventListener("wheel", function(e) {' +
+    '    if (!imgLoaded) return;' +
+    '    e.preventDefault();' +
+    '    stepZoom(e.deltaY < 0 ? 0.06 : -0.06);' +
+    '  }, { passive: false });' +
     '  function checkReady() {' +
     '    var pid = document.getElementById("playerSelect").value;' +
     '    document.getElementById("saveBtn").disabled = !(pid && imgLoaded);' +
@@ -4436,10 +4714,8 @@ function showPhotoStudioDialog() {
     '    if (!pid || !imgLoaded) return;' +
     '    var btn = document.getElementById("saveBtn");' +
     '    var fb = document.getElementById("inlineFeedback");' +
-    '    btn.disabled = true;' +
-    '    btn.innerText = "⏳ Saving...";' +
-    '    fb.innerHTML = "";' +
-    '    var base64 = canvas.toDataURL("image/png");' +
+    '    btn.disabled = true; btn.innerText = "⏳ Saving..."; fb.innerHTML = "";' +
+    '    var base64 = exportCanvas.toDataURL("image/png");' +
     '    google.script.run.withSuccessHandler(function(res) {' +
     '      btn.innerText = "✅ Saved!";' +
     '      fb.innerHTML = "<span class=\'toast toast-success\'>✅ Saved to Google Drive!</span>";' +
@@ -4452,7 +4728,7 @@ function showPhotoStudioDialog() {
     '  }' +
     '</script>' +
     '</body></html>'
-  ).setWidth(740).setHeight(500);
+  ).setWidth(800).setHeight(560);
   SpreadsheetApp.getUi().showModalDialog(html, "📸 Player Photo Studio");
 }
 

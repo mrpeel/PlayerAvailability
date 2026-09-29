@@ -108,6 +108,7 @@
       font-size: 14px;
       font-weight: 800;
       margin-top: 8px;
+      text-transform: uppercase;
     }
 
     .container {
@@ -461,7 +462,7 @@
     </div>
     <h1>Laburnum CC Availability</h1>
     <div id="round-indicator-container" class="round-indicator" style="display:none">
-      ROUND <span id="header-round"></span>
+      <span id="header-round"></span>
     </div>
   </div>
 
@@ -499,32 +500,16 @@
       <button class="btn btn-primary" onclick="handleLogin()">Let's go</button>
     </div>
 
-    <!-- Testing & Simulation Toolbox for Dev/Selectors -->
-    <div class="card" style="border: 1px dashed var(--maroon); background: #fffcfb; padding: 18px; margin-top: 16px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleTestTools()">
-        <span style="font-weight: 800; font-size: 14px; color: var(--maroon);">🧪 Testing & Simulation Toolbox</span>
-        <span id="test-tools-arrow" style="font-weight: bold; font-size: 14px;">▼</span>
-      </div>
-      <div id="test-tools-content" style="display: none; margin-top: 14px;">
-        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
-          Quickly simulate player availability across all club players for the active round using the club standard distributions (90% available for 1-Day, 85%/5%/5%/5% for 2-Day).
-        </p>
-        <button id="sim-btn" class="btn" style="background: var(--gold); color: var(--maroon); font-weight: 800; margin-bottom: 8px;" onclick="runSimulation()">
-          🎲 Simulate All Player Availabilities
-        </button>
-        <div id="sim-result" style="display: none; margin-top: 10px; font-size: 13px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; white-space: pre-wrap; color: var(--text);"></div>
-      </div>
-    </div>
   </div>
 
   <div id="error-view" class="container">
-    <div class="card" style="border-top: 5px solid #991b1b;">
-      <h2 style="color: #991b1b; margin-bottom: 12px;">System Error</h2>
-      <p id="error-msg"
-        style="margin-bottom: 24px; font-family: monospace; font-size: 13px; background: #fef2f2; padding: 12px; border-radius: 8px;">
-      </p>
-      <button class="btn btn-primary" onclick="loadData()">Try Again</button>
-      <button class="btn btn-outline" style="margin-top: 12px;" onclick="hardReset()">Hard Reset</button>
+    <div class="card" style="border-top: 5px solid var(--maroon);">
+      <h2 id="error-title" style="color: var(--maroon); margin-bottom: 12px; font-weight: 800;">Phone number not found</h2>
+      <div id="error-msg"
+        style="margin-bottom: 24px; font-size: 15px; color: var(--text); line-height: 1.5; background: #fffcfb; padding: 14px; border-radius: 8px; border: 1px solid #f0e6e7;">
+      </div>
+      <button id="error-primary-btn" class="btn btn-primary" onclick="handleReset()">Try Another Number</button>
+      <button id="error-retry-btn" class="btn btn-outline" style="display: none; margin-top: 12px;" onclick="loadData()">Try Again</button>
     </div>
   </div>
 
@@ -559,6 +544,17 @@
     };
 
     window.onload = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const roundParam = urlParams.get('round');
+      if (roundParam) {
+        const roundDateFormatted = parseDate(roundParam);
+        if (roundDateFormatted) {
+          const headerRoundEl = document.getElementById('header-round');
+          if (headerRoundEl) headerRoundEl.innerText = roundDateFormatted;
+          const indicator = document.getElementById('round-indicator-container');
+          if (indicator) indicator.style.display = 'inline-block';
+        }
+      }
       if (state.phone && state.phone !== 'null') loadData();
       else showView('login-view');
     };
@@ -568,44 +564,6 @@
       document.getElementById(viewId).style.display = 'block';
     }
 
-    function toggleTestTools() {
-      const content = document.getElementById('test-tools-content');
-      const arrow = document.getElementById('test-tools-arrow');
-      if (content.style.display === 'none') {
-        content.style.display = 'block';
-        arrow.innerText = '▲';
-      } else {
-        content.style.display = 'none';
-        arrow.innerText = '▼';
-      }
-    }
-
-    async function runSimulation() {
-      const simBtn = document.getElementById('sim-btn');
-      const simResult = document.getElementById('sim-result');
-      simBtn.innerText = 'Simulating...';
-      simBtn.disabled = true;
-      simResult.style.display = 'none';
-
-      try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const round = urlParams.get('round');
-
-        const res = await callApi({
-          action: 'simulateRoundAvailability',
-          dateStr: round
-        });
-
-        simResult.innerText = res.message || 'Simulation completed successfully!';
-        simResult.style.display = 'block';
-      } catch (err) {
-        simResult.innerText = 'Simulation error: ' + err.message;
-        simResult.style.display = 'block';
-      } finally {
-        simBtn.innerText = '🎲 Simulate All Player Availabilities';
-        simBtn.disabled = false;
-      }
-    }
 
     async function callApi(body) {
       const res = await fetch(API_URL, {
@@ -628,10 +586,21 @@
       loadData();
     }
 
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str || '';
+      return div.innerHTML;
+    }
+
     function handleReset() {
       localStorage.removeItem('lcc_phone');
       state.phone = null;
       showView('login-view');
+      const input = document.getElementById('phone-input');
+      if (input) {
+        input.focus();
+        input.select();
+      }
     }
 
     async function loadData() {
@@ -661,31 +630,74 @@
         renderDashboard();
         showView('dashboard-view');
       } catch (e) {
-        document.getElementById('error-msg').innerText = e.message;
+        const errMsg = e.message || '';
+        const isPhoneNotFound = errMsg.toLowerCase().includes('no registered player') ||
+                                errMsg.toLowerCase().includes('phone number') ||
+                                errMsg.toLowerCase().includes('not matching');
+
+        const titleEl = document.getElementById('error-title');
+        const msgEl = document.getElementById('error-msg');
+        const primaryBtn = document.getElementById('error-primary-btn');
+        const retryBtn = document.getElementById('error-retry-btn');
+
+        if (isPhoneNotFound) {
+          // Clear invalid cached phone so refreshing returns cleanly to login
+          localStorage.removeItem('lcc_phone');
+          state.phone = null;
+
+          titleEl.innerText = 'Phone number not found';
+          msgEl.innerHTML = `<p style="margin-bottom: 8px;">No registered player was found matching this phone number.</p><p style="color: var(--text-muted); font-size: 14px;">Please check for typos, or contact your club selector to confirm your number is registered.</p>`;
+          primaryBtn.innerText = 'Try Another Number';
+          primaryBtn.onclick = handleReset;
+          retryBtn.style.display = 'none';
+        } else {
+          titleEl.innerText = 'Unable to Load Availability';
+          msgEl.innerHTML = `<p style="margin-bottom: 8px;">${escapeHtml(errMsg || 'An unexpected error occurred.')}</p><p style="color: var(--text-muted); font-size: 14px;">Please check your connection and try again.</p>`;
+          primaryBtn.innerText = 'Try Again';
+          primaryBtn.onclick = loadData;
+          retryBtn.innerText = 'Try Another Number';
+          retryBtn.onclick = handleReset;
+          retryBtn.style.display = 'block';
+        }
+
         showView('error-view');
       }
     }
 
     function parseDate(dateStr) {
       if (!dateStr) return '';
-      if (dateStr.includes('/')) {
-        const parts = dateStr.split('/');
+      const str = String(dateStr).trim();
+      if (str.includes('/')) {
+        const parts = str.split('/');
         if (parts.length === 3) {
-          return `${parts[0]} ${new Date(2000, parts[1] - 1).toLocaleString('en-AU', { month: 'short' })}`;
+          const dNum = parseInt(parts[0], 10);
+          const mNum = parseInt(parts[1], 10) - 1;
+          const mName = new Date(2000, mNum, 1).toLocaleString('en-AU', { month: 'short' });
+          return `${dNum} ${mName}`;
         }
       }
-      const d = new Date(dateStr);
-      return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+      if (str.includes('-')) {
+        const parts = str.split('-');
+        if (parts.length === 3) {
+          const dNum = parseInt(parts[2], 10);
+          const mNum = parseInt(parts[1], 10) - 1;
+          const mName = new Date(2000, mNum, 1).toLocaleString('en-AU', { month: 'short' });
+          return `${dNum} ${mName}`;
+        }
+      }
+      const d = new Date(str);
+      return isNaN(d.getTime()) ? str : d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
     }
 
     function renderDashboard() {
       const info = state.roundInfo || {};
       const d1 = parseDate(info.Date1 || state.matchDate) || '';
-      const roundNumText = info.RoundNum || '1';
 
-      document.getElementById('header-round').innerText = roundNumText;
-      document.getElementById('round-indicator-container').style.display = 'inline-block';
-      document.getElementById('round-title').innerText = `${info.RoundTitle || 'Round ' + roundNumText} - ${d1}`;
+      if (d1) {
+        document.getElementById('header-round').innerText = d1;
+        document.getElementById('round-indicator-container').style.display = 'inline-block';
+      }
+      document.getElementById('round-title').innerText = d1 ? `Round starting ${d1}` : 'Round';
       document.getElementById('round-date').innerText = info.Format || 'Two Day Match';
 
       const list = document.getElementById('players-list');
@@ -883,7 +895,6 @@
       }
     }
 
-    function hardReset() { localStorage.clear(); window.location.reload(); }
   </script>
 </body>
 
