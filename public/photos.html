@@ -242,7 +242,7 @@
       transform: scale(0.97);
     }
     .action-btn-sm {
-      padding: 6px 12px;
+      padding: 6px 10px;
       font-size: 12px;
       font-weight: 700;
       border-radius: 6px;
@@ -254,8 +254,31 @@
       align-items: center;
       gap: 4px;
     }
+    .action-btn-sm.active-toggle {
+      background: var(--maroon);
+      color: var(--gold);
+      border-color: var(--maroon);
+    }
     .action-btn-sm:active {
       background: var(--gold-light);
+    }
+
+    /* Sub-row for shirt controls */
+    .shirt-options-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      background: #fff;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--outline);
+      flex-wrap: wrap;
+    }
+    .shirt-options-row label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
     }
 
     /* Zoom Row */
@@ -346,9 +369,9 @@
       border: 1px solid var(--outline);
     }
     .circle-avatar-preview {
-      width: 84px;
-      height: 84px;
-      min-width: 84px;
+      width: 88px;
+      height: 88px;
+      min-width: 88px;
       border-radius: 50%;
       border: 3.5px solid var(--gold);
       box-shadow: 0 3px 8px rgba(0,0,0,0.15);
@@ -374,7 +397,7 @@
     .preview-desc {
       font-size: 12px;
       color: var(--text-muted);
-      line-height: 1.3;
+      line-height: 1.35;
     }
 
     /* Save button */
@@ -456,7 +479,7 @@
 
         <div class="studio-panel">
           <div class="guide-tip-banner">
-            Fit head inside the guide lines: crown touches <strong>▲ TOP OF HEAD</strong>, chin touches <strong>▼ CHIN</strong>. Drag to move, slider/wheel to zoom.
+            <strong>Big Face Framing:</strong> Align crown to <strong>▲ TOP OF HEAD</strong> and jaw to <strong>▼ CHIN</strong>. The face fills ~80% of the circle, cropping out shoulders and distracting shirts!
           </div>
 
           <!-- Canvas Viewport -->
@@ -480,6 +503,16 @@
               <button class="action-btn-sm" id="guidesToggleBtn" onclick="toggleGuides()">👁️ Guides: ON</button>
               <button class="action-btn-sm" onclick="autoFitToGuides()" title="Automatically fit face to guides">🎯 Auto-Fit</button>
               <button class="action-btn-sm" onclick="resetFraming()" title="Reset scale and position">↺ Reset</button>
+            </div>
+          </div>
+
+          <!-- Shirt Distraction Controls -->
+          <div class="shirt-options-row">
+            <label>Shirt Handling:</label>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button class="action-btn-sm active-toggle" id="fadeShirtBtn" onclick="toggleFadeShirt()" title="Softly dissolves shirt collar at the bottom into transparency">Fade Shirt: ON</button>
+              <button class="action-btn-sm" id="clubKitBtn" onclick="toggleClubKit()" title="Overlays standardized Laburnum CC maroon polo collar">Club Collar: OFF</button>
+              <button class="action-btn-sm" id="noiseSensitivityBtn" onclick="toggleNoiseSensitivity()" title="Toggle strict background noise cutoff">Noise: Normal</button>
             </div>
           </div>
 
@@ -507,9 +540,8 @@
           <div class="slider-row">
             <label>Zoom:</label>
             <button class="zoom-btn" onclick="stepZoom(-0.08)">-</button>
-            <input type="range" id="zoomSlider" min="0.4" max="3.5" step="0.02" value="1" oninput="onZoomInput(this.value)">
+            <input type="range" id="zoomSlider" min="0.4" max="4.0" step="0.02" value="1" oninput="onZoomInput(this.value)">
             <button class="zoom-btn" onclick="stepZoom(0.08)">+</button>
-            <button class="action-btn-sm" id="noiseSensitivityBtn" onclick="toggleNoiseSensitivity()" title="Toggle strict background noise cutoff">Noise: Normal</button>
           </div>
 
           <!-- Circular Avatar Preview -->
@@ -519,7 +551,7 @@
             </div>
             <div class="preview-details">
               <div class="preview-title">Live Circle Preview</div>
-              <div class="preview-desc">Transparent 400×400 PNG. Standardized head size guarantees professional, uniform presentation across slides and web.</div>
+              <div class="preview-desc">Large face proportion (~80% face) eliminates shoulders and distracting shirt colors, creating uniform, recognizable avatars for Google Slides.</div>
             </div>
           </div>
         </div>
@@ -561,6 +593,8 @@
     var toolMode = 'pan'; // 'pan' or 'erase'
     var eraserSize = 28;
     var undoStack = [];
+    var fadeShirt = true;  // Default: softly dissolve lower neck/shirt to eliminate colorful tops
+    var clubKit = false;   // Optional: draw standard Laburnum CC polo collar
 
     // Framing state
     var baseScale = 1;
@@ -576,10 +610,11 @@
     var isErasing = false;
     var cursorCoord = null;
 
-    // Head framing guide metrics (within 400x400 space)
-    var GUIDE_TOP_Y = 60;      // Crown of head
-    var GUIDE_CHIN_Y = 270;    // Chin
-    var GUIDE_EYE_Y = 160;     // Eye line
+    // Head framing guide metrics (within 400x400 space) - TIGHT FACE CROP
+    // Head occupies 306px out of 384px circle (~80% face!), completely cropping out shoulders and upper body!
+    var GUIDE_TOP_Y = 24;      // Crown of head
+    var GUIDE_CHIN_Y = 330;    // Chin
+    var GUIDE_EYE_Y = 170;     // Eye line
     var GUIDE_CENTER_X = 200;  // Nose / center line
     var GUIDE_CIRCLE_R = 192;  // Circle avatar crop radius
 
@@ -696,9 +731,7 @@
       var maskImgData = maskCtx.getImageData(0, 0, w, h);
       var d = maskImgData.data;
 
-      // Strict noise cutoff thresholds:
-      // 'normal': wipes noise < 33%, smoothsteps to solid at 65%
-      // 'aggressive': wipes noise < 48%, smoothsteps to solid at 72%
+      // Strict noise cutoff thresholds
       var isAggressive = (noiseSensitivity === 'aggressive');
       var lowThresh = isAggressive ? 122 : 84;
       var highThresh = isAggressive ? 184 : 166;
@@ -706,7 +739,6 @@
 
       for (var i = 0; i < d.length; i += 4) {
         var a = d[i + 3];
-        // Handle luminance mask if alpha is flat
         if (a === 255 && d[i] !== 255) a = d[i];
 
         if (a <= lowThresh) {
@@ -756,7 +788,7 @@
       checkReady();
     }
 
-    // Automatically estimates head position from cutout and centers within Top of Head & Chin markers
+    // Automatically estimates head position and scales face up to fill the 306px Big Face guide
     function autoFitToGuides() {
       if (!imgLoaded) return;
       var w = cutoutCanvas.width;
@@ -785,14 +817,12 @@
         var centerX = (minX + maxX) / 2;
 
         // Estimate head crown to chin height:
-        // For upper body portraits, head height is ~40-50% of the upper torso height, or ~1.1x shoulder width
-        var estimatedHeadH = Math.min(subjectH * 0.48, subjectW * 1.15);
-        if (estimatedHeadH < 50) estimatedHeadH = subjectH;
+        var estimatedHeadH = Math.min(subjectH * 0.52, subjectW * 1.15);
+        if (estimatedHeadH < 60) estimatedHeadH = subjectH;
 
-        // Target: top of head at Y = 60, chin at Y = 270 (guide head height = 210)
+        // Target: crown at Y = 24, chin at Y = 330 (target head height = 306px)
         var desiredScale = (GUIDE_CHIN_Y - GUIDE_TOP_Y) / estimatedHeadH;
-        // Clamp scale to practical bounds
-        desiredScale = Math.max(0.35, Math.min(2.8, desiredScale));
+        desiredScale = Math.max(0.45, Math.min(3.8, desiredScale));
 
         baseScale = desiredScale;
         zoomMultiplier = 1;
@@ -801,7 +831,7 @@
         // Center face horizontally
         panX = -(centerX - w / 2) * baseScale;
 
-        // Align crown with Top of Head guide (Y = 60)
+        // Align crown with Top of Head guide (Y = 24)
         panY = GUIDE_TOP_Y - 200 + (h / 2 - topY) * baseScale;
       } else {
         baseScale = 400 / Math.max(w, h);
@@ -833,9 +863,17 @@
       var cx = 200 + panX;
       var cy = 200 + panY;
 
-      // 1. Render clean cutout to exportCanvas (strictly no guides or overlays)
+      // 1. Render clean cutout to exportCanvas (strictly no guides or crop masks)
       exportCtx.clearRect(0, 0, 400, 400);
       exportCtx.drawImage(cutoutCanvas, cx - w / 2, cy - h / 2, w, h);
+
+      // Apply shirt handling on exportCanvas
+      if (fadeShirt && !clubKit) {
+        applyShirtFade(exportCtx);
+      }
+      if (clubKit) {
+        drawClubCollar(exportCtx);
+      }
 
       // 2. Update Live Circle Avatar Preview
       document.getElementById("previewImg").src = exportCanvas.toDataURL("image/png");
@@ -853,7 +891,48 @@
       }
     }
 
-    // Draws professional headshot alignment markers & darkened circular crop vignette
+    // Softly fades the lower neck / shirt below Y=330 to transparent, dissolving away distracting tops
+    function applyShirtFade(c) {
+      c.save();
+      c.globalCompositeOperation = "destination-out";
+      var grad = c.createLinearGradient(0, 330, 0, 390);
+      grad.addColorStop(0, "rgba(0, 0, 0, 0)");
+      grad.addColorStop(0.35, "rgba(0, 0, 0, 0.25)");
+      grad.addColorStop(0.75, "rgba(0, 0, 0, 0.75)");
+      grad.addColorStop(1, "rgba(0, 0, 0, 1.0)");
+      c.fillStyle = grad;
+      c.fillRect(0, 330, 400, 70);
+      c.restore();
+    }
+
+    // Draws standardized Laburnum CC maroon polo collar with gold piping
+    function drawClubCollar(c) {
+      c.save();
+      c.fillStyle = "#4d0012";
+      c.strokeStyle = "#fac218";
+      c.lineWidth = 2.5;
+
+      c.beginPath();
+      c.moveTo(70, 395);
+      c.quadraticCurveTo(130, 355, 165, 340);
+      c.lineTo(200, 382);
+      c.lineTo(235, 340);
+      c.quadraticCurveTo(270, 355, 330, 395);
+      c.lineTo(70, 395);
+      c.closePath();
+      c.fill();
+      c.stroke();
+
+      c.beginPath();
+      c.moveTo(200, 382);
+      c.lineTo(200, 398);
+      c.strokeStyle = "#fac218";
+      c.lineWidth = 2;
+      c.stroke();
+      c.restore();
+    }
+
+    // Draws big face alignment markers & darkened circular crop vignette
     function drawFramingGuides(c) {
       c.save();
 
@@ -872,9 +951,9 @@
       c.lineWidth = 2.5;
       c.stroke();
 
-      // C. Face silhouette / target oval
+      // C. Big Face silhouette / target oval (spans from Y=24 to Y=330)
       c.beginPath();
-      c.ellipse(GUIDE_CENTER_X, (GUIDE_TOP_Y + GUIDE_CHIN_Y) / 2, 78, 105, 0, 0, Math.PI * 2);
+      c.ellipse(GUIDE_CENTER_X, (GUIDE_TOP_Y + GUIDE_CHIN_Y) / 2, 112, 153, 0, 0, Math.PI * 2);
       c.setLineDash([4, 4]);
       c.strokeStyle = "rgba(250, 194, 24, 0.4)";
       c.lineWidth = 1.5;
@@ -883,8 +962,8 @@
 
       // D. Vertical center axis (for nose/facial symmetry)
       c.beginPath();
-      c.moveTo(GUIDE_CENTER_X, 36);
-      c.lineTo(GUIDE_CENTER_X, 320);
+      c.moveTo(GUIDE_CENTER_X, 15);
+      c.lineTo(GUIDE_CENTER_X, 345);
       c.setLineDash([3, 4]);
       c.strokeStyle = "rgba(255, 255, 255, 0.4)";
       c.lineWidth = 1;
@@ -893,8 +972,8 @@
 
       // E. Eye Level guideline
       c.beginPath();
-      c.moveTo(110, GUIDE_EYE_Y);
-      c.lineTo(290, GUIDE_EYE_Y);
+      c.moveTo(80, GUIDE_EYE_Y);
+      c.lineTo(320, GUIDE_EYE_Y);
       c.setLineDash([2, 3]);
       c.strokeStyle = "rgba(255, 255, 255, 0.65)";
       c.lineWidth = 1;
@@ -902,23 +981,23 @@
       c.setLineDash([]);
       drawPillBadge(c, "EYE LEVEL", GUIDE_CENTER_X, GUIDE_EYE_Y, "rgba(20, 0, 5, 0.65)", "#ffffff", 9);
 
-      // F. Top of Head guideline (bracket + badge)
+      // F. Top of Head guideline (bracket + badge) at Y = 24
       c.beginPath();
-      c.moveTo(90, GUIDE_TOP_Y + 8);
-      c.lineTo(90, GUIDE_TOP_Y);
-      c.lineTo(310, GUIDE_TOP_Y);
-      c.lineTo(310, GUIDE_TOP_Y + 8);
+      c.moveTo(85, GUIDE_TOP_Y + 10);
+      c.lineTo(85, GUIDE_TOP_Y);
+      c.lineTo(315, GUIDE_TOP_Y);
+      c.lineTo(315, GUIDE_TOP_Y + 10);
       c.strokeStyle = "#fac218";
       c.lineWidth = 2;
       c.stroke();
-      drawPillBadge(c, "▲ TOP OF HEAD", GUIDE_CENTER_X, GUIDE_TOP_Y - 12, "#4d0012", "#fac218", 10, true);
+      drawPillBadge(c, "▲ TOP OF HEAD", GUIDE_CENTER_X, GUIDE_TOP_Y - 10, "#4d0012", "#fac218", 10, true);
 
-      // G. Chin guideline (bracket + badge)
+      // G. Chin guideline (bracket + badge) at Y = 330
       c.beginPath();
-      c.moveTo(100, GUIDE_CHIN_Y - 8);
-      c.lineTo(100, GUIDE_CHIN_Y);
-      c.lineTo(300, GUIDE_CHIN_Y);
-      c.lineTo(300, GUIDE_CHIN_Y - 8);
+      c.moveTo(95, GUIDE_CHIN_Y - 10);
+      c.lineTo(95, GUIDE_CHIN_Y);
+      c.lineTo(305, GUIDE_CHIN_Y);
+      c.lineTo(305, GUIDE_CHIN_Y - 10);
       c.strokeStyle = "#fac218";
       c.lineWidth = 2;
       c.stroke();
@@ -931,7 +1010,7 @@
       c.save();
       c.font = "bold " + fontSize + "px 'Hanken Grotesk', sans-serif";
       var textW = c.measureText(text).width;
-      var padX = 8, padY = 4;
+      var padX = 8, padY = 3;
       var w = textW + padX * 2;
       var h = fontSize + padY * 2;
       var rx = x - w / 2;
@@ -980,6 +1059,22 @@
     function toggleGuides() {
       showGuides = !showGuides;
       document.getElementById("guidesToggleBtn").innerText = showGuides ? "👁️ Guides: ON" : "👁️ Guides: OFF";
+      render();
+    }
+
+    function toggleFadeShirt() {
+      fadeShirt = !fadeShirt;
+      var btn = document.getElementById("fadeShirtBtn");
+      btn.innerText = fadeShirt ? "Fade Shirt: ON" : "Fade Shirt: OFF";
+      btn.className = "action-btn-sm" + (fadeShirt ? " active-toggle" : "");
+      render();
+    }
+
+    function toggleClubKit() {
+      clubKit = !clubKit;
+      var btn = document.getElementById("clubKitBtn");
+      btn.innerText = clubKit ? "Club Collar: ON" : "Club Collar: OFF";
+      btn.className = "action-btn-sm" + (clubKit ? " active-toggle" : "");
       render();
     }
 
@@ -1050,7 +1145,7 @@
 
     function stepZoom(delta) {
       var slider = document.getElementById("zoomSlider");
-      var val = Math.max(0.4, Math.min(3.5, parseFloat(slider.value) + delta));
+      var val = Math.max(0.4, Math.min(4.0, parseFloat(slider.value) + delta));
       slider.value = val;
       onZoomInput(val);
     }
@@ -1163,7 +1258,7 @@
         if (lastTouchDist > 0) {
           var factor = dist / lastTouchDist;
           var slider = document.getElementById("zoomSlider");
-          var newVal = Math.max(0.4, Math.min(3.5, zoomMultiplier * factor));
+          var newVal = Math.max(0.4, Math.min(4.0, zoomMultiplier * factor));
           slider.value = newVal;
           onZoomInput(newVal);
         }

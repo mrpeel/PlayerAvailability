@@ -4209,36 +4209,37 @@ function showPhotoStudioDialog() {
     '<style>' +
     '  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }' +
     '  body { padding: 12px 16px; background: #fafafa; color: #222; overflow-y: hidden; user-select: none; }' +
-    '  .grid { display: grid; grid-template-columns: 290px 1fr; gap: 14px; height: 490px; }' +
-    '  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }' +
+    '  .grid { display: grid; grid-template-columns: 290px 1fr; gap: 14px; height: 505px; }' +
+    '  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }' +
     '  .card h3 { font-size: 13px; font-weight: 700; color: #4d0012; margin-bottom: 2px; }' +
     '  label { font-size: 11px; font-weight: 600; color: #555; display: block; margin-bottom: 2px; }' +
     '  select { width: 100%; padding: 7px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; font-weight: 600; }' +
-    '  .drop-zone { border: 2px dashed #4d0012; border-radius: 8px; padding: 14px 10px; text-align: center; background: #fff9e6; cursor: pointer; transition: all 0.2s; }' +
+    '  .drop-zone { border: 2px dashed #4d0012; border-radius: 8px; padding: 12px 10px; text-align: center; background: #fff9e6; cursor: pointer; transition: all 0.2s; }' +
     '  .drop-zone:hover { background: #fff2cc; }' +
     '  .canvas-container { position: relative; width: 360px; height: 360px; margin: 0 auto; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 14px 14px; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }' +
     '  canvas#cropCanvas { width: 100%; height: 100%; cursor: grab; display: block; }' +
     '  canvas#cropCanvas.grabbing { cursor: grabbing; }' +
     '  canvas#cropCanvas.eraser-mode { cursor: crosshair; }' +
-    '  .preview-row { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; padding: 8px 12px; margin-top: 4px; }' +
-    '  .preview-circle { width: 64px; height: 64px; min-width: 64px; border-radius: 50%; border: 3px solid #fac218; box-shadow: 0 2px 6px rgba(0,0,0,0.15); overflow: hidden; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 8px 8px; }' +
+    '  .preview-row { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; padding: 6px 10px; margin-top: 2px; }' +
+    '  .preview-circle { width: 62px; height: 62px; min-width: 62px; border-radius: 50%; border: 3px solid #fac218; box-shadow: 0 2px 6px rgba(0,0,0,0.15); overflow: hidden; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 8px 8px; }' +
     '  .preview-circle img { width: 100%; height: 100%; object-fit: cover; display: block; }' +
     '  .tip-box { font-size: 11px; color: #4d0012; background: #fffdf5; border-left: 3px solid #fac218; padding: 6px 8px; border-radius: 4px; line-height: 1.35; }' +
     '  .controls-bar { display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-wrap: wrap; }' +
     '  .pill-group { display: flex; gap: 2px; background: #eee; padding: 2px; border-radius: 6px; }' +
     '  .pill-btn { padding: 4px 8px; font-size: 11px; font-weight: 700; border-radius: 4px; border: none; background: transparent; color: #555; cursor: pointer; }' +
     '  .pill-btn.active { background: #4d0012; color: #fff; }' +
-    '  .tool-btn { padding: 4px 8px; font-size: 11px; font-weight: 600; border-radius: 5px; border: 1px solid #ccc; background: #fff; color: #333; cursor: pointer; }' +
+    '  .tool-btn { padding: 4px 7px; font-size: 11px; font-weight: 600; border-radius: 5px; border: 1px solid #ccc; background: #fff; color: #333; cursor: pointer; }' +
+    '  .tool-btn.active-opt { background: #4d0012; color: #fac218; border-color: #4d0012; }' +
     '  .tool-btn:hover { background: #f0f0f0; }' +
-    '  .slider-row { display: flex; align-items: center; gap: 6px; width: 100%; background: #f5f5f5; padding: 6px 10px; border-radius: 6px; }' +
+    '  .slider-row { display: flex; align-items: center; gap: 6px; width: 100%; background: #f5f5f5; padding: 5px 8px; border-radius: 6px; }' +
     '  .slider-row input[type="range"] { flex: 1; accent-color: #4d0012; cursor: pointer; }' +
-    '  .eraser-panel { display: none; align-items: center; justify-content: space-between; gap: 6px; background: #fff0f3; border: 1px solid #ffd0d8; padding: 6px 10px; border-radius: 6px; font-size: 11px; }' +
+    '  .eraser-panel { display: none; align-items: center; justify-content: space-between; gap: 6px; background: #fff0f3; border: 1px solid #ffd0d8; padding: 5px 8px; border-radius: 6px; font-size: 11px; }' +
     '  .eraser-panel.show { display: flex; }' +
-    '  .brush-dot { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #ccc; background: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }' +
+    '  .brush-dot { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid #ccc; background: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }' +
     '  .brush-dot.active { border-color: #4d0012; background: #fff0be; }' +
     '  .brush-dot-inner { background: #4d0012; border-radius: 50%; }' +
-    '  .actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e0e0e0; }' +
-    '  button { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }' +
+    '  .actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 6px; padding-top: 6px; border-top: 1px solid #e0e0e0; }' +
+    '  button { padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }' +
     '  .btn-primary { background: #4d0012; color: #fff; }' +
     '  .btn-primary:hover:not(:disabled) { background: #35000c; }' +
     '  .btn-primary:disabled { background: #ccc; cursor: not-allowed; }' +
@@ -4264,14 +4265,21 @@ function showPhotoStudioDialog() {
     '    <div>' +
     '      <h3>2. Upload Photo</h3>' +
     '      <div class="drop-zone" onclick="document.getElementById(\'fileInput\').click()">' +
-    '        <div style="font-size: 24px; margin-bottom: 2px;">📷</div>' +
+    '        <div style="font-size: 22px; margin-bottom: 2px;">📷</div>' +
     '        <p style="font-size: 12px; font-weight: 700; color: #4d0012;">Click to Upload or Snap</p>' +
-    '        <p style="font-size: 10px; color: #666;">AI automatically removes background</p>' +
+    '        <p style="font-size: 10px; color: #666;">AI cuts background & zooms face</p>' +
     '      </div>' +
     '      <input type="file" id="fileInput" accept="image/*" style="display:none;" onchange="handleFile(this.files[0])">' +
     '    </div>' +
     '    <div class="tip-box">' +
-    '      <strong>📏 Framing Rule:</strong> Fit head between <strong>▲ TOP OF HEAD</strong> and <strong>▼ CHIN</strong> markers so every player has the exact same head size across team slides.' +
+    '      <strong>📏 Big Face Rule:</strong> Face fills ~80% of avatar (crown at <strong>▲ TOP</strong>, jaw at <strong>▼ CHIN</strong>). Crops out shoulders and eliminates distracting shirt colors!' +
+    '    </div>' +
+    '    <div>' +
+    '      <label>Shirt Handling:</label>' +
+    '      <div style="display:flex; gap:4px;">' +
+    '        <button class="tool-btn active-opt" id="btnFadeShirt" onclick="toggleFadeShirt()" style="flex:1;">Fade Shirt: ON</button>' +
+    '        <button class="tool-btn" id="btnClubKit" onclick="toggleClubKit()" style="flex:1;">Club Collar: OFF</button>' +
+    '      </div>' +
     '    </div>' +
     '    <div>' +
     '      <label>Editing Tool:</label>' +
@@ -4290,7 +4298,7 @@ function showPhotoStudioDialog() {
     '      <button class="tool-btn" onclick="undo()" id="undoBtn" disabled>↩ Undo</button>' +
     '    </div>' +
     '    <div>' +
-    '      <label>Cutout Noise Filter:</label>' +
+    '      <label>Noise Filter:</label>' +
     '      <button class="tool-btn" id="noiseBtn" onclick="toggleNoise()" style="width:100%; text-align:center;">Noise Cutoff: Standard</button>' +
     '    </div>' +
     '  </div>' +
@@ -4314,7 +4322,7 @@ function showPhotoStudioDialog() {
     '    <div class="slider-row">' +
     '      <label style="margin:0; font-size:11px;">Zoom:</label>' +
     '      <button class="tool-btn" onclick="stepZoom(-0.08)" style="padding:2px 8px;">-</button>' +
-    '      <input type="range" id="zoomSlider" min="0.4" max="3.5" step="0.02" value="1" oninput="onZoom(this.value)">' +
+    '      <input type="range" id="zoomSlider" min="0.4" max="4.0" step="0.02" value="1" oninput="onZoom(this.value)">' +
     '      <button class="tool-btn" onclick="stepZoom(0.08)" style="padding:2px 8px;">+</button>' +
     '    </div>' +
     '    <div class="preview-row" style="width:100%;">' +
@@ -4323,7 +4331,7 @@ function showPhotoStudioDialog() {
     '      </div>' +
     '      <div style="font-size:11px; color:#555; line-height:1.3;">' +
     '        <strong style="color:#4d0012;">Circle Avatar Output</strong><br>' +
-    '        Uniform 400×400 transparent PNG synced to Google Drive & Slides.' +
+    '        Big face proportion eliminates shoulders & shirts for clean Google Slides sync.' +
     '      </div>' +
     '    </div>' +
     '  </div>' +
@@ -4345,6 +4353,8 @@ function showPhotoStudioDialog() {
     '  var toolMode = "pan";' +
     '  var brushSize = 28;' +
     '  var undoStack = [];' +
+    '  var fadeShirt = true;' +
+    '  var clubKit = false;' +
     '  var baseScale = 1;' +
     '  var zoomMultiplier = 1;' +
     '  var panX = 0, panY = 0;' +
@@ -4353,7 +4363,7 @@ function showPhotoStudioDialog() {
     '  var startMouseX = 0, startMouseY = 0;' +
     '  var startPanX = 0, startPanY = 0;' +
     '  var cursorCoord = null;' +
-    '  var GUIDE_TOP_Y = 60, GUIDE_CHIN_Y = 270, GUIDE_EYE_Y = 160, GUIDE_CENTER_X = 200, GUIDE_CIRCLE_R = 192;' +
+    '  var GUIDE_TOP_Y = 24, GUIDE_CHIN_Y = 330, GUIDE_EYE_Y = 170, GUIDE_CENTER_X = 200, GUIDE_CIRCLE_R = 192;' +
     '  var canvas = document.getElementById("cropCanvas");' +
     '  var ctx = canvas.getContext("2d");' +
     '  var normCanvas = document.createElement("canvas");' +
@@ -4504,10 +4514,10 @@ function showPhotoStudioDialog() {
     '    }' +
     '    if (topY !== -1 && bottomY > topY) {' +
     '      var subH = bottomY - topY, subW = maxX - minX, centerX = (minX + maxX) / 2;' +
-    '      var estHeadH = Math.min(subH * 0.48, subW * 1.15);' +
-    '      if (estHeadH < 50) estHeadH = subH;' +
+    '      var estHeadH = Math.min(subH * 0.52, subW * 1.15);' +
+    '      if (estHeadH < 60) estHeadH = subH;' +
     '      var desiredScale = (GUIDE_CHIN_Y - GUIDE_TOP_Y) / estHeadH;' +
-    '      baseScale = Math.max(0.35, Math.min(2.8, desiredScale));' +
+    '      baseScale = Math.max(0.45, Math.min(3.8, desiredScale));' +
     '      zoomMultiplier = 1;' +
     '      document.getElementById("zoomSlider").value = 1;' +
     '      panX = -(centerX - w / 2) * baseScale;' +
@@ -4535,11 +4545,41 @@ function showPhotoStudioDialog() {
     '    var cy = 200 + panY;' +
     '    exportCtx.clearRect(0, 0, 400, 400);' +
     '    exportCtx.drawImage(cutoutCanvas, cx - w / 2, cy - h / 2, w, h);' +
+    '    if (fadeShirt && !clubKit) {' +
+    '      applyShirtFade(exportCtx);' +
+    '    }' +
+    '    if (clubKit) {' +
+    '      drawClubCollar(exportCtx);' +
+    '    }' +
     '    document.getElementById("previewImg").src = exportCanvas.toDataURL("image/png");' +
     '    ctx.clearRect(0, 0, 400, 400);' +
     '    ctx.drawImage(exportCanvas, 0, 0);' +
     '    if (showGuides) drawGuides(ctx);' +
     '    if (toolMode === "erase" && cursorCoord) drawEraser(ctx, cursorCoord.x, cursorCoord.y);' +
+    '  }' +
+    '  function applyShirtFade(c) {' +
+    '    c.save();' +
+    '    c.globalCompositeOperation = "destination-out";' +
+    '    var grad = c.createLinearGradient(0, 330, 0, 390);' +
+    '    grad.addColorStop(0, "rgba(0, 0, 0, 0)");' +
+    '    grad.addColorStop(0.35, "rgba(0, 0, 0, 0.25)");' +
+    '    grad.addColorStop(0.75, "rgba(0, 0, 0, 0.75)");' +
+    '    grad.addColorStop(1, "rgba(0, 0, 0, 1.0)");' +
+    '    c.fillStyle = grad;' +
+    '    c.fillRect(0, 330, 400, 70);' +
+    '    c.restore();' +
+    '  }' +
+    '  function drawClubCollar(c) {' +
+    '    c.save();' +
+    '    c.fillStyle = "#4d0012"; c.strokeStyle = "#fac218"; c.lineWidth = 2.5;' +
+    '    c.beginPath();' +
+    '    c.moveTo(70, 395); c.quadraticCurveTo(130, 355, 165, 340);' +
+    '    c.lineTo(200, 382); c.lineTo(235, 340);' +
+    '    c.quadraticCurveTo(270, 355, 330, 395);' +
+    '    c.lineTo(70, 395); c.closePath();' +
+    '    c.fill(); c.stroke();' +
+    '    c.beginPath(); c.moveTo(200, 382); c.lineTo(200, 398); c.strokeStyle = "#fac218"; c.lineWidth = 2; c.stroke();' +
+    '    c.restore();' +
     '  }' +
     '  function drawGuides(c) {' +
     '    c.save();' +
@@ -4555,32 +4595,32 @@ function showPhotoStudioDialog() {
     '    c.lineWidth = 2.5;' +
     '    c.stroke();' +
     '    c.beginPath();' +
-    '    c.ellipse(GUIDE_CENTER_X, (GUIDE_TOP_Y + GUIDE_CHIN_Y) / 2, 78, 105, 0, 0, Math.PI * 2);' +
+    '    c.ellipse(GUIDE_CENTER_X, (GUIDE_TOP_Y + GUIDE_CHIN_Y) / 2, 112, 153, 0, 0, Math.PI * 2);' +
     '    c.setLineDash([4, 4]);' +
     '    c.strokeStyle = "rgba(250, 194, 24, 0.4)";' +
     '    c.lineWidth = 1.5;' +
     '    c.stroke();' +
     '    c.setLineDash([]);' +
     '    c.beginPath();' +
-    '    c.moveTo(GUIDE_CENTER_X, 36);' +
-    '    c.lineTo(GUIDE_CENTER_X, 320);' +
+    '    c.moveTo(GUIDE_CENTER_X, 15);' +
+    '    c.lineTo(GUIDE_CENTER_X, 345);' +
     '    c.setLineDash([3, 4]);' +
     '    c.strokeStyle = "rgba(255, 255, 255, 0.4)";' +
     '    c.lineWidth = 1;' +
     '    c.stroke();' +
     '    c.setLineDash([]);' +
     '    c.beginPath();' +
-    '    c.moveTo(110, GUIDE_EYE_Y); c.lineTo(290, GUIDE_EYE_Y);' +
+    '    c.moveTo(80, GUIDE_EYE_Y); c.lineTo(320, GUIDE_EYE_Y);' +
     '    c.setLineDash([2, 3]);' +
     '    c.strokeStyle = "rgba(255, 255, 255, 0.65)";' +
     '    c.lineWidth = 1; c.stroke(); c.setLineDash([]);' +
     '    drawBadge(c, "EYE LEVEL", GUIDE_CENTER_X, GUIDE_EYE_Y, "rgba(20, 0, 5, 0.65)", "#fff", 9);' +
     '    c.beginPath();' +
-    '    c.moveTo(90, GUIDE_TOP_Y + 8); c.lineTo(90, GUIDE_TOP_Y); c.lineTo(310, GUIDE_TOP_Y); c.lineTo(310, GUIDE_TOP_Y + 8);' +
+    '    c.moveTo(85, GUIDE_TOP_Y + 10); c.lineTo(85, GUIDE_TOP_Y); c.lineTo(315, GUIDE_TOP_Y); c.lineTo(315, GUIDE_TOP_Y + 10);' +
     '    c.strokeStyle = "#fac218"; c.lineWidth = 2; c.stroke();' +
-    '    drawBadge(c, "▲ TOP OF HEAD", GUIDE_CENTER_X, GUIDE_TOP_Y - 12, "#4d0012", "#fac218", 10, true);' +
+    '    drawBadge(c, "▲ TOP OF HEAD", GUIDE_CENTER_X, GUIDE_TOP_Y - 10, "#4d0012", "#fac218", 10, true);' +
     '    c.beginPath();' +
-    '    c.moveTo(100, GUIDE_CHIN_Y - 8); c.lineTo(100, GUIDE_CHIN_Y); c.lineTo(300, GUIDE_CHIN_Y); c.lineTo(300, GUIDE_CHIN_Y - 8);' +
+    '    c.moveTo(95, GUIDE_CHIN_Y - 10); c.lineTo(95, GUIDE_CHIN_Y); c.lineTo(305, GUIDE_CHIN_Y); c.lineTo(305, GUIDE_CHIN_Y - 10);' +
     '    c.strokeStyle = "#fac218"; c.lineWidth = 2; c.stroke();' +
     '    drawBadge(c, "▼ CHIN", GUIDE_CENTER_X, GUIDE_CHIN_Y + 12, "#4d0012", "#fac218", 10, true);' +
     '    c.restore();' +
@@ -4615,6 +4655,20 @@ function showPhotoStudioDialog() {
     '  function toggleGuides() {' +
     '    showGuides = !showGuides;' +
     '    document.getElementById("guidesBtn").innerText = showGuides ? "👁️ Guides: ON" : "👁️ Guides: OFF";' +
+    '    render();' +
+    '  }' +
+    '  function toggleFadeShirt() {' +
+    '    fadeShirt = !fadeShirt;' +
+    '    var btn = document.getElementById("btnFadeShirt");' +
+    '    btn.innerText = fadeShirt ? "Fade Shirt: ON" : "Fade Shirt: OFF";' +
+    '    btn.className = "tool-btn" + (fadeShirt ? " active-opt" : "");' +
+    '    render();' +
+    '  }' +
+    '  function toggleClubKit() {' +
+    '    clubKit = !clubKit;' +
+    '    var btn = document.getElementById("btnClubKit");' +
+    '    btn.innerText = clubKit ? "Club Collar: ON" : "Club Collar: OFF";' +
+    '    btn.className = "tool-btn" + (clubKit ? " active-opt" : "");' +
     '    render();' +
     '  }' +
     '  function toggleNoise() {' +
@@ -4662,7 +4716,7 @@ function showPhotoStudioDialog() {
     '  function onZoom(val) { zoomMultiplier = parseFloat(val); render(); }' +
     '  function stepZoom(d) {' +
     '    var sl = document.getElementById("zoomSlider");' +
-    '    var v = Math.max(0.4, Math.min(3.5, parseFloat(sl.value) + d));' +
+    '    var v = Math.max(0.4, Math.min(4.0, parseFloat(sl.value) + d));' +
     '    sl.value = v; onZoom(v);' +
     '  }' +
     '  function getPos(e) {' +
@@ -4728,7 +4782,7 @@ function showPhotoStudioDialog() {
     '  }' +
     '</script>' +
     '</body></html>'
-  ).setWidth(800).setHeight(560);
+  ).setWidth(800).setHeight(580);
   SpreadsheetApp.getUi().showModalDialog(html, "📸 Player Photo Studio");
 }
 
