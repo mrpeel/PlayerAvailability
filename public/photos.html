@@ -1306,17 +1306,30 @@
         })
       }).then(function(r) { return r.json(); }).then(function(res) {
         btn.innerText = "✅ Saved Successfully!";
-        alert("Player headshot saved directly to Google Drive!\nThis photo will now automatically appear on Google Slides and roster graphics.");
 
-        // Update player status
+        // Update in-memory player status and dropdown item
         var p = playersData.find(function(item) { return item.profileId === pid; });
-        if (p) p.hasPhoto = true;
+        if (p) {
+          p.hasPhoto = true;
+          if (res && res.photoUrl) p.photoUrl = res.photoUrl;
+          var sel = document.getElementById("playerSelect");
+          for (var i = 0; i < sel.options.length; i++) {
+            if (sel.options[i].value === pid) {
+              sel.options[i].innerText = p.fullName + " (Photo ✓)";
+              break;
+            }
+          }
+        }
         onPlayerChange();
+
+        // Reset file input for next player
+        var fileInp = document.getElementById("fileInput");
+        if (fileInp) fileInp.value = "";
 
         setTimeout(function() {
           btn.innerText = "💾 Save Headshot to Google Drive";
           btn.disabled = false;
-        }, 2500);
+        }, 2000);
       }).catch(function(err) {
         btn.disabled = false;
         btn.innerText = "💾 Save Headshot to Google Drive";

@@ -4772,8 +4772,20 @@ function showPhotoStudioDialog() {
     '    var base64 = exportCanvas.toDataURL("image/png");' +
     '    google.script.run.withSuccessHandler(function(res) {' +
     '      btn.innerText = "✅ Saved!";' +
-    '      fb.innerHTML = "<span class=\'toast toast-success\'>✅ Saved to Google Drive!</span>";' +
-    '      setTimeout(function() { google.script.host.close(); }, 1200);' +
+    '      var p = playersData.find(function(item) { return item.profileId === pid; });' +
+    '      if (p) {' +
+    '        p.hasPhoto = true;' +
+    '        if (res && res.photoUrl) p.photoUrl = res.photoUrl;' +
+    '        var sel = document.getElementById("playerSelect");' +
+    '        for (var i = 0; i < sel.options.length; i++) {' +
+    '          if (sel.options[i].value === pid) { sel.options[i].innerText = p.fullName + " (Has Photo ✓)"; break; }' +
+    '        }' +
+    '      }' +
+    '      onPlayerChange();' +
+    '      var fileInp = document.getElementById("fileInput");' +
+    '      if (fileInp) fileInp.value = "";' +
+    '      fb.innerHTML = "<span class=\'toast toast-success\'>✅ Saved to Google Drive! Ready for next player.</span>";' +
+    '      setTimeout(function() { btn.innerText = "💾 Save to Player Profile"; btn.disabled = false; }, 2000);' +
     '    }).withFailureHandler(function(err) {' +
     '      btn.disabled = false;' +
     '      btn.innerText = "💾 Save to Player Profile";' +
