@@ -3361,7 +3361,7 @@ function formatFormatVenue(format, venue) {
 }
 
 
-var TRANSPARENT_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+var TRANSPARENT_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==";
 
 /**
  * Creates an in-memory 1x1 transparent PNG blob. 100% reliable, zero network dependency.
@@ -3556,6 +3556,74 @@ function findBackingShapeForImage(slide, imageEl) {
     Logger.log("findBackingShapeForImage warning: " + e.message);
   }
   return null;
+}
+
+/**
+ * Finds an element on the slide tagged with a specific Alt text Title or Description.
+ */
+function findBackingShapeByTag(slide, tag) {
+  if (!slide || !tag) return null;
+  var tUpper = String(tag).trim().toUpperCase();
+  try {
+    var elements = slide.getPageElements();
+    for (var i = 0; i < elements.length; i++) {
+      var el = elements[i];
+      var title = String(el.getTitle() || "").trim().toUpperCase();
+      var desc = String(el.getDescription() || "").trim().toUpperCase();
+      if (title === tUpper || desc === tUpper) {
+        if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) {
+          return el.asShape();
+        }
+      }
+    }
+  } catch (e) {
+    Logger.log("findBackingShapeByTag warning: " + e.message);
+  }
+  return null;
+}
+
+/**
+ * Moves an element backward in z-order until it sits directly behind targetElement (or its parent group).
+ */
+function sendBehindElement(elementToMove, targetElement, slide) {
+  if (!elementToMove || !targetElement || !slide) return;
+  try {
+    var topTarget = targetElement;
+    if (typeof topTarget.getParentGroup === "function") {
+      var parent = topTarget.getParentGroup();
+      while (parent) {
+        topTarget = parent;
+        if (typeof parent.getParentGroup === "function") {
+          parent = parent.getParentGroup();
+        } else {
+          break;
+        }
+      }
+    }
+
+    var targetId = topTarget.getObjectId();
+    var moveId = elementToMove.getObjectId();
+    if (targetId === moveId) return;
+
+    var elements = slide.getPageElements();
+    var targetIdx = -1;
+    var moveIdx = -1;
+
+    for (var i = 0; i < elements.length; i++) {
+      var id = elements[i].getObjectId();
+      if (id === targetId) targetIdx = i;
+      if (id === moveId) moveIdx = i;
+    }
+
+    if (targetIdx !== -1 && moveIdx !== -1 && moveIdx > targetIdx) {
+      var steps = moveIdx - targetIdx;
+      for (var s = 0; s < steps; s++) {
+        elementToMove.sendBackward();
+      }
+    }
+  } catch (err) {
+    Logger.log("sendBehindElement warning: " + err.message);
+  }
 }
 
 /**
@@ -3858,7 +3926,7 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
     // 1. Element-by-element & Group Alt Text Tag Matching
     var matchedPlayerTags = {};
 
-    function processSlotElements(pNum, shapeEl, imageEl, backingShapeEl) {
+    function processSlotElements(pNum, shapeEl, imageEl, backingShapeEl, parentGrp) {
       matchedPlayerTags[pNum] = true;
       var hasPlayer = false;
       var pInfo = null;
@@ -3880,10 +3948,52 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
         }
       }
 
-      // Resolve backing shape (either passed from group or found spatially on the slide)
-      var backing = backingShapeEl;
+      // Resolve backing shape (either passed from group, by tag, or found spatially on the slide)
+      var bgTag = t.prefix + "_BG_" + pNum;
+      var backing = backingShapeEl || findBackingShapeByTag(slide, bgTag);
       if (!backing && imageEl) {
         backing = findBackingShapeForImage(slide, imageEl);
+      }
+
+      var imgWidth = 0, imgHeight = 0, imgLeft = 0, imgTop = 0;
+      if (imageEl) {
+        try {
+          imgLeft = imageEl.getLeft();
+          imgTop = imageEl.getTop();
+          imgWidth = imageEl.getWidth();
+          imgHeight = imageEl.getHeight();
+        } catch (dimErr) {
+          Logger.log("Could not get image dimensions: " + dimErr.message);
+        }
+      }
+
+      // If no backing shape exists yet, dynamically create an ELLIPSE behind the avatar
+      if (!backing && imageEl && imgWidth > 0 && imgHeight > 0) {
+        try {
+          var size = Math.min(imgWidth, imgHeight);
+          var eLeft = imgLeft + (imgWidth - size) / 2;
+          var eTop = imgTop + (imgHeight - size) / 2;
+          backing = slide.insertShape(SlidesApp.ShapeType.ELLIPSE, eLeft, eTop, size, size);
+          backing.setTitle(bgTag);
+          backing.setDescription(bgTag);
+          try {
+            backing.getBorder().setTransparent();
+          } catch (bErr) {}
+          sendBehindElement(backing, parentGrp || imageEl, slide);
+        } catch (insErr) {
+          Logger.log("Failed to insert backing shape for " + bgTag + ": " + insErr.message);
+        }
+      } else if (backing && imgWidth > 0 && imgHeight > 0) {
+        // Ensure existing backing shape stays aligned with avatar in case it was moved
+        try {
+          var sSize = Math.min(imgWidth, imgHeight);
+          var seLeft = imgLeft + (imgWidth - sSize) / 2;
+          var seTop = imgTop + (imgHeight - sSize) / 2;
+          backing.setLeft(seLeft);
+          backing.setTop(seTop);
+          backing.setWidth(sSize);
+          backing.setHeight(sSize);
+        } catch (alignErr) {}
       }
 
       if (backing) {
@@ -3936,7 +4046,7 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
         // 3. If slotNum is found, extract shape, backing shape and image from the group and process ALL!
         if (slotNum !== null) {
           var extracted = extractShapeAndImageFromGroup(grp);
-          processSlotElements(slotNum, extracted.shape, extracted.image, extracted.backingShape);
+          processSlotElements(slotNum, extracted.shape, extracted.image, extracted.backingShape, grp);
           return;
         }
 
@@ -3962,9 +4072,9 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
       var elSlotNum = extractSlotNumberForTeam(tag, t.prefix);
       if (elSlotNum !== null) {
         if (type === SlidesApp.PageElementType.SHAPE) {
-          processSlotElements(elSlotNum, el, null, null);
+          processSlotElements(elSlotNum, el, null, null, null);
         } else if (type === SlidesApp.PageElementType.IMAGE) {
-          processSlotElements(elSlotNum, null, el, null);
+          processSlotElements(elSlotNum, null, el, null, null);
         }
       }
     });
@@ -4018,7 +4128,7 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
           var grpEl = gIdx < sortedGroups.length ? sortedGroups[gIdx] : null;
           if (grpEl) {
             var extracted = extractShapeAndImageFromGroup(grpEl);
-            processSlotElements(gIdx + 1, extracted.shape, extracted.image, extracted.backingShape);
+            processSlotElements(gIdx + 1, extracted.shape, extracted.image, extracted.backingShape, grpEl);
           }
         }
       } else {
@@ -4030,8 +4140,17 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
         for (var sIdx = 0; sIdx < maxSlots; sIdx++) {
           var shpEl = sIdx < sortedShapes.length ? sortedShapes[sIdx] : null;
           var imgEl = sIdx < sortedImages.length ? sortedImages[sIdx] : null;
-          processSlotElements(sIdx + 1, shpEl, imgEl, null);
+          processSlotElements(sIdx + 1, shpEl, imgEl, null, null);
         }
+      }
+    }
+
+    // Ensure any extra backing shapes on the slide beyond t.players.length are set transparent
+    for (var extraSlot = t.players.length + 1; extraSlot <= 15; extraSlot++) {
+      var extraTag = t.prefix + "_BG_" + extraSlot;
+      var extraBacking = findBackingShapeByTag(slide, extraTag);
+      if (extraBacking) {
+        applyShapeFill(extraBacking, { isTransparent: true });
       }
     }
 

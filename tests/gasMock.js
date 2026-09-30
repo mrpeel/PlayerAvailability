@@ -18,6 +18,11 @@ global.SlidesApp = {
     SHAPE: 'SHAPE',
     IMAGE: 'IMAGE',
     TABLE: 'TABLE'
+  },
+  ShapeType: {
+    ELLIPSE: 'ELLIPSE',
+    RECTANGLE: 'RECTANGLE',
+    TEXT_BOX: 'TEXT_BOX'
   }
 };
 
