@@ -3441,14 +3441,33 @@ function getDriveImageBlob(urlOrId) {
  * 3. Lookup in Headshots Drive Folder by Player Name (<FullName>.jpg/png/jpeg)
  * 4. In-memory Transparent 1x1 PNG Blob
  */
-function resolvePlayerImageBlob(profileId, name, photoUrl) {
+function resolvePlayerImageBlob(profileId, name, photoUrl, headshotsMap) {
   // 1. Direct photoUrl
   if (photoUrl) {
     var blob = getDriveImageBlob(photoUrl);
     if (blob) return blob;
   }
 
-  // 2. Headshots folder lookup
+  // 2. Pre-scanned in-memory map lookup (Instant, 0 network requests)
+  if (headshotsMap) {
+    if (profileId) {
+      var pidKey = String(profileId).trim().toLowerCase();
+      var pFile = headshotsMap[pidKey + ".png"] || headshotsMap[pidKey + ".jpg"] || headshotsMap[pidKey + ".jpeg"] || headshotsMap[pidKey];
+      if (pFile) {
+        try { return pFile.getBlob(); } catch(e){}
+      }
+    }
+    if (name) {
+      var nKey = String(name).replace(/\s*\(.*?\)/g, "").trim().toLowerCase();
+      var nFile = headshotsMap[nKey + ".png"] || headshotsMap[nKey + ".jpg"] || headshotsMap[nKey + ".jpeg"] || headshotsMap[nKey];
+      if (nFile) {
+        try { return nFile.getBlob(); } catch(e){}
+      }
+    }
+    return null;
+  }
+
+  // 3. Headshots folder lookup (fallback if headshotsMap was not provided)
   var folderId = getHeadshotFolderId();
   if (folderId) {
     try {
@@ -3861,6 +3880,25 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
     });
   }
 
+  // Pre-scan headshots folder in Google Drive once to avoid repeated Drive API roundtrips
+  var headshotsMap = {};
+  var folderId = getHeadshotFolderId();
+  if (folderId) {
+    try {
+      var folder = DriveApp.getFolderById(folderId);
+      var allHeadshotFiles = folder.getFiles();
+      while (allHeadshotFiles.hasNext()) {
+        var hf = allHeadshotFiles.next();
+        var hName = hf.getName().toLowerCase();
+        headshotsMap[hName] = hf;
+        var hBase = hName.replace(/\.[^/.]+$/, "");
+        headshotsMap[hBase] = hf;
+      }
+    } catch (folderErr) {
+      Logger.log("Headshot folder scan error: " + folderErr.message);
+    }
+  }
+
   var pres = SlidesApp.openById(presId);
   var slides = pres.getSlides();
 
@@ -3968,7 +4006,10 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
       var bgTag = t.prefix + "_BG_" + pNum;
       var oldBacking = findBackingShapeByTag(slide, bgTag);
       if (oldBacking) {
-        try { oldBacking.remove(); } catch (e) {}
+        try {
+          applyShapeFill(oldBacking, { isTransparent: true });
+          try { oldBacking.getBorder().setTransparent(); } catch (bErr) {}
+        } catch (e) {}
       }
 
       // If the template group itself contains a backing shape element, update its fill
@@ -3985,7 +4026,7 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
           var img = (typeof imageEl.asImage === "function") ? imageEl.asImage() : imageEl;
           var blob = null;
           if (hasPlayer) {
-            blob = resolvePlayerImageBlob(pInfo.profileId, pInfo.name, pInfo.photoUrl);
+            blob = resolvePlayerImageBlob(pInfo.profileId, pInfo.name, pInfo.photoUrl, headshotsMap);
             if (!blob) {
               // Player selected but has no uploaded photo: replace with clean backing circle PNG disc
               blob = getCirclePngBlob(photoBgColor);
@@ -4004,62 +4045,66 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
     }
 
     elements.forEach(function(el) {
-      var type = el.getPageElementType();
-      var tag = String(el.getTitle() || el.getDescription() || "").trim().toUpperCase();
+      try {
+        var type = el.getPageElementType();
+        var tag = String(el.getTitle() || el.getDescription() || "").trim().toUpperCase();
 
-      // A. If it's a GROUP container
-      if (type === SlidesApp.PageElementType.GROUP) {
-        var grp = el.asGroup();
-        var children = grp.getChildren();
+        // A. If it's a GROUP container
+        if (type === SlidesApp.PageElementType.GROUP) {
+          var grp = el.asGroup();
+          var children = grp.getChildren();
 
-        // 1. Check if group itself is tagged with slot ID
-        var slotNum = extractSlotNumberForTeam(tag, t.prefix);
-        
-        // 2. If group itself is not tagged, check if ANY child inside has the slot ID tag
-        if (slotNum === null) {
-          for (var c = 0; c < children.length; c++) {
-            var cTag = String(children[c].getTitle() || children[c].getDescription() || "").trim().toUpperCase();
-            var foundSlot = extractSlotNumberForTeam(cTag, t.prefix);
-            if (foundSlot !== null) {
-              slotNum = foundSlot;
-              break;
+          // 1. Check if group itself is tagged with slot ID
+          var slotNum = extractSlotNumberForTeam(tag, t.prefix);
+          
+          // 2. If group itself is not tagged, check if ANY child inside has the slot ID tag
+          if (slotNum === null) {
+            for (var c = 0; c < children.length; c++) {
+              var cTag = String(children[c].getTitle() || children[c].getDescription() || "").trim().toUpperCase();
+              var foundSlot = extractSlotNumberForTeam(cTag, t.prefix);
+              if (foundSlot !== null) {
+                slotNum = foundSlot;
+                break;
+              }
             }
           }
-        }
 
-        // 3. If slotNum is found, extract shape, backing shape and image from the group and process ALL!
-        if (slotNum !== null) {
-          var extracted = extractShapeAndImageFromGroup(grp);
-          processSlotElements(slotNum, extracted.shape, extracted.image, extracted.backingShape, grp);
+          // 3. If slotNum is found, extract shape, backing shape and image from the group and process ALL!
+          if (slotNum !== null) {
+            var extracted = extractShapeAndImageFromGroup(grp);
+            processSlotElements(slotNum, extracted.shape, extracted.image, extracted.backingShape, grp);
+            return;
+          }
+
           return;
         }
 
-        return;
-      }
-
-      // B. Match concatenated match tags
-      if (tag === t.prefix + "_ROUND_OPPONENT" || tag === t.prefix + "__ROUND_OPPONENT" || tag === "ROUND_OPPONENT") {
-        if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(roundOpponentText);
-      } else if (tag === t.prefix + "_FORMAT_VENUE" || tag === t.prefix + "__FORMAT_VENUE" || tag === "FORMAT_VENUE") {
-        if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(formatVenueText);
-      } else if (tag === t.prefix + "_ROUND" || tag === "ROUND") {
-        if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.round);
-      } else if (tag === t.prefix + "_OPPONENT" || tag === "OPPONENT") {
-        if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.opponent);
-      } else if (tag === t.prefix + "_VENUE" || tag === "VENUE") {
-        if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.venue);
-      } else if (tag === t.prefix + "_FORMAT" || tag === "FORMAT") {
-        if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.format);
-      }
-
-      // C. Match standalone Shape or Image elements tagged with slot ID
-      var elSlotNum = extractSlotNumberForTeam(tag, t.prefix);
-      if (elSlotNum !== null) {
-        if (type === SlidesApp.PageElementType.SHAPE) {
-          processSlotElements(elSlotNum, el, null, null, null);
-        } else if (type === SlidesApp.PageElementType.IMAGE) {
-          processSlotElements(elSlotNum, null, el, null, null);
+        // B. Match concatenated match tags
+        if (tag === t.prefix + "_ROUND_OPPONENT" || tag === t.prefix + "__ROUND_OPPONENT" || tag === "ROUND_OPPONENT") {
+          if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(roundOpponentText);
+        } else if (tag === t.prefix + "_FORMAT_VENUE" || tag === t.prefix + "__FORMAT_VENUE" || tag === "FORMAT_VENUE") {
+          if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(formatVenueText);
+        } else if (tag === t.prefix + "_ROUND" || tag === "ROUND") {
+          if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.round);
+        } else if (tag === t.prefix + "_OPPONENT" || tag === "OPPONENT") {
+          if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.opponent);
+        } else if (tag === t.prefix + "_VENUE" || tag === "VENUE") {
+          if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.venue);
+        } else if (tag === t.prefix + "_FORMAT" || tag === "FORMAT") {
+          if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.format);
         }
+
+        // C. Match standalone Shape or Image elements tagged with slot ID
+        var elSlotNum = extractSlotNumberForTeam(tag, t.prefix);
+        if (elSlotNum !== null) {
+          if (type === SlidesApp.PageElementType.SHAPE) {
+            processSlotElements(elSlotNum, el, null, null, null);
+          } else if (type === SlidesApp.PageElementType.IMAGE) {
+            processSlotElements(elSlotNum, null, el, null, null);
+          }
+        }
+      } catch (elErr) {
+        // Safely ignore missing or stale elements
       }
     });
 
@@ -4070,37 +4115,41 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
       var avatarImages = [];
 
       elements.forEach(function(el) {
-        var type = el.getPageElementType();
-        var tag = String(el.getTitle() || el.getDescription() || "").trim().toUpperCase();
+        try {
+          var type = el.getPageElementType();
+          var tag = String(el.getTitle() || el.getDescription() || "").trim().toUpperCase();
 
-        if (type === SlidesApp.PageElementType.GROUP) {
-          if (el.getTop() < 430) slotGroups.push(el);
-        } else if (type === SlidesApp.PageElementType.SHAPE) {
-          var shp = el.asShape();
-          var txt = shp.getText() ? shp.getText().asString().trim() : "";
-          if (txt.toLowerCase() !== t.teamName.toLowerCase() &&
-              txt.toLowerCase().indexOf("first eleven") === -1 &&
-              txt.toLowerCase().indexOf("second eleven") === -1 &&
-              txt.toLowerCase().indexOf("third eleven") === -1 &&
-              txt.toLowerCase().indexOf("fourth eleven") === -1 &&
-              txt.toLowerCase().indexOf("fifth eleven") === -1 &&
-              txt.toLowerCase().indexOf("t20") === -1 &&
-              txt.indexOf("{{") === -1 &&
-              shp.getTop() < 420) {
-            var w = 0, h = 0;
-            try {
-              w = shp.getWidth();
-              h = shp.getHeight();
-            } catch (e) {}
-            var isBackingCircle = (txt === "" && Math.abs(w - h) < 25 && w < 120);
-            if (!isBackingCircle) {
-              textShapes.push(el);
+          if (type === SlidesApp.PageElementType.GROUP) {
+            if (el.getTop() < 430) slotGroups.push(el);
+          } else if (type === SlidesApp.PageElementType.SHAPE) {
+            var shp = el.asShape();
+            var txt = shp.getText() ? shp.getText().asString().trim() : "";
+            if (txt.toLowerCase() !== t.teamName.toLowerCase() &&
+                txt.toLowerCase().indexOf("first eleven") === -1 &&
+                txt.toLowerCase().indexOf("second eleven") === -1 &&
+                txt.toLowerCase().indexOf("third eleven") === -1 &&
+                txt.toLowerCase().indexOf("fourth eleven") === -1 &&
+                txt.toLowerCase().indexOf("fifth eleven") === -1 &&
+                txt.toLowerCase().indexOf("t20") === -1 &&
+                txt.indexOf("{{") === -1 &&
+                shp.getTop() < 420) {
+              var w = 0, h = 0;
+              try {
+                w = shp.getWidth();
+                h = shp.getHeight();
+              } catch (e) {}
+              var isBackingCircle = (txt === "" && Math.abs(w - h) < 25 && w < 120);
+              if (!isBackingCircle) {
+                textShapes.push(el);
+              }
+            }
+          } else if (type === SlidesApp.PageElementType.IMAGE) {
+            if (el.getWidth() < 220 && el.getHeight() < 220 && el.getTop() < 430) {
+              avatarImages.push(el);
             }
           }
-        } else if (type === SlidesApp.PageElementType.IMAGE) {
-          if (el.getWidth() < 220 && el.getHeight() < 220 && el.getTop() < 430) {
-            avatarImages.push(el);
-          }
+        } catch (spErr) {
+          // Safely ignore missing or stale elements
         }
       });
 
@@ -4131,33 +4180,53 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
 
     // Clean up any stray backing shapes on the slide created by earlier versions
     for (var extraSlot = 1; extraSlot <= 15; extraSlot++) {
-      var extraTag = t.prefix + "_BG_" + extraSlot;
-      var extraBacking = findBackingShapeByTag(slide, extraTag);
-      if (extraBacking) {
-        try { extraBacking.remove(); } catch (e) {}
-      }
+      try {
+        var extraTag = t.prefix + "_BG_" + extraSlot;
+        var extraBacking = findBackingShapeByTag(slide, extraTag);
+        if (extraBacking) {
+          applyShapeFill(extraBacking, { isTransparent: true });
+          try { extraBacking.getBorder().setTransparent(); } catch (bErr) {}
+        }
+      } catch (exErr) {}
     }
 
     // 4. Update any 2x4 Match Info Tables (T20 slides or fixture summary tables)
     elements.forEach(function(el) {
-      if (el.getPageElementType() === SlidesApp.PageElementType.TABLE) {
-        var tbl = el.asTable();
-        for (var r = 0; r < tbl.getNumRows(); r++) {
-          for (var c = 0; c < tbl.getNumColumns(); c++) {
-            var label = tbl.getCell(r, c).getText().asString().trim().toLowerCase();
-            if (label === "round" && c + 1 < tbl.getNumColumns()) {
-              tbl.getCell(r, c + 1).getText().setText(t.round);
-            } else if ((label === "playing" || label === "opponent" || label === "versus" || label === "vs") && c + 1 < tbl.getNumColumns()) {
-              tbl.getCell(r, c + 1).getText().setText(t.opponent);
-            } else if ((label === "ground" || label === "venue") && c + 1 < tbl.getNumColumns()) {
-              tbl.getCell(r, c + 1).getText().setText(t.venue);
-            } else if (label === "format" && c + 1 < tbl.getNumColumns()) {
-              tbl.getCell(r, c + 1).getText().setText(t.format);
+      try {
+        if (el.getPageElementType() === SlidesApp.PageElementType.TABLE) {
+          var tbl = el.asTable();
+          for (var r = 0; r < tbl.getNumRows(); r++) {
+            for (var c = 0; c < tbl.getNumColumns(); c++) {
+              var label = tbl.getCell(r, c).getText().asString().trim().toLowerCase();
+              if (label === "round" && c + 1 < tbl.getNumColumns()) {
+                tbl.getCell(r, c + 1).getText().setText(t.round);
+              } else if ((label === "playing" || label === "opponent" || label === "versus" || label === "vs") && c + 1 < tbl.getNumColumns()) {
+                tbl.getCell(r, c + 1).getText().setText(t.opponent);
+              } else if ((label === "ground" || label === "venue") && c + 1 < tbl.getNumColumns()) {
+                tbl.getCell(r, c + 1).getText().setText(t.venue);
+              } else if (label === "format" && c + 1 < tbl.getNumColumns()) {
+                tbl.getCell(r, c + 1).getText().setText(t.format);
+              }
             }
           }
         }
+      } catch (tblErr) {
+        // Safe guard against stale element
       }
     });
+
+    // 5. Final safe end-of-slide cleanup pass for detached _BG_ shapes
+    try {
+      var finalElements = slide.getPageElements();
+      for (var fIdx = 0; fIdx < finalElements.length; fIdx++) {
+        try {
+          var fTag = String(finalElements[fIdx].getTitle() || finalElements[fIdx].getDescription() || "").toUpperCase();
+          if (fTag.indexOf(t.prefix + "_BG_") === 0) {
+            finalElements[fIdx].remove();
+          }
+        } catch (rmErr) {}
+      }
+    } catch (cleanErr) {}
   });
 
   return { success: true, message: "Successfully synced " + (isT20 ? "2 T20 teams" : "all 5 teams") + " to Google Slides using permanent element IDs!" };
@@ -4408,6 +4477,74 @@ function showSyncSlidesDialog() {
     '    var photoBgColor = document.getElementById("bgHexInput").value || "666666ff";' +
     '    document.getElementById("confirmState").style.display = "none";' +
     '    document.getElementById("loadingState").style.display = "block";' +
+    '    var raw = photoBgColor;' +
+    '    var cleanHex = raw.replace(/^#/, "");' +
+    '    if (cleanHex.length > 6) cleanHex = cleanHex.substring(0, 6);' +
+    '    var color = (raw === "transparent" || raw === "none") ? "transparent" : ("#" + cleanHex);' +
+    '    var loadingMsg = document.querySelector("#loadingState p:first-of-type");' +
+    '    var loadingSub = document.querySelector("#loadingState p:last-of-type");' +
+    '    if (loadingMsg) loadingMsg.innerText = "Preparing player headshot backing discs...";' +
+    '    if (loadingSub) loadingSub.innerText = "Applying backing color (" + color + ") to saved photos...";' +
+    '    google.script.run.withSuccessHandler(function(list) {' +
+    '      var targets = (list || []).filter(function(p) { return p.hasPhoto; });' +
+    '      if (targets.length === 0) {' +
+    '        doSlideSync(selectedRound, photoBgColor);' +
+    '        return;' +
+    '      }' +
+    '      var offscreen = document.createElement("canvas");' +
+    '      offscreen.width = 400; offscreen.height = 400;' +
+    '      var oCtx = offscreen.getContext("2d");' +
+    '      var idx = 0;' +
+    '      function nextPhoto() {' +
+    '        if (idx >= targets.length) {' +
+    '          doSlideSync(selectedRound, photoBgColor);' +
+    '          return;' +
+    '        }' +
+    '        var p = targets[idx];' +
+    '        if (loadingSub) loadingSub.innerText = "Processing headshot (" + (idx + 1) + "/" + targets.length + ") " + p.fullName + "...";' +
+    '        google.script.run.withSuccessHandler(function(b64) {' +
+    '          if (!b64) { idx++; nextPhoto(); return; }' +
+    '          var img = new Image();' +
+    '          img.onload = function() {' +
+    '            oCtx.clearRect(0, 0, 400, 400);' +
+    '            if (color !== "transparent") {' +
+    '              oCtx.save();' +
+    '              oCtx.beginPath();' +
+    '              oCtx.arc(200, 200, 192, 0, Math.PI * 2);' +
+    '              oCtx.fillStyle = color;' +
+    '              oCtx.fill();' +
+    '              oCtx.clip();' +
+    '              oCtx.drawImage(img, 0, 0, 400, 400);' +
+    '              oCtx.restore();' +
+    '            } else {' +
+    '              oCtx.drawImage(img, 0, 0, 400, 400);' +
+    '            }' +
+    '            var newB64 = offscreen.toDataURL("image/png");' +
+    '            google.script.run.withSuccessHandler(function() {' +
+    '              idx++; nextPhoto();' +
+    '            }).withFailureHandler(function(err) {' +
+    '              console.warn(err);' +
+    '              idx++; nextPhoto();' +
+    '            }).savePlayerHeadshot(p.profileId, newB64);' +
+    '          };' +
+    '          img.onerror = function() { idx++; nextPhoto(); };' +
+    '          img.src = b64;' +
+    '        }).withFailureHandler(function(err) {' +
+    '          console.warn(err);' +
+    '          idx++; nextPhoto();' +
+    '        }).getPlayerHeadshotBase64(p.profileId);' +
+    '      }' +
+    '      nextPhoto();' +
+    '    }).withFailureHandler(function(err) {' +
+    '      console.warn("Could not list studio players:", err);' +
+    '      doSlideSync(selectedRound, photoBgColor);' +
+    '    }).getPlayersListForStudio();' +
+    '  }' +
+    '  function doSlideSync(selectedRound, photoBgColor) {' +
+    '    var loadingMsg = document.querySelector("#loadingState p:first-of-type");' +
+    '    var loadingSub = document.querySelector("#loadingState p:last-of-type");' +
+    '    if (loadingMsg) loadingMsg.innerText = "Updating Google Slides presentation...";' +
+    '    if (loadingSub) loadingSub.innerText = "Populating team rosters, match metadata, and player headshots...";' +
     '    google.script.run.withSuccessHandler(function(res) {' +
     '      document.getElementById("loadingState").style.display = "none";' +
     '      document.getElementById("successState").style.display = "block";' +
