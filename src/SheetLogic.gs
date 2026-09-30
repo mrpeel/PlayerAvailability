@@ -4348,26 +4348,6 @@ function showSyncSlidesDialog() {
     '      <select id="roundSelect" onchange="updateTeamsDisplay()"><option value="">Loading rounds...</option></select>' +
     '    </div>' +
     '    <div class="info-row"><span class="label">Teams:</span><span class="value" id="teamsDisplay">Loading...</span></div>' +
-    '    <div class="info-row">' +
-    '      <span class="label">Photo Backing Color:</span>' +
-    '      <div style="display: flex; align-items: center; gap: 8px;">' +
-    '        <input type="color" id="bgColorPicker" style="width: 28px; height: 28px; padding: 0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;" oninput="onColorPickerChange()">' +
-    '        <input type="text" id="bgHexInput" style="width: 95px; padding: 4px 8px; border-radius: 4px; border: 1.5px solid #4d0012; font-family: monospace; font-size: 13px; font-weight: bold;" value="666666ff" oninput="onHexInputChange()">' +
-    '        <div id="colorPreview" style="width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #999; background: #666666;"></div>' +
-    '      </div>' +
-    '    </div>' +
-    '    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 5px; margin-top: 6px;">' +
-    '      <span style="font-size: 11px; color: #777; margin-right: 4px;">Presets:</span>' +
-    '      <button type="button" class="preset-btn" onclick="setPresetColor(\'666666ff\')">Gray (666666ff)</button>' +
-    '      <button type="button" class="preset-btn" onclick="setPresetColor(\'ffffffff\')">White</button>' +
-    '      <button type="button" class="preset-btn" onclick="setPresetColor(\'4d0012ff\')">Maroon</button>' +
-    '      <button type="button" class="preset-btn" onclick="setPresetColor(\'transparent\')">Transparent</button>' +
-    '    </div>' +
-    '    <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #e0e0e0; display: flex; justify-content: space-between; align-items: center;">' +
-    '      <span style="font-size: 12px; color: #555;">Existing photos in Drive:</span>' +
-    '      <button type="button" class="preset-btn" id="batchBakeBtn" onclick="batchBakeBackingColor()" style="background: #fff8e6; border-color: #fac218; color: #4d0012; font-weight: 700; padding: 4px 10px;">⚡ Bake Color into All Saved Photos</button>' +
-    '    </div>' +
-    '    <div id="batchBakeStatus" style="font-size: 11px; color: #4d0012; margin-top: 4px; text-align: right; display: none;"></div>' +
     '  </div>' +
     '  <div class="actions">' +
     '    <button class="btn-secondary" onclick="google.script.host.close()">Cancel</button>' +
@@ -4398,32 +4378,6 @@ function showSyncSlidesDialog() {
     '    var display = meta ? meta.teamsText : "1st, 2nd, 3rd, 4th, 5th Elevens (5 Teams)";' +
     '    var elem = document.getElementById("teamsDisplay");' +
     '    if (elem) elem.innerText = display;' +
-    '  }' +
-    '  function updateColorUI(val) {' +
-    '    var raw = String(val || "666666ff").trim().toLowerCase().replace(/^#/, "");' +
-    '    var hex6 = raw.substring(0, 6);' +
-    '    if (/^[0-9a-f]{6}/.test(raw)) {' +
-    '      document.getElementById("bgColorPicker").value = "#" + hex6;' +
-    '      document.getElementById("colorPreview").style.backgroundColor = "#" + hex6;' +
-    '    } else if (raw === "transparent" || raw === "none") {' +
-    '      document.getElementById("colorPreview").style.backgroundColor = "transparent";' +
-    '    }' +
-    '    document.getElementById("bgHexInput").value = val;' +
-    '  }' +
-    '  function onColorPickerChange() {' +
-    '    var pickerVal = document.getElementById("bgColorPicker").value.replace("#", "");' +
-    '    var current = document.getElementById("bgHexInput").value.replace(/^#/, "");' +
-    '    var alpha = (current.length === 8) ? current.substring(6, 8) : "ff";' +
-    '    var fullHex = pickerVal + alpha;' +
-    '    document.getElementById("bgHexInput").value = fullHex;' +
-    '    document.getElementById("colorPreview").style.backgroundColor = "#" + pickerVal;' +
-    '  }' +
-    '  function onHexInputChange() {' +
-    '    var val = document.getElementById("bgHexInput").value.trim();' +
-    '    updateColorUI(val);' +
-    '  }' +
-    '  function setPresetColor(val) {' +
-    '    updateColorUI(val);' +
     '  }' +
     '  function formatRoundLabel(rnd) {' +
     '    if (!rnd) return "";' +
@@ -4462,11 +4416,6 @@ function showSyncSlidesDialog() {
     '      sel.appendChild(opt);' +
     '    }' +
     '    updateTeamsDisplay();' +
-    '    if (summary.photoBgColor) {' +
-    '      updateColorUI(summary.photoBgColor);' +
-    '    } else {' +
-    '      updateColorUI("666666ff");' +
-    '    }' +
     '  }).getSlidesSyncSummary();' +
     '  function startSync() {' +
     '    var selectedRound = document.getElementById("roundSelect").value;' +
@@ -4474,77 +4423,8 @@ function showSyncSlidesDialog() {
     '      alert("Please select a round to present.");' +
     '      return;' +
     '    }' +
-    '    var photoBgColor = document.getElementById("bgHexInput").value || "666666ff";' +
     '    document.getElementById("confirmState").style.display = "none";' +
     '    document.getElementById("loadingState").style.display = "block";' +
-    '    var raw = photoBgColor;' +
-    '    var cleanHex = raw.replace(/^#/, "");' +
-    '    if (cleanHex.length > 6) cleanHex = cleanHex.substring(0, 6);' +
-    '    var color = (raw === "transparent" || raw === "none") ? "transparent" : ("#" + cleanHex);' +
-    '    var loadingMsg = document.querySelector("#loadingState p:first-of-type");' +
-    '    var loadingSub = document.querySelector("#loadingState p:last-of-type");' +
-    '    if (loadingMsg) loadingMsg.innerText = "Preparing player headshot backing discs...";' +
-    '    if (loadingSub) loadingSub.innerText = "Applying backing color (" + color + ") to saved photos...";' +
-    '    google.script.run.withSuccessHandler(function(list) {' +
-    '      var targets = (list || []).filter(function(p) { return p.hasPhoto; });' +
-    '      if (targets.length === 0) {' +
-    '        doSlideSync(selectedRound, photoBgColor);' +
-    '        return;' +
-    '      }' +
-    '      var offscreen = document.createElement("canvas");' +
-    '      offscreen.width = 400; offscreen.height = 400;' +
-    '      var oCtx = offscreen.getContext("2d");' +
-    '      var idx = 0;' +
-    '      function nextPhoto() {' +
-    '        if (idx >= targets.length) {' +
-    '          doSlideSync(selectedRound, photoBgColor);' +
-    '          return;' +
-    '        }' +
-    '        var p = targets[idx];' +
-    '        if (loadingSub) loadingSub.innerText = "Processing headshot (" + (idx + 1) + "/" + targets.length + ") " + p.fullName + "...";' +
-    '        google.script.run.withSuccessHandler(function(b64) {' +
-    '          if (!b64) { idx++; nextPhoto(); return; }' +
-    '          var img = new Image();' +
-    '          img.onload = function() {' +
-    '            oCtx.clearRect(0, 0, 400, 400);' +
-    '            if (color !== "transparent") {' +
-    '              oCtx.save();' +
-    '              oCtx.beginPath();' +
-    '              oCtx.arc(200, 200, 192, 0, Math.PI * 2);' +
-    '              oCtx.fillStyle = color;' +
-    '              oCtx.fill();' +
-    '              oCtx.clip();' +
-    '              oCtx.drawImage(img, 0, 0, 400, 400);' +
-    '              oCtx.restore();' +
-    '            } else {' +
-    '              oCtx.drawImage(img, 0, 0, 400, 400);' +
-    '            }' +
-    '            var newB64 = offscreen.toDataURL("image/png");' +
-    '            google.script.run.withSuccessHandler(function() {' +
-    '              idx++; nextPhoto();' +
-    '            }).withFailureHandler(function(err) {' +
-    '              console.warn(err);' +
-    '              idx++; nextPhoto();' +
-    '            }).savePlayerHeadshot(p.profileId, newB64);' +
-    '          };' +
-    '          img.onerror = function() { idx++; nextPhoto(); };' +
-    '          img.src = b64;' +
-    '        }).withFailureHandler(function(err) {' +
-    '          console.warn(err);' +
-    '          idx++; nextPhoto();' +
-    '        }).getPlayerHeadshotBase64(p.profileId);' +
-    '      }' +
-    '      nextPhoto();' +
-    '    }).withFailureHandler(function(err) {' +
-    '      console.warn("Could not list studio players:", err);' +
-    '      doSlideSync(selectedRound, photoBgColor);' +
-    '    }).getPlayersListForStudio();' +
-    '  }' +
-    '  function doSlideSync(selectedRound, photoBgColor) {' +
-    '    var loadingMsg = document.querySelector("#loadingState p:first-of-type");' +
-    '    var loadingSub = document.querySelector("#loadingState p:last-of-type");' +
-    '    if (loadingMsg) loadingMsg.innerText = "Updating Google Slides presentation...";' +
-    '    if (loadingSub) loadingSub.innerText = "Populating team rosters, match metadata, and player headshots...";' +
     '    google.script.run.withSuccessHandler(function(res) {' +
     '      document.getElementById("loadingState").style.display = "none";' +
     '      document.getElementById("successState").style.display = "block";' +
@@ -4552,75 +4432,7 @@ function showSyncSlidesDialog() {
     '    }).withFailureHandler(function(err) {' +
     '      alert("Sync Error: " + err.message);' +
     '      google.script.host.close();' +
-    '    }).syncPresentationStagingToSlides(selectedRound, photoBgColor);' +
-    '  }' +
-    '  function batchBakeBackingColor() {' +
-    '    var raw = document.getElementById("bgHexInput").value || "666666ff";' +
-    '    var cleanHex = raw.replace(/^#/, "");' +
-    '    if (cleanHex.length > 6) cleanHex = cleanHex.substring(0, 6);' +
-    '    var color = (raw === "transparent" || raw === "none") ? "transparent" : ("#" + cleanHex);' +
-    '    var btn = document.getElementById("batchBakeBtn");' +
-    '    var status = document.getElementById("batchBakeStatus");' +
-    '    if (!confirm("This will update all saved player photos in Google Drive, baking the circular backing color (" + color + ") directly into each image.\\n\\nContinue?")) return;' +
-    '    btn.disabled = true;' +
-    '    status.style.display = "block";' +
-    '    status.innerText = "Loading players list...";' +
-    '    google.script.run.withSuccessHandler(function(list) {' +
-    '      var targets = (list || []).filter(function(p) { return p.hasPhoto; });' +
-    '      if (targets.length === 0) {' +
-    '        status.innerText = "No saved photos found in Google Drive.";' +
-    '        btn.disabled = false;' +
-    '        return;' +
-    '      }' +
-    '      var offscreen = document.createElement("canvas");' +
-    '      offscreen.width = 400; offscreen.height = 400;' +
-    '      var oCtx = offscreen.getContext("2d");' +
-    '      var idx = 0;' +
-    '      function doNext() {' +
-    '        if (idx >= targets.length) {' +
-    '          status.innerText = "✅ All " + targets.length + " saved photos updated with backing circle!";' +
-    '          btn.disabled = false;' +
-    '          return;' +
-    '        }' +
-    '        var p = targets[idx];' +
-    '        status.innerText = "Updating (" + (idx + 1) + "/" + targets.length + ") " + p.fullName + "...";' +
-    '        google.script.run.withSuccessHandler(function(b64) {' +
-    '          if (!b64) { idx++; doNext(); return; }' +
-    '          var img = new Image();' +
-    '          img.onload = function() {' +
-    '            oCtx.clearRect(0, 0, 400, 400);' +
-    '            if (color !== "transparent") {' +
-    '              oCtx.save();' +
-    '              oCtx.beginPath();' +
-    '              oCtx.arc(200, 200, 192, 0, Math.PI * 2);' +
-    '              oCtx.fillStyle = color;' +
-    '              oCtx.fill();' +
-    '              oCtx.clip();' +
-    '              oCtx.drawImage(img, 0, 0, 400, 400);' +
-    '              oCtx.restore();' +
-    '            } else {' +
-    '              oCtx.drawImage(img, 0, 0, 400, 400);' +
-    '            }' +
-    '            var newB64 = offscreen.toDataURL("image/png");' +
-    '            google.script.run.withSuccessHandler(function() {' +
-    '              idx++;' +
-    '              doNext();' +
-    '            }).withFailureHandler(function(err) {' +
-    '              console.warn(err);' +
-    '              idx++;' +
-    '              doNext();' +
-    '            }).savePlayerHeadshot(p.profileId, newB64);' +
-    '          };' +
-    '          img.onerror = function() { idx++; doNext(); };' +
-    '          img.src = b64;' +
-    '        }).withFailureHandler(function(err) {' +
-    '          console.warn(err);' +
-    '          idx++;' +
-    '          doNext();' +
-    '        }).getPlayerHeadshotBase64(p.profileId);' +
-    '      }' +
-    '      doNext();' +
-    '    }).getPlayersListForStudio();' +
+    '    }).syncPresentationStagingToSlides(selectedRound);' +
     '  }' +
     '  function openSlides() {' +
     '    if (presentationUrl) window.open(presentationUrl, "_blank");' +

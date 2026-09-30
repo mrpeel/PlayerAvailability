@@ -516,18 +516,15 @@
             </div>
           </div>
 
-          <!-- Backing Disc Controls -->
+          <!-- Backing Preview Controls -->
           <div class="shirt-options-row">
-            <label>Backing Color:</label>
+            <label>Studio Preview:</label>
             <div style="display:flex; gap:6px; flex-wrap:wrap;">
-              <button class="action-btn-sm active-toggle" id="bgGrayBtn" onclick="setBackingColor('#666666')">Gray (#666)</button>
-              <button class="action-btn-sm" id="bgMaroonBtn" onclick="setBackingColor('#4d0012')">Maroon</button>
-              <button class="action-btn-sm" id="bgWhiteBtn" onclick="setBackingColor('#ffffff')">White</button>
-              <button class="action-btn-sm" id="bgNoneBtn" onclick="setBackingColor('transparent')">Cutout Only</button>
+              <button class="action-btn-sm active-toggle" id="bgNoneBtn" onclick="setBackingColor('transparent')" title="Pure transparent cutout (recommended)">Cutout (Transparent)</button>
+              <button class="action-btn-sm" id="bgGrayBtn" onclick="setBackingColor('#666666')" title="Preview on Studio Gray backing disc">Gray Circle</button>
+              <button class="action-btn-sm" id="bgMaroonBtn" onclick="setBackingColor('#4d0012')" title="Preview on Maroon backing disc">Maroon Circle</button>
+              <button class="action-btn-sm" id="bgWhiteBtn" onclick="setBackingColor('#ffffff')" title="Preview on White backing disc">White Circle</button>
             </div>
-          </div>
-          <div style="margin-top:2px;">
-            <button class="action-btn-sm" id="batchBackingBtn" onclick="batchApplyBackingToSaved()" style="width:100%; justify-content:center; background:#fff8e6; border-color:var(--gold); color:var(--maroon); font-weight:700;">⚡ Apply Backing Color to All Saved Photos</button>
           </div>
 
           <!-- Eraser Sub-Toolbar -->
@@ -609,7 +606,7 @@
     var undoStack = [];
     var fadeShirt = true;  // Default: softly dissolve lower neck/shirt to eliminate colorful tops
     var clubKit = false;   // Optional: draw standard Laburnum CC polo collar
-    var backingColor = '#666666'; // Default: Studio Gray
+    var backingColor = 'transparent'; // Default: Clean Transparent Cutout
 
     // Framing state
     var baseScale = 1;
@@ -732,7 +729,7 @@
       checkReady();
     }
 
-    // Applies confidence thresholding & smoothstep to eliminate all background noise
+    // Applies clean confidence thresholding, boundary erosion, and defringing to eliminate white halos
     function applyCutoutMask() {
       if (!cachedSegmentationMask) return;
       var w = normCanvas.width;
@@ -746,25 +743,70 @@
       var maskImgData = maskCtx.getImageData(0, 0, w, h);
       var d = maskImgData.data;
 
-      // Strict noise cutoff thresholds
+      var normImgData = normCtx.getImageData(0, 0, w, h);
+      var nd = normImgData.data;
+
+      // Higher thresholds to prevent background wall sampling
       var isAggressive = (noiseSensitivity === 'aggressive');
-      var lowThresh = isAggressive ? 122 : 84;
-      var highThresh = isAggressive ? 184 : 166;
+      var lowThresh = isAggressive ? 145 : 125;
+      var highThresh = isAggressive ? 215 : 195;
       var range = highThresh - lowThresh;
 
+      var rawAlphas = new Uint8ClampedArray(w * h);
       for (var i = 0; i < d.length; i += 4) {
         var a = d[i + 3];
         if (a === 255 && d[i] !== 255) a = d[i];
 
         if (a <= lowThresh) {
-          d[i + 3] = 0; // Completely erase background noise!
+          rawAlphas[i / 4] = 0;
         } else if (a >= highThresh) {
-          d[i + 3] = 255; // 100% solid subject
+          rawAlphas[i / 4] = 255;
         } else {
-          // Smoothstep interpolation for soft hair & collar anti-aliasing
           var t = (a - lowThresh) / range;
-          d[i + 3] = Math.round(t * t * (3 - 2 * t) * 255);
+          rawAlphas[i / 4] = Math.round(t * t * (3 - 2 * t) * 255);
         }
+      }
+
+      // 1-pixel erosion pass: completely strips away the 1-2px outer boundary fringe containing wall color
+      var finalAlphas = new Uint8ClampedArray(w * h);
+      for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          var pIdx = y * w + x;
+          var curA = rawAlphas[pIdx];
+          if (curA === 0) {
+            finalAlphas[pIdx] = 0;
+            continue;
+          }
+
+          if (x === 0 || x === w - 1 || y === 0 || y === h - 1) {
+            finalAlphas[pIdx] = 0;
+            continue;
+          }
+
+          // Check 4-connected neighbors
+          var upA = rawAlphas[pIdx - w];
+          var downA = rawAlphas[pIdx + w];
+          var leftA = rawAlphas[pIdx - 1];
+          var rightA = rawAlphas[pIdx + 1];
+
+          // If directly bordering background (alpha 0), erode by taking the minimum
+          var minNeighbor = Math.min(curA, upA, downA, leftA, rightA);
+          
+          // Defringe: if this boundary pixel is light/white wall color (> 175 in R,G,B) next to background, discard it!
+          var nr = nd[pIdx * 4];
+          var ng = nd[pIdx * 4 + 1];
+          var nb = nd[pIdx * 4 + 2];
+          var isLightWall = (nr > 175 && ng > 175 && nb > 175 && Math.abs(nr - ng) < 20 && Math.abs(ng - nb) < 20);
+          if (isLightWall && (upA < 200 || downA < 200 || leftA < 200 || rightA < 200)) {
+            finalAlphas[pIdx] = 0;
+          } else {
+            finalAlphas[pIdx] = minNeighbor;
+          }
+        }
+      }
+
+      for (var j = 0; j < finalAlphas.length; j++) {
+        d[j * 4 + 3] = finalAlphas[j];
       }
       maskCtx.putImageData(maskImgData, 0, 0);
 
@@ -1120,99 +1162,11 @@
 
     function setBackingColor(color) {
       backingColor = color;
+      document.getElementById("bgNoneBtn").classList.toggle("active-toggle", color === 'transparent');
       document.getElementById("bgGrayBtn").classList.toggle("active-toggle", color === '#666666');
       document.getElementById("bgMaroonBtn").classList.toggle("active-toggle", color === '#4d0012');
       document.getElementById("bgWhiteBtn").classList.toggle("active-toggle", color === '#ffffff');
-      document.getElementById("bgNoneBtn").classList.toggle("active-toggle", color === 'transparent');
       render();
-    }
-
-    function batchApplyBackingToSaved() {
-      var targets = playersData.filter(function(p) { return p.hasPhoto; });
-      if (targets.length === 0) {
-        alert("No players currently have photos uploaded.");
-        return;
-      }
-      var colName = backingColor === "transparent" ? "Cutout Only (Transparent)" : (backingColor === "#666666" ? "Studio Gray (#666666)" : backingColor);
-      if (!confirm("This will update all " + targets.length + " saved player photo(s) in Google Drive with the " + colName + " backing circle.\n\nContinue?")) {
-        return;
-      }
-      var btn = document.getElementById("batchBackingBtn");
-      var originalText = btn.innerText;
-      btn.disabled = true;
-
-      var offscreen = document.createElement("canvas");
-      offscreen.width = 400;
-      offscreen.height = 400;
-      var oCtx = offscreen.getContext("2d");
-      var idx = 0;
-
-      function doNext() {
-        if (idx >= targets.length) {
-          btn.disabled = false;
-          btn.innerText = originalText;
-          showToast("All " + targets.length + " player photos updated with backing circle!", "success");
-          return;
-        }
-        var target = targets[idx];
-        btn.innerText = "⏳ Updating " + (idx + 1) + "/" + targets.length + " (" + target.fullName + ")...";
-
-        fetch(GAS_EXEC_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain" },
-          body: JSON.stringify({
-            action: "getPlayerHeadshotBase64",
-            profileId: target.profileId
-          })
-        }).then(function(r) { return r.json(); }).then(function(res) {
-          if (!res || !res.base64Data) {
-            idx++;
-            doNext();
-            return;
-          }
-          var tempImg = new Image();
-          tempImg.onload = function() {
-            oCtx.clearRect(0, 0, 400, 400);
-            if (backingColor && backingColor !== "transparent") {
-              oCtx.save();
-              oCtx.beginPath();
-              oCtx.arc(200, 200, GUIDE_CIRCLE_R, 0, Math.PI * 2);
-              oCtx.fillStyle = backingColor;
-              oCtx.fill();
-              oCtx.clip();
-              oCtx.drawImage(tempImg, 0, 0, 400, 400);
-              oCtx.restore();
-            } else {
-              oCtx.drawImage(tempImg, 0, 0, 400, 400);
-            }
-            var newB64 = offscreen.toDataURL("image/png");
-            fetch(GAS_EXEC_URL, {
-              method: "POST",
-              headers: { "Content-Type": "text/plain" },
-              body: JSON.stringify({
-                action: "savePlayerHeadshot",
-                profileId: target.profileId,
-                base64Data: newB64
-              })
-            }).then(function() {
-              idx++;
-              doNext();
-            }).catch(function(err) {
-              console.warn("Failed saving batch photo for " + target.fullName, err);
-              idx++;
-              doNext();
-            });
-          };
-          tempImg.onerror = function() { idx++; doNext(); };
-          tempImg.src = res.base64Data;
-        }).catch(function(err) {
-          console.warn("Failed getting base64 for " + target.fullName, err);
-          idx++;
-          doNext();
-        });
-      }
-
-      doNext();
     }
 
     function setEraserSize(size) {
