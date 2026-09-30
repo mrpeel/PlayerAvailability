@@ -2,6 +2,25 @@
  * Jest setup: mock Google Apps Script globals so adapter/integration tests
  * (SheetLogic.gs / Setup.gs) can run locally. Loaded via jest setupFiles.
  */
+var scriptPropertiesStore = {};
+global.PropertiesService = {
+  getScriptProperties: jest.fn(() => ({
+    getProperty: jest.fn(k => scriptPropertiesStore[k] || null),
+    setProperty: jest.fn((k, v) => { scriptPropertiesStore[k] = String(v); }),
+    getProperties: jest.fn(() => scriptPropertiesStore)
+  }))
+};
+
+global.SlidesApp = {
+  openById: jest.fn(),
+  PageElementType: {
+    GROUP: 'GROUP',
+    SHAPE: 'SHAPE',
+    IMAGE: 'IMAGE',
+    TABLE: 'TABLE'
+  }
+};
+
 global.SpreadsheetApp = {
   getActiveSpreadsheet: jest.fn(),
   getUi: jest.fn(() => ({

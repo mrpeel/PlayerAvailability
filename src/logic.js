@@ -1050,6 +1050,69 @@ function formatFormatVenue(format, venue) {
 }
 
 /**
+ * Parses a hex color string (with or without #, 6-digit or 8-digit RRGGBBAA, or 'transparent')
+ * into standard hex, alpha (0.0 to 1.0), and a boolean isTransparent flag.
+ *
+ * Examples:
+ *   "666666ff"    -> { hex: "#666666", alpha: 1.0, isTransparent: false }
+ *   "#666666ff"   -> { hex: "#666666", alpha: 1.0, isTransparent: false }
+ *   "666666"      -> { hex: "#666666", alpha: 1.0, isTransparent: false }
+ *   "ffffff80"    -> { hex: "#ffffff", alpha: 0.5, isTransparent: false }
+ *   "66666600"    -> { hex: "#666666", alpha: 0.0, isTransparent: true }
+ *   "transparent" -> { hex: "#000000", alpha: 0.0, isTransparent: true }
+ *   "none"        -> { hex: "#000000", alpha: 0.0, isTransparent: true }
+ *
+ * @param {string} input - Raw color string
+ * @returns {{hex: string, alpha: number, isTransparent: boolean}}
+ */
+function parseColorHex(input) {
+  if (!input) return { hex: "#666666", alpha: 1.0, isTransparent: false };
+  var str = String(input).trim().toLowerCase().replace(/^#/, "");
+  if (str === "transparent" || str === "none") {
+    return { hex: "#000000", alpha: 0.0, isTransparent: true };
+  }
+  // 8-character hex: RRGGBBAA
+  if (/^[0-9a-f]{8}$/.test(str)) {
+    var hex6 = "#" + str.substring(0, 6);
+    var aByte = parseInt(str.substring(6, 8), 16);
+    var alphaVal = Math.round((aByte / 255.0) * 100) / 100;
+    return {
+      hex: hex6,
+      alpha: alphaVal,
+      isTransparent: alphaVal <= 0.02
+    };
+  }
+  // 6-character hex: RRGGBB
+  if (/^[0-9a-f]{6}$/.test(str)) {
+    return { hex: "#" + str, alpha: 1.0, isTransparent: false };
+  }
+  // 3-character hex: RGB
+  if (/^[0-9a-f]{3}$/.test(str)) {
+    var full = str[0] + str[0] + str[1] + str[1] + str[2] + str[2];
+    return { hex: "#" + full, alpha: 1.0, isTransparent: false };
+  }
+  return { hex: "#666666", alpha: 1.0, isTransparent: false };
+}
+
+/**
+ * Normalizes user input into a clean 8-char RRGGBBAA hex string or 'transparent'.
+ *
+ * @param {string} input
+ * @returns {string}
+ */
+function normalizeHexColor(input) {
+  if (!input) return "666666ff";
+  var str = String(input).trim().toLowerCase().replace(/^#/, "");
+  if (str === "transparent" || str === "none") return "transparent";
+  if (/^[0-9a-f]{8}$/.test(str)) return str;
+  if (/^[0-9a-f]{6}$/.test(str)) return str + "ff";
+  if (/^[0-9a-f]{3}$/.test(str)) {
+    return str[0] + str[0] + str[1] + str[1] + str[2] + str[2] + "ff";
+  }
+  return "666666ff";
+}
+
+/**
  * Processes 2D data from the Fixtures tab into structured, chronological fixture
  * options for round tab initialisation.
  *
@@ -1950,6 +2013,8 @@ if (typeof module !== 'undefined' && module.exports) {
     formatPlayerPresentationName,
     formatRoundOpponent,
     formatFormatVenue,
+    parseColorHex,
+    normalizeHexColor,
     DEFAULT_TEAM_CONFIGS,
     parseCsvString,
     formatTeamPrefix,

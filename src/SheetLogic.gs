@@ -3470,12 +3470,102 @@ function resolvePlayerImageBlob(profileId, name, photoUrl) {
 }
 
 
+var DEFAULT_SLIDES_PHOTO_BG_COLOR = '666666ff';
+
 /**
- * Recursively extracts the primary text Shape and avatar Image from a Group or PageElement.
+ * Gets the configured or remembered player photo backing color for Google Slides.
+ */
+function getSlidesPhotoBgColor() {
+  return PropertiesService.getScriptProperties().getProperty('SLIDES_PHOTO_BG_COLOR') || DEFAULT_SLIDES_PHOTO_BG_COLOR;
+}
+
+/**
+ * Persists the remembered player photo backing color in Script Properties.
+ */
+function setSlidesPhotoBgColor(color) {
+  if (color) {
+    PropertiesService.getScriptProperties().setProperty('SLIDES_PHOTO_BG_COLOR', String(color).trim());
+  }
+}
+
+/**
+ * Applies a solid fill or transparency to a Google Slides Shape.
+ */
+function applyShapeFill(shape, colorObj) {
+  if (!shape || typeof shape.getFill !== "function") return;
+  try {
+    var fill = shape.getFill();
+    if (!fill) return;
+
+    if (colorObj.isTransparent) {
+      if (typeof fill.setTransparent === "function") {
+        fill.setTransparent();
+      }
+    } else {
+      if (typeof fill.setSolidFill === "function") {
+        if (typeof colorObj.alpha === "number" && colorObj.alpha < 0.99) {
+          try {
+            fill.setSolidFill(colorObj.hex, colorObj.alpha);
+          } catch (e) {
+            fill.setSolidFill(colorObj.hex);
+          }
+        } else {
+          fill.setSolidFill(colorObj.hex);
+        }
+      }
+    }
+  } catch (err) {
+    Logger.log("applyShapeFill warning: " + err.message);
+  }
+}
+
+/**
+ * Finds a circular or square backing shape sitting directly behind an image element on the slide.
+ */
+function findBackingShapeForImage(slide, imageEl) {
+  if (!slide || !imageEl) return null;
+  try {
+    var imgLeft = imageEl.getLeft();
+    var imgTop = imageEl.getTop();
+    var imgWidth = imageEl.getWidth();
+    var imgHeight = imageEl.getHeight();
+    var imgCenterX = imgLeft + imgWidth / 2;
+    var imgCenterY = imgTop + imgHeight / 2;
+
+    var elements = slide.getPageElements();
+    for (var i = 0; i < elements.length; i++) {
+      var el = elements[i];
+      if (el.getPageElementType() === SlidesApp.PageElementType.SHAPE) {
+        var shp = el.asShape();
+        var sLeft = shp.getLeft();
+        var sTop = shp.getTop();
+        var sW = shp.getWidth();
+        var sH = shp.getHeight();
+        var sCenterX = sLeft + sW / 2;
+        var sCenterY = sTop + sH / 2;
+
+        // Check if centers are aligned (within 35px) and shape is roughly square/circle (< 1.4 ratio)
+        var dist = Math.sqrt(Math.pow(imgCenterX - sCenterX, 2) + Math.pow(imgCenterY - sCenterY, 2));
+        var ratio = Math.max(sW, sH) / Math.max(1, Math.min(sW, sH));
+        if (dist < 35 && ratio < 1.4) {
+          return shp;
+        }
+      }
+    }
+  } catch (e) {
+    Logger.log("findBackingShapeForImage warning: " + e.message);
+  }
+  return null;
+}
+
+/**
+ * Recursively extracts the primary text Shape, backing Shape (avatar disc), and avatar Image from a Group or PageElement.
  */
 function extractShapeAndImageFromGroup(item) {
-  var grpShape = null;
+  var textShape = null;
+  var backingShape = null;
   var grpImage = null;
+  var shapes = [];
 
   function recurse(el) {
     if (!el) return;
@@ -3498,8 +3588,8 @@ function extractShapeAndImageFromGroup(item) {
         for (var j = 0; j < children.length; j++) {
           recurse(children[j]);
         }
-      } else if (t === SlidesApp.PageElementType.SHAPE && !grpShape) {
-        grpShape = el.asShape();
+      } else if (t === SlidesApp.PageElementType.SHAPE) {
+        shapes.push(el.asShape());
       } else if (t === SlidesApp.PageElementType.IMAGE && !grpImage) {
         grpImage = el.asImage();
       }
@@ -3507,7 +3597,36 @@ function extractShapeAndImageFromGroup(item) {
   }
 
   recurse(item);
-  return { shape: grpShape, image: grpImage };
+
+  if (shapes.length === 1) {
+    textShape = shapes[0];
+  } else if (shapes.length > 1) {
+    // Determine which shape is the text shape (for player name) and which is the backing shape (avatar circle)
+    for (var s = 0; s < shapes.length; s++) {
+      var sh = shapes[s];
+      var txt = "";
+      try {
+        txt = (sh.getText() ? sh.getText().asString() : "").trim();
+      } catch (e) {}
+
+      var w = 0, h = 0;
+      try {
+        w = sh.getWidth();
+        h = sh.getHeight();
+      } catch (e) {}
+      var isWide = w > (h * 1.25);
+
+      if (txt !== "" || isWide) {
+        if (!textShape) textShape = sh;
+        else if (!backingShape) backingShape = sh;
+      } else {
+        if (!backingShape) backingShape = sh;
+        else if (!textShape) textShape = sh;
+      }
+    }
+  }
+
+  return { shape: textShape || (shapes.length > 0 ? shapes[0] : null), backingShape: backingShape, image: grpImage };
 }
 
 
@@ -3590,18 +3709,36 @@ function findSlideForTeam(prefix, defaultIdx, slides) {
  * @param {string|Spreadsheet} [roundDateOrSs] Optional round date string (e.g. "2025-10-04") or Spreadsheet object.
  * @param {Spreadsheet} [optSs] Optional Spreadsheet object if roundDate string was passed first.
  */
-function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
+function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) {
   var s = null;
   var targetRound = null;
+  var photoBgColor = null;
 
   if (typeof roundDateOrSs === "string") {
     targetRound = roundDateOrSs.trim();
-    s = optSs || getSS();
+    if (typeof optColorOrSs === "string") {
+      photoBgColor = optColorOrSs.trim();
+      s = (optColor && typeof optColor.getSheetByName === "function") ? optColor : getSS();
+    } else if (optColorOrSs && typeof optColorOrSs.getSheetByName === "function") {
+      s = optColorOrSs;
+      if (typeof optColor === "string") photoBgColor = optColor.trim();
+    } else {
+      s = getSS();
+    }
   } else if (roundDateOrSs && typeof roundDateOrSs.getSheetByName === "function") {
     s = roundDateOrSs;
+    if (typeof optColorOrSs === "string") photoBgColor = optColorOrSs.trim();
   } else {
     s = getSS();
   }
+
+  if (!photoBgColor) {
+    photoBgColor = getSlidesPhotoBgColor();
+  } else {
+    setSlidesPhotoBgColor(photoBgColor);
+  }
+
+  var colorObj = parseColorHex(photoBgColor);
 
   if (!s) return { success: false, message: "Spreadsheet not found." };
   
@@ -3721,34 +3858,53 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
     // 1. Element-by-element & Group Alt Text Tag Matching
     var matchedPlayerTags = {};
 
-    function processSlotElements(pNum, shapeEl, imageEl) {
-      if (pNum >= 1 && pNum <= t.players.length) {
-        var pInfo = t.players[pNum - 1];
-        var hasPlayer = (pInfo && pInfo.name && pInfo.name.trim() !== "");
-        matchedPlayerTags[pNum] = true;
+    function processSlotElements(pNum, shapeEl, imageEl, backingShapeEl) {
+      matchedPlayerTags[pNum] = true;
+      var hasPlayer = false;
+      var pInfo = null;
 
-        if (shapeEl) {
-          try {
-            var shp = (typeof shapeEl.asShape === "function") ? shapeEl.asShape() : shapeEl;
-            if (shp && typeof shp.getText === "function") {
-              var formattedName = hasPlayer ? formatPlayerPresentationName(pInfo.name, pInfo.role) : "";
-              shp.getText().setText(formattedName);
-            }
-          } catch (e) {
-            Logger.log("Shape setText error: " + e.message);
+      if (pNum >= 1 && pNum <= t.players.length) {
+        pInfo = t.players[pNum - 1];
+        hasPlayer = (pInfo && pInfo.name && pInfo.name.trim() !== "");
+      }
+
+      if (shapeEl) {
+        try {
+          var shp = (typeof shapeEl.asShape === "function") ? shapeEl.asShape() : shapeEl;
+          if (shp && typeof shp.getText === "function") {
+            var formattedName = hasPlayer ? formatPlayerPresentationName(pInfo.name, pInfo.role) : "";
+            shp.getText().setText(formattedName);
           }
+        } catch (e) {
+          Logger.log("Shape setText error: " + e.message);
         }
-        if (imageEl) {
-          try {
-            var img = (typeof imageEl.asImage === "function") ? imageEl.asImage() : imageEl;
-            var blob = hasPlayer ? resolvePlayerImageBlob(pInfo.profileId, pInfo.name, pInfo.photoUrl) : null;
-            if (!blob) blob = getTransparentPngBlob();
-            if (blob && img && typeof img.replace === "function") {
-              img.replace(blob);
-            }
-          } catch (err) {
-            Logger.log("Image replace warning for slot " + pNum + ": " + err.message);
+      }
+
+      // Resolve backing shape (either passed from group or found spatially on the slide)
+      var backing = backingShapeEl;
+      if (!backing && imageEl) {
+        backing = findBackingShapeForImage(slide, imageEl);
+      }
+
+      if (backing) {
+        if (hasPlayer) {
+          applyShapeFill(backing, colorObj);
+        } else {
+          // Empty slot or no player: hide backing shape so no stray circles appear
+          applyShapeFill(backing, { isTransparent: true });
+        }
+      }
+
+      if (imageEl) {
+        try {
+          var img = (typeof imageEl.asImage === "function") ? imageEl.asImage() : imageEl;
+          var blob = hasPlayer ? resolvePlayerImageBlob(pInfo.profileId, pInfo.name, pInfo.photoUrl) : null;
+          if (!blob) blob = getTransparentPngBlob();
+          if (blob && img && typeof img.replace === "function") {
+            img.replace(blob);
           }
+        } catch (err) {
+          Logger.log("Image replace warning for slot " + pNum + ": " + err.message);
         }
       }
     }
@@ -3777,10 +3933,10 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
           }
         }
 
-        // 3. If slotNum is found, extract shape and image from the group and process BOTH!
+        // 3. If slotNum is found, extract shape, backing shape and image from the group and process ALL!
         if (slotNum !== null) {
           var extracted = extractShapeAndImageFromGroup(grp);
-          processSlotElements(slotNum, extracted.shape, extracted.image);
+          processSlotElements(slotNum, extracted.shape, extracted.image, extracted.backingShape);
           return;
         }
 
@@ -3806,9 +3962,9 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
       var elSlotNum = extractSlotNumberForTeam(tag, t.prefix);
       if (elSlotNum !== null) {
         if (type === SlidesApp.PageElementType.SHAPE) {
-          processSlotElements(elSlotNum, el, null);
+          processSlotElements(elSlotNum, el, null, null);
         } else if (type === SlidesApp.PageElementType.IMAGE) {
-          processSlotElements(elSlotNum, null, el);
+          processSlotElements(elSlotNum, null, el, null);
         }
       }
     });
@@ -3837,7 +3993,15 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
               txt.toLowerCase().indexOf("t20") === -1 &&
               txt.indexOf("{{") === -1 &&
               shp.getTop() < 420) {
-            textShapes.push(el);
+            var w = 0, h = 0;
+            try {
+              w = shp.getWidth();
+              h = shp.getHeight();
+            } catch (e) {}
+            var isBackingCircle = (txt === "" && Math.abs(w - h) < 25 && w < 120);
+            if (!isBackingCircle) {
+              textShapes.push(el);
+            }
           }
         } else if (type === SlidesApp.PageElementType.IMAGE) {
           if (el.getWidth() < 220 && el.getHeight() < 220 && el.getTop() < 430) {
@@ -3854,7 +4018,7 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
           var grpEl = gIdx < sortedGroups.length ? sortedGroups[gIdx] : null;
           if (grpEl) {
             var extracted = extractShapeAndImageFromGroup(grpEl);
-            processSlotElements(gIdx + 1, extracted.shape, extracted.image);
+            processSlotElements(gIdx + 1, extracted.shape, extracted.image, extracted.backingShape);
           }
         }
       } else {
@@ -3866,7 +4030,7 @@ function syncPresentationStagingToSlides(roundDateOrSs, optSs) {
         for (var sIdx = 0; sIdx < maxSlots; sIdx++) {
           var shpEl = sIdx < sortedShapes.length ? sortedShapes[sIdx] : null;
           var imgEl = sIdx < sortedImages.length ? sortedImages[sIdx] : null;
-          processSlotElements(sIdx + 1, shpEl, imgEl);
+          processSlotElements(sIdx + 1, shpEl, imgEl, null);
         }
       }
     }
@@ -3961,7 +4125,8 @@ function getSlidesSyncSummary() {
     presentationUrl: presUrl,
     roundToPresent: currentRound || "(None selected)",
     availableRounds: roundTabs,
-    roundMeta: roundMeta
+    roundMeta: roundMeta,
+    photoBgColor: getSlidesPhotoBgColor()
   };
 }
 
@@ -3985,7 +4150,9 @@ function showSyncSlidesDialog() {
     '  .value { color: #111; font-weight: 600; }' +
     '  select { padding: 6px 12px; border-radius: 6px; border: 1.5px solid #4d0012; font-size: 14px; font-weight: 600; color: #4d0012; background: #fff; cursor: pointer; min-width: 170px; outline: none; transition: border-color 0.2s; }' +
     '  select:focus { border-color: #fac218; box-shadow: 0 0 0 2px rgba(250, 194, 24, 0.25); }' +
-    '  .actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }' +
+    '  .preset-btn { background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; padding: 2px 7px; font-size: 11px; font-weight: 600; color: #374151; cursor: pointer; transition: background 0.15s; }' +
+    '  .preset-btn:hover { background: #e5e7eb; border-color: #9ca3af; }' +
+    '  .actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }' +
     '  button { padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }' +
     '  .btn-primary { background: #4d0012; color: #fff; }' +
     '  .btn-primary:hover { background: #35000c; }' +
@@ -4009,7 +4176,21 @@ function showSyncSlidesDialog() {
     '      <select id="roundSelect" onchange="updateTeamsDisplay()"><option value="">Loading rounds...</option></select>' +
     '    </div>' +
     '    <div class="info-row"><span class="label">Teams:</span><span class="value" id="teamsDisplay">Loading...</span></div>' +
-    '    <div class="info-row"><span class="label">Headshot Sync:</span><span class="value">Drive Photos & Transparent fallback</span></div>' +
+    '    <div class="info-row">' +
+    '      <span class="label">Photo Backing Color:</span>' +
+    '      <div style="display: flex; align-items: center; gap: 8px;">' +
+    '        <input type="color" id="bgColorPicker" style="width: 28px; height: 28px; padding: 0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;" oninput="onColorPickerChange()">' +
+    '        <input type="text" id="bgHexInput" style="width: 95px; padding: 4px 8px; border-radius: 4px; border: 1.5px solid #4d0012; font-family: monospace; font-size: 13px; font-weight: bold;" value="666666ff" oninput="onHexInputChange()">' +
+    '        <div id="colorPreview" style="width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #999; background: #666666;"></div>' +
+    '      </div>' +
+    '    </div>' +
+    '    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 5px; margin-top: 6px;">' +
+    '      <span style="font-size: 11px; color: #777; margin-right: 4px;">Presets:</span>' +
+    '      <button type="button" class="preset-btn" onclick="setPresetColor(\'666666ff\')">Gray (666666ff)</button>' +
+    '      <button type="button" class="preset-btn" onclick="setPresetColor(\'ffffffff\')">White</button>' +
+    '      <button type="button" class="preset-btn" onclick="setPresetColor(\'4d0012ff\')">Maroon</button>' +
+    '      <button type="button" class="preset-btn" onclick="setPresetColor(\'transparent\')">Transparent</button>' +
+    '    </div>' +
     '  </div>' +
     '  <div class="actions">' +
     '    <button class="btn-secondary" onclick="google.script.host.close()">Cancel</button>' +
@@ -4040,6 +4221,32 @@ function showSyncSlidesDialog() {
     '    var display = meta ? meta.teamsText : "1st, 2nd, 3rd, 4th, 5th Elevens (5 Teams)";' +
     '    var elem = document.getElementById("teamsDisplay");' +
     '    if (elem) elem.innerText = display;' +
+    '  }' +
+    '  function updateColorUI(val) {' +
+    '    var raw = String(val || "666666ff").trim().toLowerCase().replace(/^#/, "");' +
+    '    var hex6 = raw.substring(0, 6);' +
+    '    if (/^[0-9a-f]{6}/.test(raw)) {' +
+    '      document.getElementById("bgColorPicker").value = "#" + hex6;' +
+    '      document.getElementById("colorPreview").style.backgroundColor = "#" + hex6;' +
+    '    } else if (raw === "transparent" || raw === "none") {' +
+    '      document.getElementById("colorPreview").style.backgroundColor = "transparent";' +
+    '    }' +
+    '    document.getElementById("bgHexInput").value = val;' +
+    '  }' +
+    '  function onColorPickerChange() {' +
+    '    var pickerVal = document.getElementById("bgColorPicker").value.replace("#", "");' +
+    '    var current = document.getElementById("bgHexInput").value.replace(/^#/, "");' +
+    '    var alpha = (current.length === 8) ? current.substring(6, 8) : "ff";' +
+    '    var fullHex = pickerVal + alpha;' +
+    '    document.getElementById("bgHexInput").value = fullHex;' +
+    '    document.getElementById("colorPreview").style.backgroundColor = "#" + pickerVal;' +
+    '  }' +
+    '  function onHexInputChange() {' +
+    '    var val = document.getElementById("bgHexInput").value.trim();' +
+    '    updateColorUI(val);' +
+    '  }' +
+    '  function setPresetColor(val) {' +
+    '    updateColorUI(val);' +
     '  }' +
     '  function formatRoundLabel(rnd) {' +
     '    if (!rnd) return "";' +
@@ -4078,6 +4285,11 @@ function showSyncSlidesDialog() {
     '      sel.appendChild(opt);' +
     '    }' +
     '    updateTeamsDisplay();' +
+    '    if (summary.photoBgColor) {' +
+    '      updateColorUI(summary.photoBgColor);' +
+    '    } else {' +
+    '      updateColorUI("666666ff");' +
+    '    }' +
     '  }).getSlidesSyncSummary();' +
     '  function startSync() {' +
     '    var selectedRound = document.getElementById("roundSelect").value;' +
@@ -4085,6 +4297,7 @@ function showSyncSlidesDialog() {
     '      alert("Please select a round to present.");' +
     '      return;' +
     '    }' +
+    '    var photoBgColor = document.getElementById("bgHexInput").value || "666666ff";' +
     '    document.getElementById("confirmState").style.display = "none";' +
     '    document.getElementById("loadingState").style.display = "block";' +
     '    google.script.run.withSuccessHandler(function(res) {' +
@@ -4094,14 +4307,14 @@ function showSyncSlidesDialog() {
     '    }).withFailureHandler(function(err) {' +
     '      alert("Sync Error: " + err.message);' +
     '      google.script.host.close();' +
-    '    }).syncPresentationStagingToSlides(selectedRound);' +
+    '    }).syncPresentationStagingToSlides(selectedRound, photoBgColor);' +
     '  }' +
     '  function openSlides() {' +
     '    if (presentationUrl) window.open(presentationUrl, "_blank");' +
     '  }' +
     '</script>' +
     '</body></html>'
-  ).setWidth(520).setHeight(370);
+  ).setWidth(520).setHeight(420);
   SpreadsheetApp.getUi().showModalDialog(html, "🏏 Google Slides Sync");
 }
 

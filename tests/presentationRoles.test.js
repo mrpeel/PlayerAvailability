@@ -1,7 +1,9 @@
 const {
   formatPlayerPresentationName,
   formatRoundOpponent,
-  formatFormatVenue
+  formatFormatVenue,
+  parseColorHex,
+  normalizeHexColor
 } = require('../src/logic');
 
 describe('formatPlayerPresentationName', () => {
@@ -104,4 +106,68 @@ describe('formatFormatVenue', () => {
     expect(formatFormatVenue('Two Day', '')).toBe('Two Day game');
   });
 });
+
+describe('parseColorHex', () => {
+  test('parses default 8-character hex 666666ff correctly', () => {
+    const res = parseColorHex('666666ff');
+    expect(res).toEqual({ hex: '#666666', alpha: 1, isTransparent: false });
+  });
+
+  test('parses with leading # symbol', () => {
+    const res = parseColorHex('#666666ff');
+    expect(res).toEqual({ hex: '#666666', alpha: 1, isTransparent: false });
+  });
+
+  test('parses 6-character hex correctly defaulting to alpha 1.0', () => {
+    const res = parseColorHex('666666');
+    expect(res).toEqual({ hex: '#666666', alpha: 1, isTransparent: false });
+    const white = parseColorHex('ffffff');
+    expect(white).toEqual({ hex: '#ffffff', alpha: 1, isTransparent: false });
+    const maroon = parseColorHex('#4d0012');
+    expect(maroon).toEqual({ hex: '#4d0012', alpha: 1, isTransparent: false });
+  });
+
+  test('parses 8-character hex with custom alpha', () => {
+    const res = parseColorHex('ffffff80');
+    expect(res.hex).toBe('#ffffff');
+    expect(res.alpha).toBeCloseTo(0.5, 2);
+    expect(res.isTransparent).toBe(false);
+  });
+
+  test('detects transparent keyword or 0 alpha', () => {
+    expect(parseColorHex('transparent').isTransparent).toBe(true);
+    expect(parseColorHex('none').isTransparent).toBe(true);
+    expect(parseColorHex('66666600').isTransparent).toBe(true);
+  });
+
+  test('handles empty or invalid strings with default fallback', () => {
+    expect(parseColorHex('')).toEqual({ hex: '#666666', alpha: 1, isTransparent: false });
+    expect(parseColorHex(null)).toEqual({ hex: '#666666', alpha: 1, isTransparent: false });
+    expect(parseColorHex('invalid')).toEqual({ hex: '#666666', alpha: 1, isTransparent: false });
+  });
+});
+
+describe('normalizeHexColor', () => {
+  test('normalizes 8-char hex correctly', () => {
+    expect(normalizeHexColor('666666ff')).toBe('666666ff');
+    expect(normalizeHexColor('#666666FF')).toBe('666666ff');
+  });
+
+  test('appends ff to 6-char hex', () => {
+    expect(normalizeHexColor('666666')).toBe('666666ff');
+    expect(normalizeHexColor('#ffffff')).toBe('ffffffff');
+    expect(normalizeHexColor('4d0012')).toBe('4d0012ff');
+  });
+
+  test('handles transparent keyword', () => {
+    expect(normalizeHexColor('transparent')).toBe('transparent');
+    expect(normalizeHexColor('none')).toBe('transparent');
+  });
+
+  test('handles empty or missing input', () => {
+    expect(normalizeHexColor('')).toBe('666666ff');
+    expect(normalizeHexColor(null)).toBe('666666ff');
+  });
+});
+
 
