@@ -3507,6 +3507,7 @@ function resolvePlayerImageBlob(profileId, name, photoUrl, headshotsMap) {
 
 var DEFAULT_SLIDES_PHOTO_BG_COLOR = '666666ff';
 var DEFAULT_SLIDES_PHOTO_BORDER_COLOR = 'transparent';
+var DEFAULT_SLIDES_PHOTO_BORDER_WEIGHT = '1';
 
 /**
  * Gets the configured or remembered player photo backing color for Google Slides.
@@ -3537,6 +3538,22 @@ function getSlidesPhotoBorderColor() {
 function setSlidesPhotoBorderColor(color) {
   if (color) {
     PropertiesService.getScriptProperties().setProperty('SLIDES_PHOTO_BORDER_COLOR', String(color).trim());
+  }
+}
+
+/**
+ * Gets the configured or remembered player photo border weight (pt) for Google Slides.
+ */
+function getSlidesPhotoBorderWeight() {
+  return PropertiesService.getScriptProperties().getProperty('SLIDES_PHOTO_BORDER_WEIGHT') || DEFAULT_SLIDES_PHOTO_BORDER_WEIGHT;
+}
+
+/**
+ * Persists the remembered player photo border weight in Script Properties.
+ */
+function setSlidesPhotoBorderWeight(weight) {
+  if (weight !== undefined && weight !== null && weight !== "") {
+    PropertiesService.getScriptProperties().setProperty('SLIDES_PHOTO_BORDER_WEIGHT', String(weight).trim());
   }
 }
 
@@ -3585,7 +3602,7 @@ function applyShapeBorder(shape, colorObj, optWeight) {
         border.setTransparent();
       }
     } else {
-      var weight = optWeight || 2;
+      var weight = (optWeight !== undefined && optWeight !== null && !isNaN(Number(optWeight))) ? Number(optWeight) : 1;
       if (typeof border.setWeight === "function") {
         border.setWeight(weight);
       }
@@ -3865,15 +3882,17 @@ function findSlideForTeam(prefix, defaultIdx, slides) {
  * @param {string|Spreadsheet} [roundDateOrSs] Optional round date string (e.g. "2025-10-04") or Spreadsheet object.
  * @param {string|Spreadsheet} [optBgColorOrSs] Optional background color hex string or Spreadsheet object.
  * @param {string|Spreadsheet} [optBorderColorOrSs] Optional border color hex string or Spreadsheet object.
+ * @param {number|string|Spreadsheet} [optBorderWeightOrSs] Optional border weight (pt) or Spreadsheet object.
  * @param {Spreadsheet} [optSs] Optional Spreadsheet object.
  */
-function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorderColorOrSs, optSs) {
+function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorderColorOrSs, optBorderWeightOrSs, optSs) {
   var s = null;
   var targetRound = null;
   var photoBgColor = null;
   var photoBorderColor = null;
+  var photoBorderWeight = null;
 
-  var allArgs = [roundDateOrSs, optBgColorOrSs, optBorderColorOrSs, optSs];
+  var allArgs = [roundDateOrSs, optBgColorOrSs, optBorderColorOrSs, optBorderWeightOrSs, optSs];
   for (var a = 0; a < allArgs.length; a++) {
     if (allArgs[a] && typeof allArgs[a].getSheetByName === "function") {
       s = allArgs[a];
@@ -3884,7 +3903,10 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
 
   var strArgs = [];
   for (var a = 0; a < allArgs.length; a++) {
-    if (typeof allArgs[a] === "string" && allArgs[a].trim() !== "") {
+    if (allArgs[a] && typeof allArgs[a].getSheetByName === "function") continue;
+    if (typeof allArgs[a] === "number") {
+      strArgs.push(String(allArgs[a]));
+    } else if (typeof allArgs[a] === "string" && allArgs[a].trim() !== "") {
       strArgs.push(allArgs[a].trim());
     }
   }
@@ -3892,6 +3914,7 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
   if (strArgs.length > 0) targetRound = strArgs[0];
   if (strArgs.length > 1) photoBgColor = strArgs[1];
   if (strArgs.length > 2) photoBorderColor = strArgs[2];
+  if (strArgs.length > 3) photoBorderWeight = strArgs[3];
 
   if (!photoBgColor) {
     photoBgColor = getSlidesPhotoBgColor();
@@ -3905,8 +3928,15 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
     setSlidesPhotoBorderColor(photoBorderColor);
   }
 
+  if (!photoBorderWeight) {
+    photoBorderWeight = getSlidesPhotoBorderWeight();
+  } else {
+    setSlidesPhotoBorderWeight(photoBorderWeight);
+  }
+
   var bgColorObj = parseColorHex(photoBgColor, "#666666");
   var borderColorObj = parseColorHex(photoBorderColor, "transparent");
+  var borderWeightNum = parseInt(photoBorderWeight, 10) || 1;
 
   if (!s) return { success: false, message: "Spreadsheet not found." };
   
@@ -4081,7 +4111,7 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
       if (backingShapeEl) {
         if (hasPlayer) {
           applyShapeFill(backingShapeEl, bgColorObj);
-          applyShapeBorder(backingShapeEl, borderColorObj, 2);
+          applyShapeBorder(backingShapeEl, borderColorObj, borderWeightNum);
         } else {
           applyShapeFill(backingShapeEl, { isTransparent: true });
           applyShapeBorder(backingShapeEl, { isTransparent: true });
@@ -4376,7 +4406,8 @@ function getSlidesSyncSummary() {
     availableRounds: roundTabs,
     roundMeta: roundMeta,
     photoBgColor: getSlidesPhotoBgColor(),
-    photoBorderColor: getSlidesPhotoBorderColor()
+    photoBorderColor: getSlidesPhotoBorderColor(),
+    photoBorderWeight: getSlidesPhotoBorderWeight()
   };
 }
 
@@ -4459,13 +4490,19 @@ function showSyncSlidesDialog() {
     '        <button type="button" class="preset-btn" onclick="setBgPreset(\'transparent\')">None</button>' +
     '      </div>' +
     '    </div>' +
-    '    <!-- Border Colour -->' +
+    '    <!-- Border Colour & Weight -->' +
     '    <div class="color-control-group">' +
     '      <div class="color-row-top">' +
-    '        <span class="label">Border Colour:</span>' +
+    '        <span class="label">Border Colour & Weight:</span>' +
     '        <div class="color-inputs">' +
     '          <input type="color" id="borderColorPicker" class="color-picker" oninput="onBorderColorPicked(this.value)">' +
     '          <input type="text" id="borderColorInput" class="hex-input" maxlength="12" placeholder="None" oninput="onBorderTextInput(this.value)">' +
+    '          <select id="borderWeightSelect" style="min-width: 65px; padding: 4px 6px; font-size: 12px; font-weight: 600;" onchange="onBorderWeightChange(this.value)">' +
+    '            <option value="1">1 px</option>' +
+    '            <option value="2">2 px</option>' +
+    '            <option value="3">3 px</option>' +
+    '            <option value="4">4 px</option>' +
+    '          </select>' +
     '        </div>' +
     '      </div>' +
     '      <div class="preset-bar">' +
@@ -4501,6 +4538,7 @@ function showSyncSlidesDialog() {
     '  var roundMeta = {};' +
     '  var currentBg = "#666666";' +
     '  var currentBorder = "transparent";' +
+    '  var currentBorderWeight = "1";' +
     '  function normalizeInput(val) {' +
     '    if (!val) return "";' +
     '    var s = String(val).trim().toLowerCase();' +
@@ -4509,6 +4547,10 @@ function showSyncSlidesDialog() {
     '      return "#" + s;' +
     '    }' +
     '    return s;' +
+    '  }' +
+    '  function onBorderWeightChange(val) {' +
+    '    currentBorderWeight = String(val || "1");' +
+    '    updatePreview();' +
     '  }' +
     '  function updatePreview() {' +
     '    var circle = document.getElementById("circlePreview");' +
@@ -4525,7 +4567,7 @@ function showSyncSlidesDialog() {
     '    if (border === "transparent" || border === "none" || !border) {' +
     '      circle.style.border = "1.5px dashed #cbd5e1";' +
     '    } else {' +
-    '      circle.style.border = "2.5px solid " + border;' +
+    '      circle.style.border = currentBorderWeight + "px solid " + border;' +
     '    }' +
     '  }' +
     '  function setBgPreset(val) {' +
@@ -4647,6 +4689,11 @@ function showSyncSlidesDialog() {
     '        if (borderPkr) borderPkr.value = borderVal.substring(0, 7);' +
     '      }' +
     '    }' +
+    '    if (summary.photoBorderWeight) {' +
+    '      currentBorderWeight = String(summary.photoBorderWeight);' +
+    '      var wSel = document.getElementById("borderWeightSelect");' +
+    '      if (wSel) wSel.value = currentBorderWeight;' +
+    '    }' +
     '    updatePreview();' +
     '  }).getSlidesSyncSummary();' +
     '  function startSync() {' +
@@ -4657,8 +4704,10 @@ function showSyncSlidesDialog() {
     '    }' +
     '    var bgInp = document.getElementById("bgColorInput");' +
     '    var borderInp = document.getElementById("borderColorInput");' +
+    '    var weightSel = document.getElementById("borderWeightSelect");' +
     '    var bgColor = bgInp ? (bgInp.value.trim() || currentBg) : currentBg;' +
     '    var borderColor = borderInp ? (borderInp.value.trim() || currentBorder) : currentBorder;' +
+    '    var borderWeight = weightSel ? (weightSel.value || currentBorderWeight) : currentBorderWeight;' +
     '    document.getElementById("confirmState").style.display = "none";' +
     '    document.getElementById("loadingState").style.display = "block";' +
     '    google.script.run.withSuccessHandler(function(res) {' +
@@ -4668,7 +4717,7 @@ function showSyncSlidesDialog() {
     '    }).withFailureHandler(function(err) {' +
     '      alert("Sync Error: " + err.message);' +
     '      google.script.host.close();' +
-    '    }).syncPresentationStagingToSlides(selectedRound, bgColor, borderColor);' +
+    '    }).syncPresentationStagingToSlides(selectedRound, bgColor, borderColor, borderWeight);' +
     '  }' +
     '  function openSlides() {' +
     '    if (presentationUrl) window.open(presentationUrl, "_blank");' +
