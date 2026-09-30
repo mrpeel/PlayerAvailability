@@ -50,3 +50,13 @@ global.ContentService = {
 global.DriveApp = {
   getFolderById: jest.fn()
 };
+
+global.Utilities = {
+  base64Decode: jest.fn(str => Buffer.from(str, 'base64')),
+  base64Encode: jest.fn(buf => Buffer.from(buf).toString('base64')),
+  newBlob: jest.fn((bytes, contentType, name) => ({
+    getBytes: () => bytes,
+    getContentType: () => contentType,
+    getName: () => name
+  }))
+};

@@ -1113,6 +1113,122 @@ function normalizeHexColor(input) {
 }
 
 /**
+ * Calculates CRC-32 for byte array.
+ */
+function crc32Table(buf) {
+  var c = 0xffffffff;
+  for (var i = 0; i < buf.length; i++) {
+    c ^= buf[i];
+    for (var k = 0; k < 8; k++) {
+      c = (c >>> 1) ^ ((c & 1) ? 0xedb88320 : 0);
+    }
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/**
+ * Converts byte array to base64 string without external dependencies.
+ */
+function bytesToBase64String(bytes) {
+  var b64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  var result = "";
+  var len = bytes.length;
+  var i = 0;
+  while (i < len) {
+    var b1 = bytes[i++];
+    var b2 = i < len ? bytes[i++] : NaN;
+    var b3 = i < len ? bytes[i++] : NaN;
+    var u24 = (b1 << 16) | (isNaN(b2) ? 0 : (b2 << 8)) | (isNaN(b3) ? 0 : b3);
+    result += b64Chars.charAt((u24 >> 18) & 63);
+    result += b64Chars.charAt((u24 >> 12) & 63);
+    result += isNaN(b2) ? "=" : b64Chars.charAt((u24 >> 6) & 63);
+    result += isNaN(b3) ? "=" : b64Chars.charAt(u24 & 63);
+  }
+  return result;
+}
+
+/**
+ * Generates an uncompressed RGBA PNG containing a smooth circular disc of the specified hex color.
+ * Output is an in-memory base64 string with zero network or external dependencies.
+ *
+ * @param {string} hexColor e.g. '#666666' or '666666ff'
+ * @param {number} [size] Image dimension in pixels (default 120)
+ * @returns {string} Standard base64 PNG string
+ */
+function generateCirclePngBase64(hexColor, size) {
+  size = size || 120;
+  var r = (size / 2) - 2;
+  var cx = size / 2;
+  var cy = size / 2;
+
+  var clean = String(hexColor || "666666").replace(/^#/, "");
+  if (clean.length < 6) clean = "666666";
+  var cr = parseInt(clean.substring(0, 2), 16) || 102;
+  var cg = parseInt(clean.substring(2, 4), 16) || 102;
+  var cb = parseInt(clean.substring(4, 6), 16) || 102;
+
+  var raw = [];
+  for (var y = 0; y < size; y++) {
+    raw.push(0); // PNG scanline filter: None
+    var dy = y + 0.5 - cy;
+    for (var x = 0; x < size; x++) {
+      var dx = x + 0.5 - cx;
+      var dSq = dx * dx + dy * dy;
+      if (dSq <= (r - 0.75) * (r - 0.75)) {
+        raw.push(cr, cg, cb, 255);
+      } else if (dSq <= (r + 0.75) * (r + 0.75)) {
+        var alpha = Math.round(255 * (1 - (Math.sqrt(dSq) - (r - 0.75)) / 1.5));
+        raw.push(cr, cg, cb, Math.max(0, Math.min(255, alpha)));
+      } else {
+        raw.push(0, 0, 0, 0);
+      }
+    }
+  }
+
+  // Zlib uncompressed stream (RFC 1950 / RFC 1951)
+  var zlib = [0x78, 0x01];
+  var s1 = 1, s2 = 0;
+  for (var i = 0; i < raw.length; i++) {
+    s1 = (s1 + raw[i]) % 65521;
+    s2 = (s2 + s1) % 65521;
+  }
+  var adler32 = ((s2 << 16) | s1) >>> 0;
+
+  var offset = 0;
+  while (offset < raw.length) {
+    var chunkLen = Math.min(65535, raw.length - offset);
+    var isLast = (offset + chunkLen >= raw.length) ? 1 : 0;
+    zlib.push(isLast);
+    zlib.push(chunkLen & 0xff, (chunkLen >>> 8) & 0xff);
+    var nlen = chunkLen ^ 0xffff;
+    zlib.push(nlen & 0xff, (nlen >>> 8) & 0xff);
+    for (var k = 0; k < chunkLen; k++) {
+      zlib.push(raw[offset + k]);
+    }
+    offset += chunkLen;
+  }
+  zlib.push((adler32 >>> 24) & 0xff, (adler32 >>> 16) & 0xff, (adler32 >>> 8) & 0xff, adler32 & 0xff);
+
+  function packU32(val) {
+    return [(val >>> 24) & 0xff, (val >>> 16) & 0xff, (val >>> 8) & 0xff, val & 0xff];
+  }
+
+  function makeChunk(typeStr, dataBytes) {
+    var typeBytes = [typeStr.charCodeAt(0), typeStr.charCodeAt(1), typeStr.charCodeAt(2), typeStr.charCodeAt(3)];
+    var payload = typeBytes.concat(dataBytes);
+    var crc = crc32Table(payload);
+    return packU32(dataBytes.length).concat(payload).concat(packU32(crc));
+  }
+
+  var pngBytes = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+    .concat(makeChunk("IHDR", packU32(size).concat(packU32(size)).concat([8, 6, 0, 0, 0])))
+    .concat(makeChunk("IDAT", zlib))
+    .concat(makeChunk("IEND", []));
+
+  return bytesToBase64String(pngBytes);
+}
+
+/**
  * Processes 2D data from the Fixtures tab into structured, chronological fixture
  * options for round tab initialisation.
  *
@@ -2015,6 +2131,7 @@ if (typeof module !== 'undefined' && module.exports) {
     formatFormatVenue,
     parseColorHex,
     normalizeHexColor,
+    generateCirclePngBase64,
     DEFAULT_TEAM_CONFIGS,
     parseCsvString,
     formatTeamPrefix,

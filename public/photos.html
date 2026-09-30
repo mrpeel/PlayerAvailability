@@ -516,6 +516,20 @@
             </div>
           </div>
 
+          <!-- Backing Disc Controls -->
+          <div class="shirt-options-row">
+            <label>Backing Color:</label>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button class="action-btn-sm active-toggle" id="bgGrayBtn" onclick="setBackingColor('#666666')">Gray (#666)</button>
+              <button class="action-btn-sm" id="bgMaroonBtn" onclick="setBackingColor('#4d0012')">Maroon</button>
+              <button class="action-btn-sm" id="bgWhiteBtn" onclick="setBackingColor('#ffffff')">White</button>
+              <button class="action-btn-sm" id="bgNoneBtn" onclick="setBackingColor('transparent')">Cutout Only</button>
+            </div>
+          </div>
+          <div style="margin-top:2px;">
+            <button class="action-btn-sm" id="batchBackingBtn" onclick="batchApplyBackingToSaved()" style="width:100%; justify-content:center; background:#fff8e6; border-color:var(--gold); color:var(--maroon); font-weight:700;">⚡ Apply Backing Color to All Saved Photos</button>
+          </div>
+
           <!-- Eraser Sub-Toolbar -->
           <div class="eraser-toolbar" id="eraserToolbar">
             <div class="brush-sizes">
@@ -595,6 +609,7 @@
     var undoStack = [];
     var fadeShirt = true;  // Default: softly dissolve lower neck/shirt to eliminate colorful tops
     var clubKit = false;   // Optional: draw standard Laburnum CC polo collar
+    var backingColor = '#666666'; // Default: Studio Gray
 
     // Framing state
     var baseScale = 1;
@@ -863,16 +878,32 @@
       var cx = 200 + panX;
       var cy = 200 + panY;
 
-      // 1. Render clean cutout to exportCanvas (strictly no guides or crop masks)
+      // 1. Render clean cutout to exportCanvas
       exportCtx.clearRect(0, 0, 400, 400);
-      exportCtx.drawImage(cutoutCanvas, cx - w / 2, cy - h / 2, w, h);
 
-      // Apply shirt handling on exportCanvas
-      if (fadeShirt && !clubKit) {
-        applyShirtFade(exportCtx);
-      }
-      if (clubKit) {
-        drawClubCollar(exportCtx);
+      if (backingColor && backingColor !== 'transparent') {
+        exportCtx.save();
+        exportCtx.beginPath();
+        exportCtx.arc(200, 200, GUIDE_CIRCLE_R, 0, Math.PI * 2);
+        exportCtx.fillStyle = backingColor;
+        exportCtx.fill();
+        exportCtx.clip();
+        exportCtx.drawImage(cutoutCanvas, cx - w / 2, cy - h / 2, w, h);
+        if (fadeShirt && !clubKit) {
+          applyShirtFade(exportCtx);
+        }
+        if (clubKit) {
+          drawClubCollar(exportCtx);
+        }
+        exportCtx.restore();
+      } else {
+        exportCtx.drawImage(cutoutCanvas, cx - w / 2, cy - h / 2, w, h);
+        if (fadeShirt && !clubKit) {
+          applyShirtFade(exportCtx);
+        }
+        if (clubKit) {
+          drawClubCollar(exportCtx);
+        }
       }
 
       // 2. Update Live Circle Avatar Preview
@@ -1085,6 +1116,103 @@
       btn.style.background = (noiseSensitivity === 'aggressive') ? "#fff0f0" : "#fff";
       btn.style.color = (noiseSensitivity === 'aggressive') ? "#b00020" : "var(--maroon)";
       applyCutoutMask();
+    }
+
+    function setBackingColor(color) {
+      backingColor = color;
+      document.getElementById("bgGrayBtn").classList.toggle("active-toggle", color === '#666666');
+      document.getElementById("bgMaroonBtn").classList.toggle("active-toggle", color === '#4d0012');
+      document.getElementById("bgWhiteBtn").classList.toggle("active-toggle", color === '#ffffff');
+      document.getElementById("bgNoneBtn").classList.toggle("active-toggle", color === 'transparent');
+      render();
+    }
+
+    function batchApplyBackingToSaved() {
+      var targets = playersData.filter(function(p) { return p.hasPhoto; });
+      if (targets.length === 0) {
+        alert("No players currently have photos uploaded.");
+        return;
+      }
+      var colName = backingColor === "transparent" ? "Cutout Only (Transparent)" : (backingColor === "#666666" ? "Studio Gray (#666666)" : backingColor);
+      if (!confirm("This will update all " + targets.length + " saved player photo(s) in Google Drive with the " + colName + " backing circle.\n\nContinue?")) {
+        return;
+      }
+      var btn = document.getElementById("batchBackingBtn");
+      var originalText = btn.innerText;
+      btn.disabled = true;
+
+      var offscreen = document.createElement("canvas");
+      offscreen.width = 400;
+      offscreen.height = 400;
+      var oCtx = offscreen.getContext("2d");
+      var idx = 0;
+
+      function doNext() {
+        if (idx >= targets.length) {
+          btn.disabled = false;
+          btn.innerText = originalText;
+          showToast("All " + targets.length + " player photos updated with backing circle!", "success");
+          return;
+        }
+        var target = targets[idx];
+        btn.innerText = "⏳ Updating " + (idx + 1) + "/" + targets.length + " (" + target.fullName + ")...";
+
+        fetch(GAS_EXEC_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify({
+            action: "getPlayerHeadshotBase64",
+            profileId: target.profileId
+          })
+        }).then(function(r) { return r.json(); }).then(function(res) {
+          if (!res || !res.base64Data) {
+            idx++;
+            doNext();
+            return;
+          }
+          var tempImg = new Image();
+          tempImg.onload = function() {
+            oCtx.clearRect(0, 0, 400, 400);
+            if (backingColor && backingColor !== "transparent") {
+              oCtx.save();
+              oCtx.beginPath();
+              oCtx.arc(200, 200, GUIDE_CIRCLE_R, 0, Math.PI * 2);
+              oCtx.fillStyle = backingColor;
+              oCtx.fill();
+              oCtx.clip();
+              oCtx.drawImage(tempImg, 0, 0, 400, 400);
+              oCtx.restore();
+            } else {
+              oCtx.drawImage(tempImg, 0, 0, 400, 400);
+            }
+            var newB64 = offscreen.toDataURL("image/png");
+            fetch(GAS_EXEC_URL, {
+              method: "POST",
+              headers: { "Content-Type": "text/plain" },
+              body: JSON.stringify({
+                action: "savePlayerHeadshot",
+                profileId: target.profileId,
+                base64Data: newB64
+              })
+            }).then(function() {
+              idx++;
+              doNext();
+            }).catch(function(err) {
+              console.warn("Failed saving batch photo for " + target.fullName, err);
+              idx++;
+              doNext();
+            });
+          };
+          tempImg.onerror = function() { idx++; doNext(); };
+          tempImg.src = res.base64Data;
+        }).catch(function(err) {
+          console.warn("Failed getting base64 for " + target.fullName, err);
+          idx++;
+          doNext();
+        });
+      }
+
+      doNext();
     }
 
     function setEraserSize(size) {

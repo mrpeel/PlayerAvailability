@@ -302,6 +302,11 @@ function doPost(e) {
       return jsonResponse(saveRes);
     }
 
+    if (action === 'getPlayerHeadshotBase64') {
+      var b64Data = getPlayerHeadshotBase64(payload.profileId);
+      return jsonResponse({ status: "success", profileId: payload.profileId, base64Data: b64Data });
+    }
+
     if (action === 'updateGlobalStatus') {
       var profileId = String(payload.profileId || payload.playerId).trim();
       var newStatus = payload.status || 'Active';
@@ -3372,6 +3377,17 @@ function getTransparentPngBlob() {
 
 
 /**
+ * Creates an in-memory PNG blob containing a crisp circular disc of the specified hex color.
+ * Uses pure JS PNG generation with zero network or external dependencies.
+ */
+function getCirclePngBlob(colorHex) {
+  var hex = colorHex || "666666";
+  var b64 = generateCirclePngBase64(hex, 160);
+  return Utilities.newBlob(Utilities.base64Decode(b64), "image/png", "avatar_circle.png");
+}
+
+
+/**
  * Helper to retrieve a Google Drive image Blob directly in memory, bypassing HTTP URLs.
  */
 function getDriveImageBlob(urlOrId) {
@@ -3948,68 +3964,36 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
         }
       }
 
-      // Resolve backing shape (either passed from group, by tag, or found spatially on the slide)
+      // Clean up any previously inserted detached backing shape with this tag
       var bgTag = t.prefix + "_BG_" + pNum;
-      var backing = backingShapeEl || findBackingShapeByTag(slide, bgTag);
-      if (!backing && imageEl) {
-        backing = findBackingShapeForImage(slide, imageEl);
+      var oldBacking = findBackingShapeByTag(slide, bgTag);
+      if (oldBacking) {
+        try { oldBacking.remove(); } catch (e) {}
       }
 
-      var imgWidth = 0, imgHeight = 0, imgLeft = 0, imgTop = 0;
-      if (imageEl) {
-        try {
-          imgLeft = imageEl.getLeft();
-          imgTop = imageEl.getTop();
-          imgWidth = imageEl.getWidth();
-          imgHeight = imageEl.getHeight();
-        } catch (dimErr) {
-          Logger.log("Could not get image dimensions: " + dimErr.message);
-        }
-      }
-
-      // If no backing shape exists yet, dynamically create an ELLIPSE behind the avatar
-      if (!backing && imageEl && imgWidth > 0 && imgHeight > 0) {
-        try {
-          var size = Math.min(imgWidth, imgHeight);
-          var eLeft = imgLeft + (imgWidth - size) / 2;
-          var eTop = imgTop + (imgHeight - size) / 2;
-          backing = slide.insertShape(SlidesApp.ShapeType.ELLIPSE, eLeft, eTop, size, size);
-          backing.setTitle(bgTag);
-          backing.setDescription(bgTag);
-          try {
-            backing.getBorder().setTransparent();
-          } catch (bErr) {}
-          sendBehindElement(backing, parentGrp || imageEl, slide);
-        } catch (insErr) {
-          Logger.log("Failed to insert backing shape for " + bgTag + ": " + insErr.message);
-        }
-      } else if (backing && imgWidth > 0 && imgHeight > 0) {
-        // Ensure existing backing shape stays aligned with avatar in case it was moved
-        try {
-          var sSize = Math.min(imgWidth, imgHeight);
-          var seLeft = imgLeft + (imgWidth - sSize) / 2;
-          var seTop = imgTop + (imgHeight - sSize) / 2;
-          backing.setLeft(seLeft);
-          backing.setTop(seTop);
-          backing.setWidth(sSize);
-          backing.setHeight(sSize);
-        } catch (alignErr) {}
-      }
-
-      if (backing) {
+      // If the template group itself contains a backing shape element, update its fill
+      if (backingShapeEl) {
         if (hasPlayer) {
-          applyShapeFill(backing, colorObj);
+          applyShapeFill(backingShapeEl, colorObj);
         } else {
-          // Empty slot or no player: hide backing shape so no stray circles appear
-          applyShapeFill(backing, { isTransparent: true });
+          applyShapeFill(backingShapeEl, { isTransparent: true });
         }
       }
 
       if (imageEl) {
         try {
           var img = (typeof imageEl.asImage === "function") ? imageEl.asImage() : imageEl;
-          var blob = hasPlayer ? resolvePlayerImageBlob(pInfo.profileId, pInfo.name, pInfo.photoUrl) : null;
-          if (!blob) blob = getTransparentPngBlob();
+          var blob = null;
+          if (hasPlayer) {
+            blob = resolvePlayerImageBlob(pInfo.profileId, pInfo.name, pInfo.photoUrl);
+            if (!blob) {
+              // Player selected but has no uploaded photo: replace with clean backing circle PNG disc
+              blob = getCirclePngBlob(photoBgColor);
+            }
+          } else {
+            // Empty slot: transparent placeholder so slot is blank
+            blob = getTransparentPngBlob();
+          }
           if (blob && img && typeof img.replace === "function") {
             img.replace(blob);
           }
@@ -4145,12 +4129,12 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
       }
     }
 
-    // Ensure any extra backing shapes on the slide beyond t.players.length are set transparent
-    for (var extraSlot = t.players.length + 1; extraSlot <= 15; extraSlot++) {
+    // Clean up any stray backing shapes on the slide created by earlier versions
+    for (var extraSlot = 1; extraSlot <= 15; extraSlot++) {
       var extraTag = t.prefix + "_BG_" + extraSlot;
       var extraBacking = findBackingShapeByTag(slide, extraTag);
       if (extraBacking) {
-        applyShapeFill(extraBacking, { isTransparent: true });
+        try { extraBacking.remove(); } catch (e) {}
       }
     }
 
@@ -4310,6 +4294,11 @@ function showSyncSlidesDialog() {
     '      <button type="button" class="preset-btn" onclick="setPresetColor(\'4d0012ff\')">Maroon</button>' +
     '      <button type="button" class="preset-btn" onclick="setPresetColor(\'transparent\')">Transparent</button>' +
     '    </div>' +
+    '    <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #e0e0e0; display: flex; justify-content: space-between; align-items: center;">' +
+    '      <span style="font-size: 12px; color: #555;">Existing photos in Drive:</span>' +
+    '      <button type="button" class="preset-btn" id="batchBakeBtn" onclick="batchBakeBackingColor()" style="background: #fff8e6; border-color: #fac218; color: #4d0012; font-weight: 700; padding: 4px 10px;">⚡ Bake Color into All Saved Photos</button>' +
+    '    </div>' +
+    '    <div id="batchBakeStatus" style="font-size: 11px; color: #4d0012; margin-top: 4px; text-align: right; display: none;"></div>' +
     '  </div>' +
     '  <div class="actions">' +
     '    <button class="btn-secondary" onclick="google.script.host.close()">Cancel</button>' +
@@ -4428,12 +4417,80 @@ function showSyncSlidesDialog() {
     '      google.script.host.close();' +
     '    }).syncPresentationStagingToSlides(selectedRound, photoBgColor);' +
     '  }' +
+    '  function batchBakeBackingColor() {' +
+    '    var raw = document.getElementById("bgHexInput").value || "666666ff";' +
+    '    var cleanHex = raw.replace(/^#/, "");' +
+    '    if (cleanHex.length > 6) cleanHex = cleanHex.substring(0, 6);' +
+    '    var color = (raw === "transparent" || raw === "none") ? "transparent" : ("#" + cleanHex);' +
+    '    var btn = document.getElementById("batchBakeBtn");' +
+    '    var status = document.getElementById("batchBakeStatus");' +
+    '    if (!confirm("This will update all saved player photos in Google Drive, baking the circular backing color (" + color + ") directly into each image.\\n\\nContinue?")) return;' +
+    '    btn.disabled = true;' +
+    '    status.style.display = "block";' +
+    '    status.innerText = "Loading players list...";' +
+    '    google.script.run.withSuccessHandler(function(list) {' +
+    '      var targets = (list || []).filter(function(p) { return p.hasPhoto; });' +
+    '      if (targets.length === 0) {' +
+    '        status.innerText = "No saved photos found in Google Drive.";' +
+    '        btn.disabled = false;' +
+    '        return;' +
+    '      }' +
+    '      var offscreen = document.createElement("canvas");' +
+    '      offscreen.width = 400; offscreen.height = 400;' +
+    '      var oCtx = offscreen.getContext("2d");' +
+    '      var idx = 0;' +
+    '      function doNext() {' +
+    '        if (idx >= targets.length) {' +
+    '          status.innerText = "✅ All " + targets.length + " saved photos updated with backing circle!";' +
+    '          btn.disabled = false;' +
+    '          return;' +
+    '        }' +
+    '        var p = targets[idx];' +
+    '        status.innerText = "Updating (" + (idx + 1) + "/" + targets.length + ") " + p.fullName + "...";' +
+    '        google.script.run.withSuccessHandler(function(b64) {' +
+    '          if (!b64) { idx++; doNext(); return; }' +
+    '          var img = new Image();' +
+    '          img.onload = function() {' +
+    '            oCtx.clearRect(0, 0, 400, 400);' +
+    '            if (color !== "transparent") {' +
+    '              oCtx.save();' +
+    '              oCtx.beginPath();' +
+    '              oCtx.arc(200, 200, 192, 0, Math.PI * 2);' +
+    '              oCtx.fillStyle = color;' +
+    '              oCtx.fill();' +
+    '              oCtx.clip();' +
+    '              oCtx.drawImage(img, 0, 0, 400, 400);' +
+    '              oCtx.restore();' +
+    '            } else {' +
+    '              oCtx.drawImage(img, 0, 0, 400, 400);' +
+    '            }' +
+    '            var newB64 = offscreen.toDataURL("image/png");' +
+    '            google.script.run.withSuccessHandler(function() {' +
+    '              idx++;' +
+    '              doNext();' +
+    '            }).withFailureHandler(function(err) {' +
+    '              console.warn(err);' +
+    '              idx++;' +
+    '              doNext();' +
+    '            }).savePlayerHeadshot(p.profileId, newB64);' +
+    '          };' +
+    '          img.onerror = function() { idx++; doNext(); };' +
+    '          img.src = b64;' +
+    '        }).withFailureHandler(function(err) {' +
+    '          console.warn(err);' +
+    '          idx++;' +
+    '          doNext();' +
+    '        }).getPlayerHeadshotBase64(p.profileId);' +
+    '      }' +
+    '      doNext();' +
+    '    }).getPlayersListForStudio();' +
+    '  }' +
     '  function openSlides() {' +
     '    if (presentationUrl) window.open(presentationUrl, "_blank");' +
     '  }' +
     '</script>' +
     '</body></html>'
-  ).setWidth(520).setHeight(420);
+  ).setWidth(520).setHeight(460);
   SpreadsheetApp.getUi().showModalDialog(html, "🏏 Google Slides Sync");
 }
 
@@ -4530,6 +4587,34 @@ function savePlayerHeadshot(profileId, base64Data) {
 
 
 /**
+ * Reads a player's headshot file from Google Drive and returns it as a base64 data URI string.
+ */
+function getPlayerHeadshotBase64(profileId) {
+  if (!profileId) return null;
+  var folderId = getHeadshotFolderId();
+  if (!folderId) return null;
+  try {
+    var folder = DriveApp.getFolderById(folderId);
+    var pid = String(profileId).trim();
+    var variations = [pid + ".png", pid + ".jpg", pid + ".jpeg", pid + ".PNG", pid + ".JPG"];
+    for (var i = 0; i < variations.length; i++) {
+      var files = folder.getFilesByName(variations[i]);
+      if (files.hasNext()) {
+        var file = files.next();
+        var blob = file.getBlob();
+        var contentType = blob.getContentType() || "image/png";
+        var b64 = Utilities.base64Encode(blob.getBytes());
+        return "data:" + contentType + ";base64," + b64;
+      }
+    }
+  } catch (e) {
+    Logger.log("getPlayerHeadshotBase64 error: " + e.message);
+  }
+  return null;
+}
+
+
+/**
  * Opens the Player Photo Studio interactive modal dialog with Google MediaPipe AI background removal.
  */
 function showPhotoStudioDialog() {
@@ -4614,6 +4699,15 @@ function showPhotoStudioDialog() {
     '      </div>' +
     '    </div>' +
     '    <div>' +
+    '      <label>Backing Disc Color:</label>' +
+    '      <div style="display:flex; gap:3px;">' +
+    '        <button class="tool-btn active-opt" id="btnBgGray" onclick="setBackingColor(\'#666666\')" style="flex:1; font-size:10px; padding:4px 2px;">Gray (#666)</button>' +
+    '        <button class="tool-btn" id="btnBgMaroon" onclick="setBackingColor(\'#4d0012\')" style="flex:1; font-size:10px; padding:4px 2px;">Maroon</button>' +
+    '        <button class="tool-btn" id="btnBgWhite" onclick="setBackingColor(\'#ffffff\')" style="flex:1; font-size:10px; padding:4px 2px;">White</button>' +
+    '        <button class="tool-btn" id="btnBgNone" onclick="setBackingColor(\'transparent\')" style="flex:1; font-size:10px; padding:4px 2px;">Cutout</button>' +
+    '      </div>' +
+    '    </div>' +
+    '    <div>' +
     '      <label>Editing Tool:</label>' +
     '      <div class="pill-group" style="width:100%;">' +
     '        <button class="pill-btn active" id="btnModePan" onclick="setMode(\'pan\')" style="flex:1;">🖐️ Move / Zoom</button>' +
@@ -4632,6 +4726,9 @@ function showPhotoStudioDialog() {
     '    <div>' +
     '      <label>Noise Filter:</label>' +
     '      <button class="tool-btn" id="noiseBtn" onclick="toggleNoise()" style="width:100%; text-align:center;">Noise Cutoff: Standard</button>' +
+    '    </div>' +
+    '    <div style="margin-top:2px;">' +
+    '      <button class="tool-btn" id="batchBackingBtn" onclick="batchApplyBackingToSaved()" style="width:100%; text-align:center; background:#fff8e6; border-color:#fac218; color:#4d0012; font-weight:700;">⚡ Apply Backing to All Saved Photos</button>' +
     '    </div>' +
     '  </div>' +
     '  <div class="card" style="align-items:center;">' +
@@ -4687,6 +4784,7 @@ function showPhotoStudioDialog() {
     '  var undoStack = [];' +
     '  var fadeShirt = true;' +
     '  var clubKit = false;' +
+    '  var backingColor = "#666666";' +
     '  var baseScale = 1;' +
     '  var zoomMultiplier = 1;' +
     '  var panX = 0, panY = 0;' +
@@ -4876,12 +4974,29 @@ function showPhotoStudioDialog() {
     '    var cx = 200 + panX;' +
     '    var cy = 200 + panY;' +
     '    exportCtx.clearRect(0, 0, 400, 400);' +
-    '    exportCtx.drawImage(cutoutCanvas, cx - w / 2, cy - h / 2, w, h);' +
-    '    if (fadeShirt && !clubKit) {' +
-    '      applyShirtFade(exportCtx);' +
-    '    }' +
-    '    if (clubKit) {' +
-    '      drawClubCollar(exportCtx);' +
+    '    if (backingColor && backingColor !== "transparent") {' +
+    '      exportCtx.save();' +
+    '      exportCtx.beginPath();' +
+    '      exportCtx.arc(200, 200, GUIDE_CIRCLE_R, 0, Math.PI * 2);' +
+    '      exportCtx.fillStyle = backingColor;' +
+    '      exportCtx.fill();' +
+    '      exportCtx.clip();' +
+    '      exportCtx.drawImage(cutoutCanvas, cx - w / 2, cy - h / 2, w, h);' +
+    '      if (fadeShirt && !clubKit) {' +
+    '        applyShirtFade(exportCtx);' +
+    '      }' +
+    '      if (clubKit) {' +
+    '        drawClubCollar(exportCtx);' +
+    '      }' +
+    '      exportCtx.restore();' +
+    '    } else {' +
+    '      exportCtx.drawImage(cutoutCanvas, cx - w / 2, cy - h / 2, w, h);' +
+    '      if (fadeShirt && !clubKit) {' +
+    '        applyShirtFade(exportCtx);' +
+    '      }' +
+    '      if (clubKit) {' +
+    '        drawClubCollar(exportCtx);' +
+    '      }' +
     '    }' +
     '    document.getElementById("previewImg").src = exportCanvas.toDataURL("image/png");' +
     '    ctx.clearRect(0, 0, 400, 400);' +
@@ -5008,6 +5123,70 @@ function showPhotoStudioDialog() {
     '    document.getElementById("noiseBtn").innerText = (noiseSensitivity === "aggressive") ? "Noise Cutoff: Clean 🔥" : "Noise Cutoff: Standard";' +
     '    applyCutout();' +
     '  }' +
+    '  function setBackingColor(color) {' +
+    '    backingColor = color;' +
+    '    document.getElementById("btnBgGray").className = "tool-btn" + (color === "#666666" ? " active-opt" : "");' +
+    '    document.getElementById("btnBgMaroon").className = "tool-btn" + (color === "#4d0012" ? " active-opt" : "");' +
+    '    document.getElementById("btnBgWhite").className = "tool-btn" + (color === "#ffffff" ? " active-opt" : "");' +
+    '    document.getElementById("btnBgNone").className = "tool-btn" + (color === "transparent" ? " active-opt" : "");' +
+    '    render();' +
+    '  }' +
+    '  function batchApplyBackingToSaved() {' +
+    '    var targets = playersData.filter(function(p) { return p.hasPhoto; });' +
+    '    if (targets.length === 0) { alert("No players currently have photos uploaded."); return; }' +
+    '    var colName = backingColor === "transparent" ? "Cutout Only (Transparent)" : (backingColor === "#666666" ? "Studio Gray (#666666)" : backingColor);' +
+    '    if (!confirm("This will update all " + targets.length + " saved player photo(s) in Google Drive with the " + colName + " backing circle.\\n\\nContinue?")) return;' +
+    '    var btn = document.getElementById("batchBackingBtn");' +
+    '    var fb = document.getElementById("inlineFeedback");' +
+    '    btn.disabled = true;' +
+    '    var originalText = btn.innerText;' +
+    '    var offscreen = document.createElement("canvas");' +
+    '    offscreen.width = 400; offscreen.height = 400;' +
+    '    var oCtx = offscreen.getContext("2d");' +
+    '    var idx = 0;' +
+    '    function processNext() {' +
+    '      if (idx >= targets.length) {' +
+    '        btn.disabled = false; btn.innerText = originalText;' +
+    '        fb.innerHTML = "<span class=\'toast toast-success\'>✅ All " + targets.length + " player photos updated with backing circle!</span>";' +
+    '        return;' +
+    '      }' +
+    '      var target = targets[idx];' +
+    '      btn.innerText = "⏳ Updating " + (idx + 1) + "/" + targets.length + " (" + target.fullName + ")...";' +
+    '      fb.innerHTML = "<span style=\'font-size:11px; color:#4d0012;\'>Processing " + target.fullName + "...</span>";' +
+    '      google.script.run.withSuccessHandler(function(b64) {' +
+    '        if (!b64) { idx++; processNext(); return; }' +
+    '        var tempImg = new Image();' +
+    '        tempImg.onload = function() {' +
+    '          oCtx.clearRect(0, 0, 400, 400);' +
+    '          if (backingColor && backingColor !== "transparent") {' +
+    '            oCtx.save();' +
+    '            oCtx.beginPath();' +
+    '            oCtx.arc(200, 200, GUIDE_CIRCLE_R, 0, Math.PI * 2);' +
+    '            oCtx.fillStyle = backingColor;' +
+    '            oCtx.fill();' +
+    '            oCtx.clip();' +
+    '            oCtx.drawImage(tempImg, 0, 0, 400, 400);' +
+    '            oCtx.restore();' +
+    '          } else {' +
+    '            oCtx.drawImage(tempImg, 0, 0, 400, 400);' +
+    '          }' +
+    '          var newB64 = offscreen.toDataURL("image/png");' +
+    '          google.script.run.withSuccessHandler(function() {' +
+    '            idx++; processNext();' +
+    '          }).withFailureHandler(function(err) {' +
+    '            console.warn("Failed saving batch photo for " + target.fullName, err);' +
+    '            idx++; processNext();' +
+    '          }).savePlayerHeadshot(target.profileId, newB64);' +
+    '        };' +
+    '        tempImg.onerror = function() { idx++; processNext(); };' +
+    '        tempImg.src = b64;' +
+    '      }).withFailureHandler(function(err) {' +
+    '        console.warn("Failed getting base64 for " + target.fullName, err);' +
+    '        idx++; processNext();' +
+    '      }).getPlayerHeadshotBase64(target.profileId);' +
+    '    }' +
+    '    processNext();' +
+    '  }' +
     '  function setBrush(size) {' +
     '    brushSize = size;' +
     '    document.getElementById("bSmall").className = "brush-dot" + (size === 16 ? " active" : "");' +
@@ -5126,7 +5305,7 @@ function showPhotoStudioDialog() {
     '  }' +
     '</script>' +
     '</body></html>'
-  ).setWidth(800).setHeight(580);
+  ).setWidth(820).setHeight(610);
   SpreadsheetApp.getUi().showModalDialog(html, "📸 Player Photo Studio");
 }
 
