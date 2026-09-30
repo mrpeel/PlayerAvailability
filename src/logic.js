@@ -1065,8 +1065,20 @@ function formatFormatVenue(format, venue) {
  * @param {string} input - Raw color string
  * @returns {{hex: string, alpha: number, isTransparent: boolean}}
  */
-function parseColorHex(input) {
-  if (!input) return { hex: "#666666", alpha: 1.0, isTransparent: false };
+function parseColorHex(input, defaultFallback) {
+  var def = (typeof defaultFallback === "string" && defaultFallback.trim()) ? defaultFallback.trim().toLowerCase() : "#666666";
+  function makeFallback() {
+    if (def === "transparent" || def === "none") {
+      return { hex: "#000000", alpha: 0.0, isTransparent: true };
+    }
+    var cleanDef = def.replace(/^#/, "");
+    if (/^[0-9a-f]{6}$/.test(cleanDef)) {
+      return { hex: "#" + cleanDef, alpha: 1.0, isTransparent: false };
+    }
+    return { hex: "#666666", alpha: 1.0, isTransparent: false };
+  }
+
+  if (!input) return makeFallback();
   var str = String(input).trim().toLowerCase().replace(/^#/, "");
   if (str === "transparent" || str === "none") {
     return { hex: "#000000", alpha: 0.0, isTransparent: true };
@@ -1091,17 +1103,25 @@ function parseColorHex(input) {
     var full = str[0] + str[0] + str[1] + str[1] + str[2] + str[2];
     return { hex: "#" + full, alpha: 1.0, isTransparent: false };
   }
-  return { hex: "#666666", alpha: 1.0, isTransparent: false };
+  return makeFallback();
 }
 
 /**
  * Normalizes user input into a clean 8-char RRGGBBAA hex string or 'transparent'.
  *
  * @param {string} input
+ * @param {string} [defaultFallback]
  * @returns {string}
  */
-function normalizeHexColor(input) {
-  if (!input) return "666666ff";
+function normalizeHexColor(input, defaultFallback) {
+  var def = (typeof defaultFallback === "string" && defaultFallback.trim()) ? defaultFallback.trim().toLowerCase() : "666666ff";
+  if (!input) {
+    if (def === "transparent" || def === "none") return "transparent";
+    var cleanDef = def.replace(/^#/, "");
+    if (/^[0-9a-f]{8}$/.test(cleanDef)) return cleanDef;
+    if (/^[0-9a-f]{6}$/.test(cleanDef)) return cleanDef + "ff";
+    return "666666ff";
+  }
   var str = String(input).trim().toLowerCase().replace(/^#/, "");
   if (str === "transparent" || str === "none") return "transparent";
   if (/^[0-9a-f]{8}$/.test(str)) return str;
@@ -1109,6 +1129,10 @@ function normalizeHexColor(input) {
   if (/^[0-9a-f]{3}$/.test(str)) {
     return str[0] + str[0] + str[1] + str[1] + str[2] + str[2] + "ff";
   }
+  if (def === "transparent" || def === "none") return "transparent";
+  var cleanDef = def.replace(/^#/, "");
+  if (/^[0-9a-f]{8}$/.test(cleanDef)) return cleanDef;
+  if (/^[0-9a-f]{6}$/.test(cleanDef)) return cleanDef + "ff";
   return "666666ff";
 }
 

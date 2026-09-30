@@ -3506,6 +3506,7 @@ function resolvePlayerImageBlob(profileId, name, photoUrl, headshotsMap) {
 
 
 var DEFAULT_SLIDES_PHOTO_BG_COLOR = '666666ff';
+var DEFAULT_SLIDES_PHOTO_BORDER_COLOR = 'transparent';
 
 /**
  * Gets the configured or remembered player photo backing color for Google Slides.
@@ -3524,6 +3525,22 @@ function setSlidesPhotoBgColor(color) {
 }
 
 /**
+ * Gets the configured or remembered player photo border color for Google Slides.
+ */
+function getSlidesPhotoBorderColor() {
+  return PropertiesService.getScriptProperties().getProperty('SLIDES_PHOTO_BORDER_COLOR') || DEFAULT_SLIDES_PHOTO_BORDER_COLOR;
+}
+
+/**
+ * Persists the remembered player photo border color in Script Properties.
+ */
+function setSlidesPhotoBorderColor(color) {
+  if (color) {
+    PropertiesService.getScriptProperties().setProperty('SLIDES_PHOTO_BORDER_COLOR', String(color).trim());
+  }
+}
+
+/**
  * Applies a solid fill or transparency to a Google Slides Shape.
  */
 function applyShapeFill(shape, colorObj) {
@@ -3532,7 +3549,7 @@ function applyShapeFill(shape, colorObj) {
     var fill = shape.getFill();
     if (!fill) return;
 
-    if (colorObj.isTransparent) {
+    if (!colorObj || colorObj.isTransparent) {
       if (typeof fill.setTransparent === "function") {
         fill.setTransparent();
       }
@@ -3551,6 +3568,42 @@ function applyShapeFill(shape, colorObj) {
     }
   } catch (err) {
     Logger.log("applyShapeFill warning: " + err.message);
+  }
+}
+
+/**
+ * Applies a solid border outline or transparency to a Google Slides Shape.
+ */
+function applyShapeBorder(shape, colorObj, optWeight) {
+  if (!shape || typeof shape.getBorder !== "function") return;
+  try {
+    var border = shape.getBorder();
+    if (!border) return;
+
+    if (!colorObj || colorObj.isTransparent) {
+      if (typeof border.setTransparent === "function") {
+        border.setTransparent();
+      }
+    } else {
+      var weight = optWeight || 2;
+      if (typeof border.setWeight === "function") {
+        border.setWeight(weight);
+      }
+      var lineFill = (typeof border.getLineFill === "function") ? border.getLineFill() : null;
+      if (lineFill && typeof lineFill.setSolidFill === "function") {
+        if (typeof colorObj.alpha === "number" && colorObj.alpha < 0.99) {
+          try {
+            lineFill.setSolidFill(colorObj.hex, colorObj.alpha);
+          } catch (e) {
+            lineFill.setSolidFill(colorObj.hex);
+          }
+        } else {
+          lineFill.setSolidFill(colorObj.hex);
+        }
+      }
+    }
+  } catch (err) {
+    Logger.log("applyShapeBorder warning: " + err.message);
   }
 }
 
@@ -3810,30 +3863,35 @@ function findSlideForTeam(prefix, defaultIdx, slides) {
 /**
  * Synchronizes Presentation_Staging team rosters and metadata directly to Google Slides using permanent Alt Text IDs.
  * @param {string|Spreadsheet} [roundDateOrSs] Optional round date string (e.g. "2025-10-04") or Spreadsheet object.
- * @param {Spreadsheet} [optSs] Optional Spreadsheet object if roundDate string was passed first.
+ * @param {string|Spreadsheet} [optBgColorOrSs] Optional background color hex string or Spreadsheet object.
+ * @param {string|Spreadsheet} [optBorderColorOrSs] Optional border color hex string or Spreadsheet object.
+ * @param {Spreadsheet} [optSs] Optional Spreadsheet object.
  */
-function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) {
+function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorderColorOrSs, optSs) {
   var s = null;
   var targetRound = null;
   var photoBgColor = null;
+  var photoBorderColor = null;
 
-  if (typeof roundDateOrSs === "string") {
-    targetRound = roundDateOrSs.trim();
-    if (typeof optColorOrSs === "string") {
-      photoBgColor = optColorOrSs.trim();
-      s = (optColor && typeof optColor.getSheetByName === "function") ? optColor : getSS();
-    } else if (optColorOrSs && typeof optColorOrSs.getSheetByName === "function") {
-      s = optColorOrSs;
-      if (typeof optColor === "string") photoBgColor = optColor.trim();
-    } else {
-      s = getSS();
+  var allArgs = [roundDateOrSs, optBgColorOrSs, optBorderColorOrSs, optSs];
+  for (var a = 0; a < allArgs.length; a++) {
+    if (allArgs[a] && typeof allArgs[a].getSheetByName === "function") {
+      s = allArgs[a];
+      break;
     }
-  } else if (roundDateOrSs && typeof roundDateOrSs.getSheetByName === "function") {
-    s = roundDateOrSs;
-    if (typeof optColorOrSs === "string") photoBgColor = optColorOrSs.trim();
-  } else {
-    s = getSS();
   }
+  if (!s) s = getSS();
+
+  var strArgs = [];
+  for (var a = 0; a < allArgs.length; a++) {
+    if (typeof allArgs[a] === "string" && allArgs[a].trim() !== "") {
+      strArgs.push(allArgs[a].trim());
+    }
+  }
+
+  if (strArgs.length > 0) targetRound = strArgs[0];
+  if (strArgs.length > 1) photoBgColor = strArgs[1];
+  if (strArgs.length > 2) photoBorderColor = strArgs[2];
 
   if (!photoBgColor) {
     photoBgColor = getSlidesPhotoBgColor();
@@ -3841,7 +3899,14 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
     setSlidesPhotoBgColor(photoBgColor);
   }
 
-  var colorObj = parseColorHex(photoBgColor);
+  if (!photoBorderColor) {
+    photoBorderColor = getSlidesPhotoBorderColor();
+  } else {
+    setSlidesPhotoBorderColor(photoBorderColor);
+  }
+
+  var bgColorObj = parseColorHex(photoBgColor, "#666666");
+  var borderColorObj = parseColorHex(photoBorderColor, "transparent");
 
   if (!s) return { success: false, message: "Spreadsheet not found." };
   
@@ -4008,16 +4073,18 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
       if (oldBacking) {
         try {
           applyShapeFill(oldBacking, { isTransparent: true });
-          try { oldBacking.getBorder().setTransparent(); } catch (bErr) {}
+          applyShapeBorder(oldBacking, { isTransparent: true });
         } catch (e) {}
       }
 
-      // If the template group itself contains a backing shape element, update its fill
+      // If the template contains a backing shape element, update both its fill and border
       if (backingShapeEl) {
         if (hasPlayer) {
-          applyShapeFill(backingShapeEl, colorObj);
+          applyShapeFill(backingShapeEl, bgColorObj);
+          applyShapeBorder(backingShapeEl, borderColorObj, 2);
         } else {
           applyShapeFill(backingShapeEl, { isTransparent: true });
+          applyShapeBorder(backingShapeEl, { isTransparent: true });
         }
       }
 
@@ -4072,7 +4139,11 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
           // 3. If slotNum is found, extract shape, backing shape and image from the group and process ALL!
           if (slotNum !== null) {
             var extracted = extractShapeAndImageFromGroup(grp);
-            processSlotElements(slotNum, extracted.shape, extracted.image, extracted.backingShape, grp);
+            var backingEl = extracted.backingShape;
+            if (!backingEl && extracted.image) {
+              backingEl = findBackingShapeForImage(slide, extracted.image);
+            }
+            processSlotElements(slotNum, extracted.shape, extracted.image, backingEl, grp);
             return;
           }
 
@@ -4100,7 +4171,8 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
           if (type === SlidesApp.PageElementType.SHAPE) {
             processSlotElements(elSlotNum, el, null, null, null);
           } else if (type === SlidesApp.PageElementType.IMAGE) {
-            processSlotElements(elSlotNum, null, el, null, null);
+            var backingEl = findBackingShapeForImage(slide, el);
+            processSlotElements(elSlotNum, null, el, backingEl, null);
           }
         }
       } catch (elErr) {
@@ -4161,7 +4233,11 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
           var grpEl = gIdx < sortedGroups.length ? sortedGroups[gIdx] : null;
           if (grpEl) {
             var extracted = extractShapeAndImageFromGroup(grpEl);
-            processSlotElements(gIdx + 1, extracted.shape, extracted.image, extracted.backingShape, grpEl);
+            var backingEl = extracted.backingShape;
+            if (!backingEl && extracted.image) {
+              backingEl = findBackingShapeForImage(slide, extracted.image);
+            }
+            processSlotElements(gIdx + 1, extracted.shape, extracted.image, backingEl, grpEl);
           }
         }
       } else {
@@ -4173,7 +4249,8 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
         for (var sIdx = 0; sIdx < maxSlots; sIdx++) {
           var shpEl = sIdx < sortedShapes.length ? sortedShapes[sIdx] : null;
           var imgEl = sIdx < sortedImages.length ? sortedImages[sIdx] : null;
-          processSlotElements(sIdx + 1, shpEl, imgEl, null, null);
+          var backingEl = imgEl ? findBackingShapeForImage(slide, imgEl) : null;
+          processSlotElements(sIdx + 1, shpEl, imgEl, backingEl, null);
         }
       }
     }
@@ -4185,7 +4262,7 @@ function syncPresentationStagingToSlides(roundDateOrSs, optColorOrSs, optColor) 
         var extraBacking = findBackingShapeByTag(slide, extraTag);
         if (extraBacking) {
           applyShapeFill(extraBacking, { isTransparent: true });
-          try { extraBacking.getBorder().setTransparent(); } catch (bErr) {}
+          applyShapeBorder(extraBacking, { isTransparent: true });
         }
       } catch (exErr) {}
     }
@@ -4298,7 +4375,8 @@ function getSlidesSyncSummary() {
     roundToPresent: currentRound || "(None selected)",
     availableRounds: roundTabs,
     roundMeta: roundMeta,
-    photoBgColor: getSlidesPhotoBgColor()
+    photoBgColor: getSlidesPhotoBgColor(),
+    photoBorderColor: getSlidesPhotoBorderColor()
   };
 }
 
@@ -4312,20 +4390,28 @@ function showSyncSlidesDialog() {
     '<html><head><base target="_top">' +
     '<style>' +
     '  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }' +
-    '  body { padding: 24px; background: #fafafa; color: #333; }' +
-    '  .header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; border-bottom: 2px solid #4d0012; padding-bottom: 12px; }' +
-    '  .header h2 { color: #4d0012; font-size: 20px; font-weight: 700; }' +
-    '  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }' +
-    '  .info-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }' +
+    '  body { padding: 20px 24px; background: #fafafa; color: #333; }' +
+    '  .header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; border-bottom: 2px solid #4d0012; padding-bottom: 10px; }' +
+    '  .header h2 { color: #4d0012; font-size: 19px; font-weight: 700; }' +
+    '  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }' +
+    '  .card-title { font-size: 12px; font-weight: 700; color: #4d0012; text-transform: uppercase; letter-spacing: 0.5px; }' +
+    '  .info-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 13.5px; }' +
     '  .info-row:last-child { border-bottom: none; }' +
-    '  .label { color: #666; font-weight: 500; }' +
-    '  .value { color: #111; font-weight: 600; }' +
-    '  select { padding: 6px 12px; border-radius: 6px; border: 1.5px solid #4d0012; font-size: 14px; font-weight: 600; color: #4d0012; background: #fff; cursor: pointer; min-width: 170px; outline: none; transition: border-color 0.2s; }' +
+    '  .label { color: #555; font-weight: 500; font-size: 13px; }' +
+    '  .value { color: #111; font-weight: 600; font-size: 13px; }' +
+    '  select { padding: 5px 10px; border-radius: 6px; border: 1.5px solid #4d0012; font-size: 13px; font-weight: 600; color: #4d0012; background: #fff; cursor: pointer; min-width: 170px; outline: none; transition: border-color 0.2s; }' +
     '  select:focus { border-color: #fac218; box-shadow: 0 0 0 2px rgba(250, 194, 24, 0.25); }' +
+    '  .color-control-group { margin-top: 8px; padding-top: 8px; border-top: 1px solid #f0f0f0; }' +
+    '  .color-row-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }' +
+    '  .color-inputs { display: flex; align-items: center; gap: 8px; }' +
+    '  .color-picker { width: 28px; height: 28px; padding: 0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: none; }' +
+    '  .hex-input { width: 90px; padding: 4px 6px; font-family: monospace; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; text-transform: uppercase; }' +
+    '  .hex-input:focus { border-color: #4d0012; outline: none; }' +
+    '  .preset-bar { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }' +
     '  .preset-btn { background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; padding: 2px 7px; font-size: 11px; font-weight: 600; color: #374151; cursor: pointer; transition: background 0.15s; }' +
     '  .preset-btn:hover { background: #e5e7eb; border-color: #9ca3af; }' +
-    '  .actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }' +
-    '  button { padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }' +
+    '  .actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px; }' +
+    '  button { padding: 9px 18px; border-radius: 6px; font-size: 13.5px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }' +
     '  .btn-primary { background: #4d0012; color: #fff; }' +
     '  .btn-primary:hover { background: #35000c; }' +
     '  .btn-secondary { background: #e0e0e0; color: #444; }' +
@@ -4341,13 +4427,55 @@ function showSyncSlidesDialog() {
     '  <h2>🏏 Sync to Google Slides</h2>' +
     '</div>' +
     '<div id="confirmState">' +
-    '  <p style="font-size: 14px; color: #555; margin-bottom: 16px;">Select the round to present. This will load the round selection and update all team slides in your Google Slides deck.</p>' +
-    '  <div class="card">' +
+    '  <div class="card" style="margin-bottom: 12px;">' +
     '    <div class="info-row">' +
     '      <span class="label">Round to Present:</span>' +
     '      <select id="roundSelect" onchange="updateTeamsDisplay()"><option value="">Loading rounds...</option></select>' +
     '    </div>' +
     '    <div class="info-row"><span class="label">Teams:</span><span class="value" id="teamsDisplay">Loading...</span></div>' +
+    '  </div>' +
+    '  <div class="card" style="margin-bottom: 12px;">' +
+    '    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">' +
+    '      <span class="card-title">Avatar Circle Styling</span>' +
+    '      <div style="display: flex; align-items: center; gap: 8px;">' +
+    '        <span style="font-size: 11px; color: #777;">Preview:</span>' +
+    '        <div id="circlePreview" style="width: 32px; height: 32px; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.15); transition: all 0.15s;"></div>' +
+    '      </div>' +
+    '    </div>' +
+    '    <!-- Background Colour -->' +
+    '    <div class="color-control-group" style="margin-top: 6px; padding-top: 8px;">' +
+    '      <div class="color-row-top">' +
+    '        <span class="label">Background Colour:</span>' +
+    '        <div class="color-inputs">' +
+    '          <input type="color" id="bgColorPicker" class="color-picker" oninput="onBgColorPicked(this.value)">' +
+    '          <input type="text" id="bgColorInput" class="hex-input" maxlength="12" placeholder="#666666" oninput="onBgTextInput(this.value)">' +
+    '        </div>' +
+    '      </div>' +
+    '      <div class="preset-bar">' +
+    '        <button type="button" class="preset-btn" onclick="setBgPreset(\'#fac218\')">Gold</button>' +
+    '        <button type="button" class="preset-btn" onclick="setBgPreset(\'#4d0012\')">Maroon</button>' +
+    '        <button type="button" class="preset-btn" onclick="setBgPreset(\'#ffffff\')">White</button>' +
+    '        <button type="button" class="preset-btn" onclick="setBgPreset(\'#666666\')">Gray</button>' +
+    '        <button type="button" class="preset-btn" onclick="setBgPreset(\'transparent\')">None</button>' +
+    '      </div>' +
+    '    </div>' +
+    '    <!-- Border Colour -->' +
+    '    <div class="color-control-group">' +
+    '      <div class="color-row-top">' +
+    '        <span class="label">Border Colour:</span>' +
+    '        <div class="color-inputs">' +
+    '          <input type="color" id="borderColorPicker" class="color-picker" oninput="onBorderColorPicked(this.value)">' +
+    '          <input type="text" id="borderColorInput" class="hex-input" maxlength="12" placeholder="None" oninput="onBorderTextInput(this.value)">' +
+    '        </div>' +
+    '      </div>' +
+    '      <div class="preset-bar">' +
+    '        <button type="button" class="preset-btn" onclick="setBorderPreset(\'transparent\')">None</button>' +
+    '        <button type="button" class="preset-btn" onclick="setBorderPreset(\'#fac218\')">Gold</button>' +
+    '        <button type="button" class="preset-btn" onclick="setBorderPreset(\'#4d0012\')">Maroon</button>' +
+    '        <button type="button" class="preset-btn" onclick="setBorderPreset(\'#ffffff\')">White</button>' +
+    '        <button type="button" class="preset-btn" onclick="setBorderPreset(\'#666666\')">Gray</button>' +
+    '      </div>' +
+    '    </div>' +
     '  </div>' +
     '  <div class="actions">' +
     '    <button class="btn-secondary" onclick="google.script.host.close()">Cancel</button>' +
@@ -4357,7 +4485,7 @@ function showSyncSlidesDialog() {
     '<div id="loadingState" style="display: none;" class="state-box">' +
     '  <div class="spinner"></div>' +
     '  <p style="font-size: 15px; font-weight: 600; color: #4d0012;">Updating Google Slides presentation...</p>' +
-    '  <p style="font-size: 13px; color: #777; margin-top: 4px;">Populating team rosters, match metadata, and player headshots.</p>' +
+    '  <p style="font-size: 13px; color: #777; margin-top: 4px;">Populating team rosters, match metadata, and avatar discs.</p>' +
     '</div>' +
     '<div id="successState" style="display: none;" class="state-box">' +
     '  <div style="font-size: 40px; margin-bottom: 12px;">✅</div>' +
@@ -4371,6 +4499,85 @@ function showSyncSlidesDialog() {
     '<script>' +
     '  var presentationUrl = "";' +
     '  var roundMeta = {};' +
+    '  var currentBg = "#666666";' +
+    '  var currentBorder = "transparent";' +
+    '  function normalizeInput(val) {' +
+    '    if (!val) return "";' +
+    '    var s = String(val).trim().toLowerCase();' +
+    '    if (s === "transparent" || s === "none") return "transparent";' +
+    '    if (!s.startsWith("#") && (s.length === 6 || s.length === 8 || s.length === 3)) {' +
+    '      return "#" + s;' +
+    '    }' +
+    '    return s;' +
+    '  }' +
+    '  function updatePreview() {' +
+    '    var circle = document.getElementById("circlePreview");' +
+    '    if (!circle) return;' +
+    '    var bg = currentBg.trim().toLowerCase();' +
+    '    if (bg === "transparent" || bg === "none") {' +
+    '      circle.style.backgroundColor = "transparent";' +
+    '      circle.style.backgroundImage = "repeating-linear-gradient(45deg, #e5e7eb 0, #e5e7eb 3px, transparent 0, transparent 6px)";' +
+    '    } else {' +
+    '      circle.style.backgroundColor = bg;' +
+    '      circle.style.backgroundImage = "none";' +
+    '    }' +
+    '    var border = currentBorder.trim().toLowerCase();' +
+    '    if (border === "transparent" || border === "none" || !border) {' +
+    '      circle.style.border = "1.5px dashed #cbd5e1";' +
+    '    } else {' +
+    '      circle.style.border = "2.5px solid " + border;' +
+    '    }' +
+    '  }' +
+    '  function setBgPreset(val) {' +
+    '    currentBg = val;' +
+    '    var inp = document.getElementById("bgColorInput");' +
+    '    if (inp) inp.value = val;' +
+    '    if (val !== "transparent" && val.startsWith("#") && val.length >= 7) {' +
+    '      var pkr = document.getElementById("bgColorPicker");' +
+    '      if (pkr) pkr.value = val.substring(0, 7);' +
+    '    }' +
+    '    updatePreview();' +
+    '  }' +
+    '  function setBorderPreset(val) {' +
+    '    currentBorder = val;' +
+    '    var inp = document.getElementById("borderColorInput");' +
+    '    if (inp) inp.value = val;' +
+    '    if (val !== "transparent" && val.startsWith("#") && val.length >= 7) {' +
+    '      var pkr = document.getElementById("borderColorPicker");' +
+    '      if (pkr) pkr.value = val.substring(0, 7);' +
+    '    }' +
+    '    updatePreview();' +
+    '  }' +
+    '  function onBgColorPicked(val) {' +
+    '    currentBg = val;' +
+    '    var inp = document.getElementById("bgColorInput");' +
+    '    if (inp) inp.value = val;' +
+    '    updatePreview();' +
+    '  }' +
+    '  function onBorderColorPicked(val) {' +
+    '    currentBorder = val;' +
+    '    var inp = document.getElementById("borderColorInput");' +
+    '    if (inp) inp.value = val;' +
+    '    updatePreview();' +
+    '  }' +
+    '  function onBgTextInput(val) {' +
+    '    var norm = normalizeInput(val);' +
+    '    currentBg = norm || "#666666";' +
+    '    if (norm.startsWith("#") && norm.length >= 7) {' +
+    '      var pkr = document.getElementById("bgColorPicker");' +
+    '      if (pkr) pkr.value = norm.substring(0, 7);' +
+    '    }' +
+    '    updatePreview();' +
+    '  }' +
+    '  function onBorderTextInput(val) {' +
+    '    var norm = normalizeInput(val);' +
+    '    currentBorder = norm || "transparent";' +
+    '    if (norm.startsWith("#") && norm.length >= 7) {' +
+    '      var pkr = document.getElementById("borderColorPicker");' +
+    '      if (pkr) pkr.value = norm.substring(0, 7);' +
+    '    }' +
+    '    updatePreview();' +
+    '  }' +
     '  function updateTeamsDisplay() {' +
     '    var sel = document.getElementById("roundSelect");' +
     '    var val = sel ? sel.value : "";' +
@@ -4416,6 +4623,31 @@ function showSyncSlidesDialog() {
     '      sel.appendChild(opt);' +
     '    }' +
     '    updateTeamsDisplay();' +
+    '    if (summary.photoBgColor) {' +
+    '      var bgVal = summary.photoBgColor;' +
+    '      if (bgVal.length === 8 && !bgVal.startsWith("#")) bgVal = "#" + bgVal.substring(0, 6);' +
+    '      if (bgVal.length === 6 && !bgVal.startsWith("#")) bgVal = "#" + bgVal;' +
+    '      currentBg = bgVal;' +
+    '      var bgInp = document.getElementById("bgColorInput");' +
+    '      if (bgInp) bgInp.value = bgVal;' +
+    '      if (bgVal.startsWith("#") && bgVal.length >= 7) {' +
+    '        var bgPkr = document.getElementById("bgColorPicker");' +
+    '        if (bgPkr) bgPkr.value = bgVal.substring(0, 7);' +
+    '      }' +
+    '    }' +
+    '    if (summary.photoBorderColor) {' +
+    '      var borderVal = summary.photoBorderColor;' +
+    '      if (borderVal.length === 8 && !borderVal.startsWith("#")) borderVal = "#" + borderVal.substring(0, 6);' +
+    '      if (borderVal.length === 6 && !borderVal.startsWith("#")) borderVal = "#" + borderVal;' +
+    '      currentBorder = borderVal;' +
+    '      var borderInp = document.getElementById("borderColorInput");' +
+    '      if (borderInp) borderInp.value = borderVal;' +
+    '      if (borderVal.startsWith("#") && borderVal.length >= 7) {' +
+    '        var borderPkr = document.getElementById("borderColorPicker");' +
+    '        if (borderPkr) borderPkr.value = borderVal.substring(0, 7);' +
+    '      }' +
+    '    }' +
+    '    updatePreview();' +
     '  }).getSlidesSyncSummary();' +
     '  function startSync() {' +
     '    var selectedRound = document.getElementById("roundSelect").value;' +
@@ -4423,6 +4655,10 @@ function showSyncSlidesDialog() {
     '      alert("Please select a round to present.");' +
     '      return;' +
     '    }' +
+    '    var bgInp = document.getElementById("bgColorInput");' +
+    '    var borderInp = document.getElementById("borderColorInput");' +
+    '    var bgColor = bgInp ? (bgInp.value.trim() || currentBg) : currentBg;' +
+    '    var borderColor = borderInp ? (borderInp.value.trim() || currentBorder) : currentBorder;' +
     '    document.getElementById("confirmState").style.display = "none";' +
     '    document.getElementById("loadingState").style.display = "block";' +
     '    google.script.run.withSuccessHandler(function(res) {' +
@@ -4432,14 +4668,14 @@ function showSyncSlidesDialog() {
     '    }).withFailureHandler(function(err) {' +
     '      alert("Sync Error: " + err.message);' +
     '      google.script.host.close();' +
-    '    }).syncPresentationStagingToSlides(selectedRound);' +
+    '    }).syncPresentationStagingToSlides(selectedRound, bgColor, borderColor);' +
     '  }' +
     '  function openSlides() {' +
     '    if (presentationUrl) window.open(presentationUrl, "_blank");' +
-    '  }' +
+    '    }' +
     '</script>' +
     '</body></html>'
-  ).setWidth(520).setHeight(460);
+  ).setWidth(520).setHeight(560);
   SpreadsheetApp.getUi().showModalDialog(html, "🏏 Google Slides Sync");
 }
 

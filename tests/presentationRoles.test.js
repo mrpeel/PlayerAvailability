@@ -145,6 +145,13 @@ describe('parseColorHex', () => {
     expect(parseColorHex(null)).toEqual({ hex: '#666666', alpha: 1, isTransparent: false });
     expect(parseColorHex('invalid')).toEqual({ hex: '#666666', alpha: 1, isTransparent: false });
   });
+
+  test('respects custom fallback when provided', () => {
+    expect(parseColorHex('', 'transparent')).toEqual({ hex: '#000000', alpha: 0, isTransparent: true });
+    expect(parseColorHex(null, 'none')).toEqual({ hex: '#000000', alpha: 0, isTransparent: true });
+    expect(parseColorHex('', '#fac218')).toEqual({ hex: '#fac218', alpha: 1, isTransparent: false });
+    expect(parseColorHex('invalid', 'transparent')).toEqual({ hex: '#000000', alpha: 0, isTransparent: true });
+  });
 });
 
 describe('normalizeHexColor', () => {
@@ -167,6 +174,13 @@ describe('normalizeHexColor', () => {
   test('handles empty or missing input', () => {
     expect(normalizeHexColor('')).toBe('666666ff');
     expect(normalizeHexColor(null)).toBe('666666ff');
+  });
+
+  test('respects custom fallback when provided', () => {
+    expect(normalizeHexColor('', 'transparent')).toBe('transparent');
+    expect(normalizeHexColor(null, 'none')).toBe('transparent');
+    expect(normalizeHexColor('', '#fac218')).toBe('fac218ff');
+    expect(normalizeHexColor('invalid', 'transparent')).toBe('transparent');
   });
 });
 
