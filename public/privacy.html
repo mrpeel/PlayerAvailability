@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - Laburnum CC Availability & Team Selection</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --maroon: #4d0012;
+      --gold: #fac218;
+      --cream: #fff8f7;
+      --card-bg: #ffffff;
+      --text: #1a0005;
+      --text-muted: #5c4a4e;
+      --border: #e8d6d6;
+      --radius: 12px;
+      --shadow: 0 4px 12px rgba(77, 0, 18, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--cream);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 24px 16px 64px 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 800px;
+    }
+
+    header {
+      background-color: var(--maroon);
+      color: #ffffff;
+      padding: 32px 24px;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    header h1 {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+
+    header p {
+      color: var(--gold);
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    h2 {
+      color: var(--maroon);
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      border-bottom: 2px solid var(--gold);
+      padding-bottom: 6px;
+      display: inline-block;
+    }
+
+    p {
+      color: var(--text);
+      font-size: 15px;
+      margin-bottom: 12px;
+    }
+
+    p:last-child {
+      margin-bottom: 0;
+    }
+
+    ul {
+      margin: 10px 0 14px 20px;
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    li {
+      margin-bottom: 8px;
+    }
+
+    .highlight-box {
+      background-color: #fcf4f5;
+      border-left: 4px solid var(--maroon);
+      padding: 16px;
+      border-radius: 4px;
+      margin: 14px 0;
+      font-size: 14px;
+    }
+
+    .highlight-box strong {
+      color: var(--maroon);
+    }
+
+    a {
+      color: var(--maroon);
+      font-weight: 600;
+      text-decoration: underline;
+    }
+
+    a:hover {
+      color: #7a001d;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 24px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .meta-tag {
+      display: inline-block;
+      background: #f0e6e8;
+      color: var(--maroon);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 20px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <h1>Privacy Policy</h1>
+      <p>Laburnum Cricket Club Availability & Team Selection System</p>
+      <div class="meta-tag">Last Updated: October 2026</div>
+    </header>
+
+    <div class="card">
+      <h2>1. Overview</h2>
+      <p>
+        The <strong>Laburnum Cricket Club Availability & Team Selection System</strong> ("the Application", "we", "our") is an internal club administration tool created to manage match availability, team selection, and roster communications for registered players and team selectors of Laburnum Cricket Club (Melbourne, Victoria, Australia).
+      </p>
+      <p>
+        We respect the privacy of all club members, players, and volunteers. This Privacy Policy details how the Application accesses, uses, stores, and protects member information and Google user data.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>2. Information We Collect and Process</h2>
+      <p>The Application processes the following limited information exclusively for club match operations:</p>
+      <ul>
+        <li><strong>Player Profile & Contact Information:</strong> Player names, PlayHQ profile identifiers, registered phone numbers, and emergency/parent contact numbers. These are sourced directly from official PlayHQ club registration exports and team communications.</li>
+        <li><strong>Match Availability Data:</strong> Player responses indicating availability (Available / Unavailable), specific match dates, and optional notes (e.g., late arrival, injury context) submitted via the mobile check-in interface.</li>
+        <li><strong>Player Profile Headshots:</strong> Club-captured portrait photos used for standardized visual avatars on team selection sheets and presentation slides.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>3. Google User Data & API Scopes</h2>
+      <p>
+        The Application integrates with Google Workspace APIs (Google Sheets, Google Slides, and Google Drive) via Google Apps Script to maintain club records and generate match-day team presentations.
+      </p>
+      <p>The specific Google API scopes requested and their purposes are:</p>
+      <ul>
+        <li>
+          <strong>Google Sheets (<code>https://www.googleapis.com/auth/spreadsheets</code>):</strong>
+          Used to read match fixtures, player rosters, and record player availability responses. It also allows authorized selectors to move players between team selections.
+        </li>
+        <li>
+          <strong>Google Slides (<code>https://www.googleapis.com/auth/presentations</code>):</strong>
+          Used to synchronize selected team rosters, opponents, venues, and player avatar images into the club's Google Slides match-day presentation deck.
+        </li>
+        <li>
+          <strong>Google Drive (<code>https://www.googleapis.com/auth/drive</code> / <code>drive.file</code>):</strong>
+          Used strictly to save and retrieve cropped player headshot images within the club's designated Google Drive storage folder.
+        </li>
+      </ul>
+      <p>
+        The Application only accesses documents and presentations explicitly designated for Laburnum Cricket Club operations. It does not access, read, or modify any user's personal emails, unrelated files, or external drive contents.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>4. Google API Services User Data Policy Compliance</h2>
+      <div class="highlight-box">
+        <strong>Google Limited Use Compliance:</strong><br>
+        The Application's use and transfer to any other app of information received from Google APIs adheres to the 
+        <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer">Google API Services User Data Policy</a>, including the <em>Limited Use</em> requirements.
+      </div>
+      <p>Specifically:</p>
+      <ul>
+        <li>We only use Google user data to provide and improve the club availability and selection features described in this policy.</li>
+        <li>We do not transfer or disclose Google user data to third parties unless necessary to provide the service or comply with applicable law.</li>
+        <li>We do not use Google user data for serving advertisements, retargeting, or personalized marketing.</li>
+        <li>We do not permit humans to read Google user data, except where authorized club selectors review player rosters or when required for technical troubleshooting with user consent.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>5. How Data is Shared</h2>
+      <p>
+        <strong>We never sell, rent, monetize, or share member information with third parties.</strong>
+      </p>
+      <p>
+        Player availability and selected team lists are shared strictly within the club community (e.g., team announcements sent to players via team WhatsApp groups and published on club social presentation slides).
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>6. Data Storage and Security</h2>
+      <p>
+        All player data and team selections reside inside the club's private Google Workspace environment (Google Sheets and Google Drive) protected by Google's industry-standard enterprise security. 
+      </p>
+      <p>
+        Requests between the web interface and Google Sheets are proxied securely using encrypted HTTPS connections (TLS) via Firebase Cloud Functions.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>7. Data Retention and Member Rights</h2>
+      <p>
+        Availability logs and roster data are maintained for the duration of the relevant cricket season to facilitate team selection, historical match records, and trophy/qualification eligibility.
+      </p>
+      <p>
+        Club members have the right to inspect, update, or request the deletion of their contact numbers and profile images at any time by contacting club administration.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>8. Contact Information</h2>
+      <p>
+        For any questions regarding this Privacy Policy, your personal information, or the operation of the selection app, please contact:
+      </p>
+      <ul>
+        <li><strong>Organization:</strong> Laburnum Cricket Club Inc.</li>
+        <li><strong>Location:</strong> Kalang Park, Blackburn / Box Hill, Victoria, Australia</li>
+        <li><strong>Website:</strong> <a href="https://laburnumcc.org.au" target="_blank" rel="noopener noreferrer">laburnumcc.org.au</a></li>
+        <li><strong>Administration Contact:</strong> Club Secretary / Selection Committee</li>
+      </ul>
+    </div>
+
+    <footer>
+      &copy; 2026 Laburnum Cricket Club. All rights reserved.
+    </footer>
+  </div>
+
+</body>
+</html>

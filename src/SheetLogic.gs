@@ -4923,7 +4923,7 @@ function showPhotoStudioDialog() {
     '      <input type="file" id="fileInput" accept="image/*" style="display:none;" onchange="handleFile(this.files[0])">' +
     '    </div>' +
     '    <div class="tip-box">' +
-    '      <strong>📏 Big Face Rule:</strong> Face fills ~80% of avatar (crown at <strong>▲ TOP</strong>, jaw at <strong>▼ CHIN</strong>). Crops out shoulders and eliminates distracting shirt colors!' +
+    '      <strong>📏 Big Face Rule:</strong> Face fills ~70% of avatar (crown at <strong>▲ TOP</strong>, jaw at <strong>▼ CHIN</strong>). Crops out shoulders and eliminates distracting shirt colors!' +
     '    </div>' +
     '    <div>' +
     '      <label>Shirt Handling:</label>' +
@@ -4935,10 +4935,10 @@ function showPhotoStudioDialog() {
     '    <div>' +
     '      <label>Backing Disc Color:</label>' +
     '      <div style="display:flex; gap:3px;">' +
-    '        <button class="tool-btn active-opt" id="btnBgGray" onclick="setBackingColor(\'#666666\')" style="flex:1; font-size:10px; padding:4px 2px;">Gray (#666)</button>' +
+    '        <button class="tool-btn" id="btnBgGray" onclick="setBackingColor(\'#666666\')" style="flex:1; font-size:10px; padding:4px 2px;">Gray (#666)</button>' +
     '        <button class="tool-btn" id="btnBgMaroon" onclick="setBackingColor(\'#4d0012\')" style="flex:1; font-size:10px; padding:4px 2px;">Maroon</button>' +
     '        <button class="tool-btn" id="btnBgWhite" onclick="setBackingColor(\'#ffffff\')" style="flex:1; font-size:10px; padding:4px 2px;">White</button>' +
-    '        <button class="tool-btn" id="btnBgNone" onclick="setBackingColor(\'transparent\')" style="flex:1; font-size:10px; padding:4px 2px;">Cutout</button>' +
+    '        <button class="tool-btn active-opt" id="btnBgNone" onclick="setBackingColor(\'transparent\')" style="flex:1; font-size:10px; padding:4px 2px;">Cutout</button>' +
     '      </div>' +
     '    </div>' +
     '    <div>' +
@@ -4959,7 +4959,7 @@ function showPhotoStudioDialog() {
     '    </div>' +
     '    <div>' +
     '      <label>Noise Filter:</label>' +
-    '      <button class="tool-btn" id="noiseBtn" onclick="toggleNoise()" style="width:100%; text-align:center;">Noise Cutoff: Standard</button>' +
+    '      <button class="tool-btn active-opt" id="noiseBtn" onclick="toggleNoise()" style="width:100%; text-align:center;">Noise Cutoff: Clean 🔥</button>' +
     '    </div>' +
     '    <div style="margin-top:2px;">' +
     '      <button class="tool-btn" id="batchBackingBtn" onclick="batchApplyBackingToSaved()" style="width:100%; text-align:center; background:#fff8e6; border-color:#fac218; color:#4d0012; font-weight:700;">⚡ Apply Backing to All Saved Photos</button>' +
@@ -5011,14 +5011,14 @@ function showPhotoStudioDialog() {
     '  var rawImg = new Image();' +
     '  var imgLoaded = false;' +
     '  var cachedMask = null;' +
-    '  var noiseSensitivity = "normal";' +
+    '  var noiseSensitivity = "aggressive";' +
     '  var showGuides = true;' +
     '  var toolMode = "pan";' +
     '  var brushSize = 28;' +
     '  var undoStack = [];' +
     '  var fadeShirt = true;' +
     '  var clubKit = false;' +
-    '  var backingColor = "#666666";' +
+    '  var backingColor = "transparent";' +
     '  var baseScale = 1;' +
     '  var zoomMultiplier = 1;' +
     '  var panX = 0, panY = 0;' +
@@ -5027,7 +5027,7 @@ function showPhotoStudioDialog() {
     '  var startMouseX = 0, startMouseY = 0;' +
     '  var startPanX = 0, startPanY = 0;' +
     '  var cursorCoord = null;' +
-    '  var GUIDE_TOP_Y = 24, GUIDE_CHIN_Y = 330, GUIDE_EYE_Y = 170, GUIDE_CENTER_X = 200, GUIDE_CIRCLE_R = 192;' +
+    '  var GUIDE_TOP_Y = 61, GUIDE_CHIN_Y = 330, GUIDE_EYE_Y = 180, GUIDE_CENTER_X = 200, GUIDE_CIRCLE_R = 192;' +
     '  var canvas = document.getElementById("cropCanvas");' +
     '  var ctx = canvas.getContext("2d");' +
     '  var normCanvas = document.createElement("canvas");' +
@@ -5276,26 +5276,26 @@ function showPhotoStudioDialog() {
     '    c.lineWidth = 2.5;' +
     '    c.stroke();' +
     '    c.beginPath();' +
-    '    c.ellipse(GUIDE_CENTER_X, (GUIDE_TOP_Y + GUIDE_CHIN_Y) / 2, 112, 153, 0, 0, Math.PI * 2);' +
+    '    c.ellipse(GUIDE_CENTER_X, (GUIDE_TOP_Y + GUIDE_CHIN_Y) / 2, 98, 135, 0, 0, Math.PI * 2);' +
+    '    c.setLineDash([5, 4]);' +
+    '    c.strokeStyle = "rgba(40, 10, 20, 0.85)";' +
+    '    c.lineWidth = 2.0;' +
+    '    c.stroke();' +
+    '    c.setLineDash([]);' +
+    '    c.beginPath();' +
+    '    c.moveTo(GUIDE_CENTER_X, 35);' +
+    '    c.lineTo(GUIDE_CENTER_X, 355);' +
     '    c.setLineDash([4, 4]);' +
-    '    c.strokeStyle = "rgba(250, 194, 24, 0.4)";' +
+    '    c.strokeStyle = "rgba(40, 10, 20, 0.70)";' +
     '    c.lineWidth = 1.5;' +
     '    c.stroke();' +
     '    c.setLineDash([]);' +
     '    c.beginPath();' +
-    '    c.moveTo(GUIDE_CENTER_X, 15);' +
-    '    c.lineTo(GUIDE_CENTER_X, 345);' +
-    '    c.setLineDash([3, 4]);' +
-    '    c.strokeStyle = "rgba(255, 255, 255, 0.4)";' +
-    '    c.lineWidth = 1;' +
-    '    c.stroke();' +
-    '    c.setLineDash([]);' +
-    '    c.beginPath();' +
-    '    c.moveTo(80, GUIDE_EYE_Y); c.lineTo(320, GUIDE_EYE_Y);' +
-    '    c.setLineDash([2, 3]);' +
-    '    c.strokeStyle = "rgba(255, 255, 255, 0.65)";' +
-    '    c.lineWidth = 1; c.stroke(); c.setLineDash([]);' +
-    '    drawBadge(c, "EYE LEVEL", GUIDE_CENTER_X, GUIDE_EYE_Y, "rgba(20, 0, 5, 0.65)", "#fff", 9);' +
+    '    c.moveTo(85, GUIDE_EYE_Y); c.lineTo(315, GUIDE_EYE_Y);' +
+    '    c.setLineDash([4, 3]);' +
+    '    c.strokeStyle = "rgba(40, 10, 20, 0.80)";' +
+    '    c.lineWidth = 1.5; c.stroke(); c.setLineDash([]);' +
+    '    drawBadge(c, "EYE LEVEL", GUIDE_CENTER_X, GUIDE_EYE_Y, "#4d0012", "#ffffff", 9, true);' +
     '    c.beginPath();' +
     '    c.moveTo(85, GUIDE_TOP_Y + 10); c.lineTo(85, GUIDE_TOP_Y); c.lineTo(315, GUIDE_TOP_Y); c.lineTo(315, GUIDE_TOP_Y + 10);' +
     '    c.strokeStyle = "#fac218"; c.lineWidth = 2; c.stroke();' +
@@ -5354,7 +5354,9 @@ function showPhotoStudioDialog() {
     '  }' +
     '  function toggleNoise() {' +
     '    noiseSensitivity = (noiseSensitivity === "normal") ? "aggressive" : "normal";' +
-    '    document.getElementById("noiseBtn").innerText = (noiseSensitivity === "aggressive") ? "Noise Cutoff: Clean 🔥" : "Noise Cutoff: Standard";' +
+    '    var btn = document.getElementById("noiseBtn");' +
+    '    btn.innerText = (noiseSensitivity === "aggressive") ? "Noise Cutoff: Clean 🔥" : "Noise Cutoff: Standard";' +
+    '    btn.className = "tool-btn" + (noiseSensitivity === "aggressive" ? " active-opt" : "");' +
     '    applyCutout();' +
     '  }' +
     '  function setBackingColor(color) {' +
