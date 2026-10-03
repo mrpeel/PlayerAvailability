@@ -2,6 +2,8 @@ const {
   formatPlayerPresentationName,
   getPlayerInitials,
   calculateImageSlotBounds,
+  calculateHeadGuideMetrics,
+  calculateScaleTransform,
   formatRoundOpponent,
   formatFormatVenue,
   parseColorHex,
@@ -291,6 +293,131 @@ describe('calculateImageSlotBounds', () => {
       width: 36,
       height: 36
     });
+  });
+});
+
+describe('calculateHeadGuideMetrics', () => {
+  test('calculates correct metrics for 80% default fill', () => {
+    const m = calculateHeadGuideMetrics(80);
+    expect(m.percent).toBe(80);
+    expect(m.chinY).toBe(330);
+    expect(m.targetHeight).toBe(307);
+    expect(m.topY).toBe(23);
+    expect(m.eyeY).toBe(169);
+    expect(m.ovalRy).toBe(154);
+    expect(m.ovalRx).toBe(113);
+  });
+
+  test('calculates correct metrics across all selectable percentage options (60% to 90%)', () => {
+    const options = [60, 65, 70, 75, 80, 85, 90];
+    options.forEach(pct => {
+      const m = calculateHeadGuideMetrics(pct);
+      expect(m.percent).toBe(pct);
+      expect(m.chinY).toBe(330);
+      expect(m.topY).toBe(330 - m.targetHeight);
+      expect(m.topY).toBeLessThan(m.chinY);
+      expect(m.eyeY).toBeGreaterThan(m.topY);
+      expect(m.eyeY).toBeLessThan(m.chinY);
+      expect(m.ovalRx).toBeLessThan(m.ovalRy);
+    });
+  });
+
+  test('handles decimal fraction inputs (e.g. 0.75)', () => {
+    const m = calculateHeadGuideMetrics(0.75);
+    expect(m.percent).toBe(75);
+    expect(m.targetHeight).toBe(288);
+    expect(m.topY).toBe(42);
+  });
+
+  test('clamps out-of-bounds or invalid inputs safely', () => {
+    const mInvalid = calculateHeadGuideMetrics('invalid');
+    expect(mInvalid.percent).toBe(80);
+
+    const mLow = calculateHeadGuideMetrics(20);
+    expect(mLow.percent).toBe(50);
+
+    const mHigh = calculateHeadGuideMetrics(120);
+    expect(mHigh.percent).toBe(95);
+  });
+});
+
+describe('calculateScaleTransform', () => {
+  test('calculates enlargement transform anchored at chin (Y=330)', () => {
+    // Upsize 75% -> 80% with factor 1.067
+    const t = calculateScaleTransform(1.067, 'chin', 400, 400);
+    expect(t.newWidth).toBe(426.8);
+    expect(t.newHeight).toBe(426.8);
+    expect(t.newX).toBe(-13.4);
+    expect(t.newY).toBe(-22.11);
+
+    // Verify center remains at 200
+    expect(Math.round(t.newX + 200 * t.multiplier)).toBe(200);
+
+    // Verify chin remains at 330
+    expect(Math.round(t.newY + 330 * t.multiplier)).toBe(330);
+  });
+
+  test('calculates shrink transform anchored at chin (Y=330)', () => {
+    // Shrink 85% -> 80% with factor 0.941
+    const t = calculateScaleTransform(0.941, 'chin', 400, 400);
+    expect(t.newWidth).toBe(376.4);
+    expect(t.newHeight).toBe(376.4);
+    expect(t.newX).toBe(11.8);
+    expect(t.newY).toBe(19.47);
+
+    // Verify center remains at 200
+    expect(Math.round(t.newX + 200 * t.multiplier)).toBe(200);
+
+    // Verify chin remains at 330
+    expect(Math.round(t.newY + 330 * t.multiplier)).toBe(330);
+  });
+
+  test('calculates transform centered at canvas center (200, 200)', () => {
+    const t = calculateScaleTransform(1.2, 'center', 400, 400);
+    expect(t.newWidth).toBe(480);
+    expect(t.newHeight).toBe(480);
+    expect(t.newX).toBe(-40);
+    expect(t.newY).toBe(-40);
+
+    // Centers match
+    expect(t.newX + t.newWidth / 2).toBe(200);
+    expect(t.newY + t.newHeight / 2).toBe(200);
+  });
+
+  test('handles invalid multiplier safely', () => {
+    const t = calculateScaleTransform('invalid', 'chin', 400, 400);
+    expect(t.multiplier).toBe(1.0);
+    expect(t.newWidth).toBe(400);
+    expect(t.newHeight).toBe(400);
+    expect(t.newX).toBe(0);
+    expect(t.newY).toBe(0);
+
+    const tZero = calculateScaleTransform(0, 'chin');
+    expect(tZero.multiplier).toBe(1.0);
+
+    const tNeg = calculateScaleTransform(-0.5, 'chin');
+    expect(tNeg.multiplier).toBe(1.0);
+  });
+
+  test('verifies crown coordinate transformation between 75% and 80% head fill', () => {
+    // 75% fill crown is at Y = 42
+    const m75 = calculateHeadGuideMetrics(75);
+    expect(m75.topY).toBe(42);
+
+    // 80% fill crown is at Y = 23
+    const m80 = calculateHeadGuideMetrics(80);
+    expect(m80.topY).toBe(23);
+
+    // Scaling 75% -> 80% (1.067x) anchored at chin (330)
+    const tEnlarge = calculateScaleTransform(1.067, 'chin', 400, 400);
+    const scaledCrownY = Math.round(tEnlarge.newY + m75.topY * tEnlarge.multiplier);
+    expect(scaledCrownY).toBe(m80.topY); // Exactly Y=23!
+
+    // Scaling 85% -> 80% (0.941x) anchored at chin (330)
+    const m85 = calculateHeadGuideMetrics(85);
+    const tShrink = calculateScaleTransform(0.941, 'chin', 400, 400);
+    const shrunkCrownY = Math.round(tShrink.newY + m85.topY * tShrink.multiplier);
+    expect(shrunkCrownY).toBe(m80.topY); // Exactly Y=23!
   });
 });
 

@@ -307,6 +307,16 @@ function doPost(e) {
       return jsonResponse({ status: "success", profileId: payload.profileId, base64Data: b64Data });
     }
 
+    if (action === 'listHeadshotFolderImages') {
+      var files = listHeadshotFolderImages();
+      return jsonResponse({ status: "success", files: files });
+    }
+
+    if (action === 'getImageFileBase64') {
+      var imgB64 = getImageFileBase64(payload.fileId);
+      return jsonResponse({ status: "success", fileId: payload.fileId, base64Data: imgB64 });
+    }
+
     if (action === 'updateGlobalStatus') {
       var profileId = String(payload.profileId || payload.playerId).trim();
       var newStatus = payload.status || 'Active';
@@ -1255,6 +1265,7 @@ function onOpen() {
     .addSeparator()
     .addItem("Mark players as inactive", "showMarkInactiveDialog")
     .addItem("Player Photo Studio", "showPhotoStudioDialog")
+    .addItem("Batch Resize Photos by Multiplier...", "menuBatchResizeHeadshots")
     .addItem("Import Players from PlayHQ export", "showImportPlayHQDialog")
     .addItem("Import fixtures from PlayHQ export", "showImportFixturesDialog")
     .addSeparator()
@@ -5060,6 +5071,18 @@ function showPhotoStudioDialog() {
     '      <strong>📏 Big Face Rule:</strong> Face fills ~80% of avatar (crown at <strong>▲ TOP</strong>, jaw at <strong>▼ CHIN</strong>). Crops out shoulders and eliminates distracting shirt colors!' +
     '    </div>' +
     '    <div>' +
+    '      <label>Head Fill Guide:</label>' +
+    '      <select id="headFillSelect" onchange="setHeadFillPercent(this.value)" style="width:100%; padding:5px 8px; border-radius:6px; border:1px solid #ccc; font-weight:700; font-size:12px; color:#4d0012; background:#fff;">' +
+    '        <option value="60">60% Fill</option>' +
+    '        <option value="65">65% Fill</option>' +
+    '        <option value="70">70% Fill</option>' +
+    '        <option value="75">75% Fill</option>' +
+    '        <option value="80" selected>80% Fill (Default)</option>' +
+    '        <option value="85">85% Fill</option>' +
+    '        <option value="90">90% Fill</option>' +
+    '      </select>' +
+    '    </div>' +
+    '    <div>' +
     '      <label>Shirt Handling:</label>' +
     '      <div style="display:flex; gap:4px;">' +
     '        <button class="tool-btn active-opt" id="btnFadeShirt" onclick="toggleFadeShirt()" style="flex:1;">Fade Shirt: ON</button>' +
@@ -5161,7 +5184,19 @@ function showPhotoStudioDialog() {
     '  var startMouseX = 0, startMouseY = 0;' +
     '  var startPanX = 0, startPanY = 0;' +
     '  var cursorCoord = null;' +
+    '  var currentFillPercent = 80;' +
     '  var GUIDE_TOP_Y = 24, GUIDE_CHIN_Y = 330, GUIDE_EYE_Y = 170, GUIDE_CENTER_X = 200, GUIDE_CIRCLE_R = 192;' +
+    '  var GUIDE_OVAL_RX = 112, GUIDE_OVAL_RY = 153;' +
+    '  function setHeadFillPercent(val) {' +
+    '    currentFillPercent = parseInt(val, 10) || 80;' +
+    '    var targetH = Math.round((currentFillPercent / 100) * 384);' +
+    '    GUIDE_CHIN_Y = 330;' +
+    '    GUIDE_TOP_Y = GUIDE_CHIN_Y - targetH;' +
+    '    GUIDE_EYE_Y = Math.round(GUIDE_TOP_Y + targetH * 0.477);' +
+    '    GUIDE_OVAL_RY = Math.round(targetH / 2);' +
+    '    GUIDE_OVAL_RX = Math.round(GUIDE_OVAL_RY * 0.732);' +
+    '    if (imgLoaded) { autoFitToGuides(); } else { render(); }' +
+    '  }' +
     '  var canvas = document.getElementById("cropCanvas");' +
     '  var ctx = canvas.getContext("2d");' +
     '  var normCanvas = document.createElement("canvas");' +
@@ -5410,7 +5445,7 @@ function showPhotoStudioDialog() {
     '    c.lineWidth = 2.5;' +
     '    c.stroke();' +
     '    c.beginPath();' +
-    '    c.ellipse(GUIDE_CENTER_X, (GUIDE_TOP_Y + GUIDE_CHIN_Y) / 2, 112, 153, 0, 0, Math.PI * 2);' +
+    '    c.ellipse(GUIDE_CENTER_X, (GUIDE_TOP_Y + GUIDE_CHIN_Y) / 2, GUIDE_OVAL_RX, GUIDE_OVAL_RY, 0, 0, Math.PI * 2);' +
     '    c.setLineDash([5, 4]);' +
     '    c.strokeStyle = "rgba(40, 10, 20, 0.85)";' +
     '    c.lineWidth = 2.0;' +
@@ -6329,4 +6364,266 @@ function showWhatsAppContactsDialog() {
     '</body></html>'
   ).setWidth(540).setHeight(580);
   SpreadsheetApp.getUi().showModalDialog(htmlOutput, "WhatsApp Contacts Import");
+}
+
+
+/**
+ * Lists all player headshot images (.png, .jpg, .jpeg) currently in the Google Drive headshot folder.
+ * Returns array of { id, name, profileId }.
+ */
+function listHeadshotFolderImages() {
+  var folderId = getHeadshotFolderId();
+  if (!folderId) throw new Error("HEADSHOT_FOLDER_ID is not configured in Script Properties.");
+  var folder = DriveApp.getFolderById(folderId);
+  var files = folder.getFiles();
+  var list = [];
+  while (files.hasNext()) {
+    var file = files.next();
+    var name = file.getName();
+    if (/\.(png|jpe?g)$/i.test(name)) {
+      var profileId = name.replace(/\.[^/.]+$/, "");
+      list.push({
+        id: file.getId(),
+        name: name,
+        profileId: profileId
+      });
+    }
+  }
+  list.sort(function(a, b) { return a.name.localeCompare(b.name); });
+  return list;
+}
+
+
+/**
+ * Reads any image file from Google Drive by its fileId and returns a base64 data URI string.
+ */
+function getImageFileBase64(fileId) {
+  if (!fileId) return null;
+  var file = DriveApp.getFileById(fileId);
+  var blob = file.getBlob();
+  var contentType = blob.getContentType() || "image/png";
+  return "data:" + contentType + ";base64," + Utilities.base64Encode(blob.getBytes());
+}
+
+
+/**
+ * Prompts user for a multiplier factor and executes batch resizing on all photos.
+ */
+function menuBatchResizeHeadshots() {
+  var ui = SpreadsheetApp.getUi();
+  var resp = ui.prompt(
+    "Batch Resize Photos by Multiplier",
+    "Enter scaling multiplier (e.g. 1.067 to enlarge 75%→80%, or 0.941 to shrink 85%→80%):",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  var val = parseFloat(resp.getResponseText().trim());
+  if (isNaN(val) || val <= 0) {
+    ui.alert("Invalid multiplier entered. Please enter a positive number (e.g. 1.067).");
+    return;
+  }
+  batchResizeAllHeadshots(val, "chin");
+}
+
+
+/**
+ * Convenience zero-argument function to run manually from Apps Script Editor to enlarge photos from 75% to 80% (1.067x).
+ */
+function runBatchResizeEnlarge75to80() {
+  return batchResizeAllHeadshots(1.067, "chin");
+}
+
+
+/**
+ * Convenience zero-argument function to run manually from Apps Script Editor to shrink photos from 85% to 80% (0.941x).
+ */
+function runBatchResizeShrink85to80() {
+  return batchResizeAllHeadshots(0.941, "chin");
+}
+
+
+/**
+ * Resizes all headshot images in Google Drive by multiplying dimensions and anchoring at the chin (Y=330) or center.
+ * Uses an autonomous, self-executing HTML5 Canvas dialog for lossless bicubic rendering with real-time progress.
+ *
+ * @param {number} [optMultiplier=1.067] - Scale factor (e.g. 1.067 to enlarge 75%→80%, 0.941 to shrink 85%→80%)
+ * @param {string} [optAnchor='chin'] - 'chin' (keeps jaw anchored at Y=330) or 'center'
+ */
+function batchResizeAllHeadshots(optMultiplier, optAnchor) {
+  var mult = parseFloat(optMultiplier);
+  if (isNaN(mult) || mult <= 0) mult = 1.067;
+  var anchor = (optAnchor === "center") ? "center" : "chin";
+
+  var transform = calculateScaleTransform(mult, anchor, 400, 400);
+
+  var ui;
+  try {
+    ui = SpreadsheetApp.getUi();
+  } catch (e) {
+    Logger.log("SpreadsheetApp.getUi() unavailable: " + e.message);
+  }
+
+  if (!ui) {
+    var msg = "Batch photo resize requires an active Google Sheet window for HTML5 Canvas rendering. " +
+      "Please open the Google Sheet and run from '🏏 LCC Selection > Batch Resize Photos by Multiplier...', " +
+      "or keep the Google Sheet open in a browser tab while running this function.";
+    Logger.log(msg);
+    return { success: false, message: msg };
+  }
+
+  var htmlContent = buildBatchResizeHtml(mult, anchor, transform);
+  var htmlOutput = HtmlService.createHtmlOutput(htmlContent)
+    .setWidth(560)
+    .setHeight(520);
+  ui.showModalDialog(htmlOutput, "Batch Resize Photos (" + mult + "x)");
+  return { success: true, multiplier: mult, anchor: anchor, transform: transform };
+}
+
+
+/**
+ * Builds the self-executing client HTML for batch resizing photos with HTML5 canvas.
+ */
+function buildBatchResizeHtml(multiplier, anchor, transform) {
+  var transformJson = JSON.stringify(transform);
+  var html = '<!DOCTYPE html>' +
+    '<html><head><meta charset="utf-8">' +
+    '<style>' +
+    '  body { font-family: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #fffaf5; color: #222; margin: 0; padding: 20px; box-sizing: border-box; }' +
+    '  h2 { margin: 0 0 10px 0; color: #4d0012; font-size: 18px; display: flex; align-items: center; gap: 8px; }' +
+    '  .badge { display: inline-block; background: #4d0012; color: #fac218; font-weight: 700; font-size: 12px; padding: 3px 8px; border-radius: 4px; margin-right: 6px; }' +
+    '  .badge-secondary { background: #eee; color: #444; font-weight: 600; }' +
+    '  .progress-wrap { margin: 16px 0 12px 0; background: #e0e0e0; border-radius: 8px; overflow: hidden; height: 16px; position: relative; }' +
+    '  .progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #4d0012 0%, #7a001e 100%); transition: width 0.2s ease; }' +
+    '  .status-label { font-size: 13px; font-weight: 600; color: #333; margin-bottom: 8px; min-height: 18px; }' +
+    '  .log-container { background: #1a1a1a; color: #dcdcdc; border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11px; height: 250px; overflow-y: auto; line-height: 1.5; border: 1px solid #333; }' +
+    '  .log-line { margin: 2px 0; word-break: break-all; }' +
+    '  .btn-row { margin-top: 14px; display: flex; justify-content: flex-end; gap: 8px; }' +
+    '  .btn { padding: 8px 16px; border-radius: 6px; border: none; font-size: 13px; font-weight: 700; cursor: pointer; }' +
+    '  .btn-close { background: #4d0012; color: #fac218; display: none; }' +
+    '  .btn-close:hover { background: #660018; }' +
+    '</style></head><body>' +
+    '  <h2>🏏 Batch Resize Headshots</h2>' +
+    '  <div style="margin-bottom:12px;">' +
+    '    <span class="badge">' + multiplier + 'x Scale</span>' +
+    '    <span class="badge badge-secondary">Anchor: ' + (anchor === "chin" ? "Chin (Y=330)" : "Center") + '</span>' +
+    '    <span class="badge badge-secondary">Canvas: 400x400</span>' +
+    '  </div>' +
+    '  <div class="progress-wrap">' +
+    '    <div class="progress-bar" id="progressBar"></div>' +
+    '  </div>' +
+    '  <div class="status-label" id="statusLabel">Initializing folder scan...</div>' +
+    '  <div class="log-container" id="logBox"></div>' +
+    '  <canvas id="scaleCanvas" width="400" height="400" style="display:none;"></canvas>' +
+    '  <div class="btn-row">' +
+    '    <button class="btn btn-close" id="btnClose" onclick="google.script.host.close()">Done (Close Window)</button>' +
+    '  </div>' +
+    '  <script>' +
+    '    var transform = ' + transformJson + ';' +
+    '    var files = [];' +
+    '    var currentIndex = 0;' +
+    '    var successCount = 0;' +
+    '    var errorCount = 0;' +
+    '    var canvas = document.getElementById("scaleCanvas");' +
+    '    var ctx = canvas.getContext("2d");' +
+    '    var pBar = document.getElementById("progressBar");' +
+    '    var sLabel = document.getElementById("statusLabel");' +
+    '    var logBox = document.getElementById("logBox");' +
+    '    var btnClose = document.getElementById("btnClose");' +
+    '' +
+    '    function appendLog(msg, color) {' +
+    '      var div = document.createElement("div");' +
+    '      div.className = "log-line";' +
+    '      if (color) div.style.color = color;' +
+    '      div.textContent = msg;' +
+    '      logBox.appendChild(div);' +
+    '      logBox.scrollTop = logBox.scrollHeight;' +
+    '    }' +
+    '' +
+    '    function startBatchResize() {' +
+    '      appendLog("Scanning Google Drive headshot folder...", "#88ccff");' +
+    '      google.script.run' +
+    '        .withSuccessHandler(function(list) {' +
+    '          files = list || [];' +
+    '          if (files.length === 0) {' +
+    '            sLabel.textContent = "No image files found in headshot folder.";' +
+    '            appendLog("No matching files found.", "#ffaa00");' +
+    '            btnClose.style.display = "inline-block";' +
+    '            return;' +
+    '          }' +
+    '          appendLog("Found " + files.length + " photo(s) to process. Starting batch...", "#88ff88");' +
+    '          processNextFile();' +
+    '        })' +
+    '        .withFailureHandler(function(err) {' +
+    '          sLabel.textContent = "Failed to list folder files.";' +
+    '          appendLog("Error scanning folder: " + (err.message || err), "#ff6666");' +
+    '          btnClose.style.display = "inline-block";' +
+    '        })' +
+    '        .listHeadshotFolderImages();' +
+    '    }' +
+    '' +
+    '    function processNextFile() {' +
+    '      if (currentIndex >= files.length) {' +
+    '        pBar.style.width = "100%";' +
+    '        sLabel.innerHTML = "<b>Complete!</b> Resized " + successCount + " photo(s) (" + errorCount + " errors).";' +
+    '        appendLog("=== Batch Complete! Successfully resized " + successCount + "/" + files.length + " files ===", "#88ff88");' +
+    '        btnClose.style.display = "inline-block";' +
+    '        return;' +
+    '      }' +
+    '      var item = files[currentIndex];' +
+    '      var num = currentIndex + 1;' +
+    '      var total = files.length;' +
+    '      var pct = Math.round((currentIndex / total) * 100);' +
+    '      pBar.style.width = pct + "%";' +
+    '      sLabel.textContent = "Resizing " + num + "/" + total + ": " + item.name + "...";' +
+    '' +
+    '      google.script.run' +
+    '        .withSuccessHandler(function(b64) {' +
+    '          if (!b64) {' +
+    '            appendLog("✕ [" + num + "/" + total + "] Could not load " + item.name, "#ff6666");' +
+    '            errorCount++;' +
+    '            currentIndex++;' +
+    '            processNextFile();' +
+    '            return;' +
+    '          }' +
+    '          var img = new Image();' +
+    '          img.onload = function() {' +
+    '            ctx.clearRect(0, 0, 400, 400);' +
+    '            ctx.drawImage(img, transform.newX, transform.newY, transform.newWidth, transform.newHeight);' +
+    '            var newB64 = canvas.toDataURL("image/png");' +
+    '            google.script.run' +
+    '              .withSuccessHandler(function() {' +
+    '                appendLog("✓ [" + num + "/" + total + "] " + item.name + " resized (" + transform.multiplier + "x)", "#88ff88");' +
+    '                successCount++;' +
+    '                currentIndex++;' +
+    '                processNextFile();' +
+    '              })' +
+    '              .withFailureHandler(function(err) {' +
+    '                appendLog("✕ [" + num + "/" + total + "] Failed to save " + item.name + ": " + (err.message || err), "#ff6666");' +
+    '                errorCount++;' +
+    '                currentIndex++;' +
+    '                processNextFile();' +
+    '              })' +
+    '              .savePlayerHeadshot(item.profileId, newB64);' +
+    '          };' +
+    '          img.onerror = function() {' +
+    '            appendLog("✕ [" + num + "/" + total + "] Failed to decode image: " + item.name, "#ff6666");' +
+    '            errorCount++;' +
+    '            currentIndex++;' +
+    '            processNextFile();' +
+    '          };' +
+    '          img.src = b64;' +
+    '        })' +
+    '        .withFailureHandler(function(err) {' +
+    '          appendLog("✕ [" + num + "/" + total + "] Error reading " + item.name + ": " + (err.message || err), "#ff6666");' +
+    '          errorCount++;' +
+    '          currentIndex++;' +
+    '          processNextFile();' +
+    '        })' +
+    '        .getImageFileBase64(item.id);' +
+    '    }' +
+    '' +
+    '    window.onload = function() { startBatchResize(); };' +
+    '  </script>' +
+    '</body></html>';
+  return html;
 }

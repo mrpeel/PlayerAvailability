@@ -60,7 +60,15 @@ global.ContentService = {
 };
 
 global.DriveApp = {
-  getFolderById: jest.fn()
+  getFolderById: jest.fn(),
+  getFileById: jest.fn()
+};
+
+global.HtmlService = {
+  createHtmlOutput: jest.fn(() => ({
+    setWidth: jest.fn().mockReturnThis(),
+    setHeight: jest.fn().mockReturnThis()
+  }))
 };
 
 global.Utilities = {

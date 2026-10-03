@@ -832,6 +832,91 @@ function calculateImageSlotBounds(shapeLeft, shapeTop, shapeWidth, shapeHeight, 
 }
 
 /**
+ * Calculates head framing guide metrics for a given percentage fill of the avatar circle.
+ * Avatar circle diameter is 384px (R = 192, center 200, 200).
+ * Chin is held constant at Y = 330.
+ *
+ * @param {number|string} percentFill - Percentage fill (e.g. 60, 65, 70, 75, 80, 85, 90 or 0.80)
+ * @returns {{
+ *   percent: number,
+ *   targetHeight: number,
+ *   chinY: number,
+ *   topY: number,
+ *   eyeY: number,
+ *   ovalRx: number,
+ *   ovalRy: number
+ * }}
+ */
+function calculateHeadGuideMetrics(percentFill) {
+  var num = parseFloat(percentFill);
+  if (isNaN(num)) num = 80;
+  if (num > 0 && num <= 1) num = num * 100;
+  num = Math.max(50, Math.min(95, Math.round(num)));
+
+  var pct = num / 100;
+  var targetH = Math.round(pct * 384);
+  var chinY = 330;
+  var topY = chinY - targetH;
+  var eyeY = Math.round(topY + targetH * 0.477);
+  var ovalRy = Math.round(targetH / 2);
+  var ovalRx = Math.round(ovalRy * 0.732);
+
+  return {
+    percent: num,
+    targetHeight: targetH,
+    chinY: chinY,
+    topY: topY,
+    eyeY: eyeY,
+    ovalRx: ovalRx,
+    ovalRy: ovalRy
+  };
+}
+
+/**
+ * Calculates coordinate and size transformations for scaling an image on a fixed canvas.
+ *
+ * @param {number} multiplier - Scale factor (e.g. 1.067 to enlarge, 0.941 to shrink)
+ * @param {string} [anchor='chin'] - 'chin' (anchors at Y=330) or 'center' (anchors at Y=200)
+ * @param {number} [canvasWidth=400] - Canvas width in pixels
+ * @param {number} [canvasHeight=400] - Canvas height in pixels
+ * @returns {{
+ *   newX: number,
+ *   newY: number,
+ *   newWidth: number,
+ *   newHeight: number,
+ *   anchorX: number,
+ *   anchorY: number,
+ *   multiplier: number
+ * }}
+ */
+function calculateScaleTransform(multiplier, anchor, canvasWidth, canvasHeight) {
+  var m = parseFloat(multiplier);
+  if (isNaN(m) || m <= 0) m = 1.0;
+
+  var cW = Number(canvasWidth) || 400;
+  var cH = Number(canvasHeight) || 400;
+
+  var anchorX = cW / 2;
+  var anchorY = (anchor === 'center') ? (cH / 2) : 330;
+
+  var newW = Math.round(cW * m * 100) / 100;
+  var newH = Math.round(cH * m * 100) / 100;
+
+  var newX = Math.round((anchorX - anchorX * m) * 100) / 100;
+  var newY = Math.round((anchorY - anchorY * m) * 100) / 100;
+
+  return {
+    newX: newX,
+    newY: newY,
+    newWidth: newW,
+    newHeight: newH,
+    anchorX: anchorX,
+    anchorY: anchorY,
+    multiplier: m
+  };
+}
+
+/**
  * Formats combined round and opponent text for presentation.
  * e.g. "Round 1: LCC 1st XI vs Mitcham - 2nd XI"
  *
@@ -2228,6 +2313,8 @@ if (typeof module !== 'undefined' && module.exports) {
     formatPlayerPresentationName,
     getPlayerInitials,
     calculateImageSlotBounds,
+    calculateHeadGuideMetrics,
+    calculateScaleTransform,
     formatRoundOpponent,
     formatFormatVenue,
     parseColorHex,
