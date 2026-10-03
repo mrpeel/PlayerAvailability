@@ -757,6 +757,84 @@ function formatPlayerPresentationName(name, role) {
 }
 
 /**
+ * Extracts 1-2 uppercase initials from a player's full name.
+ * Strips out parenthetical roles, titles, or junior tags like (C), (VC), (Wk), (U16), etc.
+ *
+ * @param {string} fullName - e.g. "Isaac Wicklein", "Aaron Alaimo (C)", "Neil Kloot (VC) (Wk)"
+ * @returns {string} - e.g. "IW", "AA", "NK"
+ */
+function getPlayerInitials(fullName) {
+  if (!fullName || typeof fullName !== "string") return "";
+  var trimmed = fullName.trim();
+  if (!trimmed) return "";
+
+  // Strip parenthetical suffixes (e.g. "(C)", "(VC)", "(Wk)", "(U16)")
+  var clean = trimmed.replace(/\s*\([^)]*\)/g, "").trim();
+  if (!clean) return "";
+
+  // Remove common punctuation like periods or commas but keep hyphens/apostrophes
+  clean = clean.replace(/[,.]/g, " ").trim();
+
+  var parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "";
+
+  if (parts.length === 1) {
+    var single = parts[0].replace(/[^a-zA-Z0-9]/g, "");
+    if (!single) return "";
+    return single.substring(0, Math.min(2, single.length)).toUpperCase();
+  }
+
+  // Two or more name parts: take first alphanumeric character of first part and last part
+  var firstPartClean = parts[0].replace(/[^a-zA-Z0-9]/g, "");
+  var lastPartClean = parts[parts.length - 1].replace(/[^a-zA-Z0-9]/g, "");
+
+  var firstChar = firstPartClean ? firstPartClean.charAt(0) : "";
+  var lastChar = lastPartClean ? lastPartClean.charAt(0) : "";
+
+  var result = (firstChar + lastChar).toUpperCase();
+  if (!result) {
+    var allClean = clean.replace(/[^a-zA-Z0-9]/g, "");
+    return allClean.substring(0, Math.min(2, allClean.length)).toUpperCase();
+  }
+  return result;
+}
+
+/**
+ * Calculates target bounding box for a player avatar image relative to its backing shape.
+ * Accounts for border weight so the image sits neatly inside the shape's border without bleeding.
+ *
+ * @param {number} shapeLeft - X position of the backing shape
+ * @param {number} shapeTop - Y position of the backing shape
+ * @param {number} shapeWidth - Width of the backing shape
+ * @param {number} shapeHeight - Height of the backing shape
+ * @param {number|string} [borderWeight] - Border stroke thickness in points/pixels
+ * @param {boolean} [isBorderTransparent] - True if border is transparent/none
+ * @returns {{left: number, top: number, width: number, height: number}}
+ */
+function calculateImageSlotBounds(shapeLeft, shapeTop, shapeWidth, shapeHeight, borderWeight, isBorderTransparent) {
+  var sW = Number(shapeWidth) || 0;
+  var sH = Number(shapeHeight) || 0;
+  var sLeft = Number(shapeLeft) || 0;
+  var sTop = Number(shapeTop) || 0;
+
+  var bWeight = (!isBorderTransparent && Number(borderWeight) > 0) ? Number(borderWeight) : 0;
+  var inset = bWeight;
+
+  var size = Math.min(sW, sH);
+  var targetSize = Math.max(10, size - (2 * inset));
+  var targetLeft = Math.round((sLeft + (sW - targetSize) / 2) * 100) / 100;
+  var targetTop = Math.round((sTop + (sH - targetSize) / 2) * 100) / 100;
+  targetSize = Math.round(targetSize * 100) / 100;
+
+  return {
+    left: targetLeft,
+    top: targetTop,
+    width: targetSize,
+    height: targetSize
+  };
+}
+
+/**
  * Formats combined round and opponent text for presentation.
  * e.g. "Round 1: LCC 1st XI vs Mitcham - 2nd XI"
  *
@@ -2151,6 +2229,8 @@ if (typeof module !== 'undefined' && module.exports) {
     stripJuniorTag,
     pickFirstName,
     formatPlayerPresentationName,
+    getPlayerInitials,
+    calculateImageSlotBounds,
     formatRoundOpponent,
     formatFormatVenue,
     parseColorHex,

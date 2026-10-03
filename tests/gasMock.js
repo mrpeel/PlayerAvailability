@@ -23,6 +23,18 @@ global.SlidesApp = {
     ELLIPSE: 'ELLIPSE',
     RECTANGLE: 'RECTANGLE',
     TEXT_BOX: 'TEXT_BOX'
+  },
+  ContentAlignment: {
+    TOP: 'TOP',
+    MIDDLE: 'MIDDLE',
+    BOTTOM: 'BOTTOM',
+    JUSTIFIED: 'JUSTIFIED'
+  },
+  ParagraphAlignment: {
+    START: 'START',
+    CENTER: 'CENTER',
+    END: 'END',
+    JUSTIFIED: 'JUSTIFIED'
   }
 };
 

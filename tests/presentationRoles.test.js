@@ -1,5 +1,7 @@
 const {
   formatPlayerPresentationName,
+  getPlayerInitials,
+  calculateImageSlotBounds,
   formatRoundOpponent,
   formatFormatVenue,
   parseColorHex,
@@ -183,5 +185,124 @@ describe('normalizeHexColor', () => {
     expect(normalizeHexColor('invalid', 'transparent')).toBe('transparent');
   });
 });
+
+describe('getPlayerInitials', () => {
+  test('returns empty string for empty/null inputs', () => {
+    expect(getPlayerInitials('')).toBe('');
+    expect(getPlayerInitials(null)).toBe('');
+    expect(getPlayerInitials(undefined)).toBe('');
+    expect(getPlayerInitials('   ')).toBe('');
+  });
+
+  test('extracts initials for standard two-word player names', () => {
+    expect(getPlayerInitials('Isaac Wicklein')).toBe('IW');
+    expect(getPlayerInitials('George Doungas')).toBe('GD');
+    expect(getPlayerInitials('Adam Doungas')).toBe('AD');
+    expect(getPlayerInitials('Boyd Eggleston')).toBe('BE');
+    expect(getPlayerInitials('Palash Desai')).toBe('PD');
+    expect(getPlayerInitials('Joel Cheetham')).toBe('JC');
+    expect(getPlayerInitials('Shahmeer Hassaan')).toBe('SH');
+    expect(getPlayerInitials('Derek Taylor')).toBe('DT');
+  });
+
+  test('strips role tags and badges in parentheses', () => {
+    expect(getPlayerInitials('Aaron Alaimo (C)')).toBe('AA');
+    expect(getPlayerInitials('Neil Kloot (VC) (Wk)')).toBe('NK');
+    expect(getPlayerInitials('Alex Taylor (VC & WK)')).toBe('AT');
+    expect(getPlayerInitials('Jordan Taylor (Wk)')).toBe('JT');
+    expect(getPlayerInitials('Player Junior (U16)')).toBe('PJ');
+    expect(getPlayerInitials('(C)')).toBe('');
+  });
+
+  test('handles single word names', () => {
+    expect(getPlayerInitials('Madonna')).toBe('MA');
+    expect(getPlayerInitials('A')).toBe('A');
+    expect(getPlayerInitials('Jo')).toBe('JO');
+  });
+
+  test('handles multi-word names by taking first of first word and first of last word', () => {
+    expect(getPlayerInitials('John Paul Smith')).toBe('JS');
+    expect(getPlayerInitials('Alexander van der Bilt')).toBe('AB');
+  });
+
+  test('handles punctuation, hyphens, and apostrophes', () => {
+    expect(getPlayerInitials('Jean-Luc Picard')).toBe('JP');
+    expect(getPlayerInitials("Tim O'Connor")).toBe('TO');
+    expect(getPlayerInitials('A. Alaimo')).toBe('AA');
+    expect(getPlayerInitials('I. Wicklein')).toBe('IW');
+  });
+});
+
+describe('calculateImageSlotBounds', () => {
+  test('calculates correct inset and centering for a standard circle with 2px border', () => {
+    // 36x36 shape at (100, 100), 2px border
+    const bounds = calculateImageSlotBounds(100, 100, 36, 36, 2, false);
+    expect(bounds).toEqual({
+      left: 102,
+      top: 102,
+      width: 32,
+      height: 32
+    });
+    // Check center matches exactly: 100 + 18 = 118; 102 + 16 = 118
+    expect(bounds.left + bounds.width / 2).toBe(118);
+    expect(bounds.top + bounds.height / 2).toBe(118);
+  });
+
+  test('calculates correct inset for 1px border', () => {
+    const bounds = calculateImageSlotBounds(100, 100, 36, 36, 1, false);
+    expect(bounds).toEqual({
+      left: 101,
+      top: 101,
+      width: 34,
+      height: 34
+    });
+  });
+
+  test('calculates correct inset for 3px and 4px borders', () => {
+    const b3 = calculateImageSlotBounds(100, 100, 36, 36, 3, false);
+    expect(b3).toEqual({ left: 103, top: 103, width: 30, height: 30 });
+
+    const b4 = calculateImageSlotBounds(100, 100, 36, 36, 4, false);
+    expect(b4).toEqual({ left: 104, top: 104, width: 28, height: 28 });
+  });
+
+  test('returns full shape dimensions when border is transparent', () => {
+    const bounds = calculateImageSlotBounds(100, 100, 36, 36, 2, true);
+    expect(bounds).toEqual({
+      left: 100,
+      top: 100,
+      width: 36,
+      height: 36
+    });
+  });
+
+  test('handles asymmetric shape dimensions preserving square 1:1 ratio and center alignment', () => {
+    const bounds = calculateImageSlotBounds(50, 60, 42, 38, 2, false);
+    // size = min(42, 38) = 38
+    // targetSize = 38 - 4 = 34
+    // targetLeft = 50 + (42 - 34) / 2 = 54
+    // targetTop = 60 + (38 - 34) / 2 = 62
+    expect(bounds).toEqual({
+      left: 54,
+      top: 62,
+      width: 34,
+      height: 34
+    });
+    // Centers match:
+    expect(bounds.left + bounds.width / 2).toBe(50 + 42 / 2);
+    expect(bounds.top + bounds.height / 2).toBe(60 + 38 / 2);
+  });
+
+  test('handles 0 or missing border weight safely', () => {
+    const bounds = calculateImageSlotBounds(100, 100, 36, 36, 0, false);
+    expect(bounds).toEqual({
+      left: 100,
+      top: 100,
+      width: 36,
+      height: 36
+    });
+  });
+});
+
 
 

@@ -3203,7 +3203,11 @@ function autoTagSlideElements(ss) {
       } else if (type === SlidesApp.PageElementType.SHAPE) {
         var shp = el.asShape();
         var txt = shp.getText() ? shp.getText().asString().trim() : "";
-        if (txt.toLowerCase() !== f.name.toLowerCase() &&
+        var shpW = 0, shpH = 0;
+        try { shpW = shp.getWidth(); shpH = shp.getHeight(); } catch (e) {}
+        var isBackingCircle = (Math.abs(shpW - shpH) < 25 && shpW < 120 && (txt === "" || txt.length <= 3));
+        if (!isBackingCircle &&
+            txt.toLowerCase() !== f.name.toLowerCase() &&
             txt.toLowerCase().indexOf("first eleven") === -1 &&
             txt.toLowerCase().indexOf("second eleven") === -1 &&
             txt.toLowerCase().indexOf("third eleven") === -1 &&
@@ -3625,6 +3629,107 @@ function applyShapeBorder(shape, colorObj, optWeight) {
 }
 
 /**
+ * Applies centered uppercase initials to a circular Google Slides shape.
+ * If initials is empty/falsy, clears the text.
+ */
+function applyCircleInitials(shape, initials, colorHex) {
+  if (!shape || typeof shape.getText !== "function") return;
+  try {
+    var tr = shape.getText();
+    if (!tr) return;
+
+    var textStr = initials ? String(initials).trim() : "";
+    tr.setText(textStr);
+    if (!textStr) return;
+
+    // Vertical centering
+    if (typeof shape.setContentAlignment === "function" && typeof SlidesApp !== "undefined" && SlidesApp.ContentAlignment) {
+      try {
+        shape.setContentAlignment(SlidesApp.ContentAlignment.MIDDLE);
+      } catch (e) {}
+    }
+
+    // Horizontal centering
+    if (typeof tr.getParagraphStyle === "function") {
+      try {
+        var ps = tr.getParagraphStyle();
+        if (ps && typeof ps.setParagraphAlignment === "function" && typeof SlidesApp !== "undefined" && SlidesApp.ParagraphAlignment) {
+          ps.setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
+        }
+      } catch (e) {}
+    }
+
+    // Text styling: bold, Hanken Grotesk / Arial font, size scaled to shape height, color
+    if (typeof tr.getTextStyle === "function") {
+      try {
+        var ts = tr.getTextStyle();
+        if (ts) {
+          if (typeof ts.setBold === "function") ts.setBold(true);
+
+          if (typeof ts.setFontFamily === "function") {
+            try {
+              ts.setFontFamily("Hanken Grotesk");
+            } catch (fErr) {
+              try { ts.setFontFamily("Arial"); } catch (fErr2) {}
+            }
+          }
+
+          var shpH = 36;
+          try { shpH = shape.getHeight(); } catch (hErr) {}
+          var fontSize = Math.max(10, Math.min(22, Math.round(shpH * 0.42)));
+          if (textStr.length > 2) fontSize = Math.max(9, Math.round(fontSize * 0.8));
+          if (typeof ts.setFontSize === "function") ts.setFontSize(fontSize);
+
+          var fg = colorHex;
+          if (!fg || fg === "transparent" || fg === "none") {
+            fg = "#fac218";
+          }
+          if (typeof ts.setForegroundColor === "function") {
+            try {
+              ts.setForegroundColor(fg);
+            } catch (cErr) {
+              var clean = fg.replace(/^#/, "");
+              if (clean.length === 6) {
+                var r = parseInt(clean.substring(0, 2), 16);
+                var g = parseInt(clean.substring(2, 4), 16);
+                var b = parseInt(clean.substring(4, 6), 16);
+                try { ts.setForegroundColor(r, g, b); } catch (rgbErr) {}
+              }
+            }
+          }
+        }
+      } catch (tsErr) {}
+    }
+  } catch (err) {
+    Logger.log("applyCircleInitials warning: " + err.message);
+  }
+}
+
+/**
+ * Adjusts an avatar image element's position and dimensions relative to its backing shape.
+ * Insets the image to account for the border thickness so it doesn't bleed into or overlap the border.
+ */
+function adjustImageToBackingShape(img, backingShape, borderWeight, borderColorObj) {
+  if (!img || !backingShape) return;
+  try {
+    var isTransparent = (!borderColorObj || borderColorObj.isTransparent);
+    var bW = backingShape.getWidth();
+    var bH = backingShape.getHeight();
+    var bLeft = backingShape.getLeft();
+    var bTop = backingShape.getTop();
+
+    var bounds = calculateImageSlotBounds(bLeft, bTop, bW, bH, borderWeight, isTransparent);
+
+    if (typeof img.setWidth === "function") img.setWidth(bounds.width);
+    if (typeof img.setHeight === "function") img.setHeight(bounds.height);
+    if (typeof img.setLeft === "function") img.setLeft(bounds.left);
+    if (typeof img.setTop === "function") img.setTop(bounds.top);
+  } catch (err) {
+    Logger.log("adjustImageToBackingShape warning: " + err.message);
+  }
+}
+
+/**
  * Finds a circular or square backing shape sitting directly behind an image element on the slide.
  */
 function findBackingShapeForImage(slide, imageEl) {
@@ -3772,24 +3877,26 @@ function extractShapeAndImageFromGroup(item) {
   recurse(item);
 
   if (shapes.length === 1) {
-    textShape = shapes[0];
+    var s0 = shapes[0];
+    var w0 = 0, h0 = 0;
+    try { w0 = s0.getWidth(); h0 = s0.getHeight(); } catch (e) {}
+    if (w0 > (h0 * 1.35)) {
+      textShape = s0;
+    } else {
+      backingShape = s0;
+    }
   } else if (shapes.length > 1) {
     // Determine which shape is the text shape (for player name) and which is the backing shape (avatar circle)
     for (var s = 0; s < shapes.length; s++) {
       var sh = shapes[s];
-      var txt = "";
-      try {
-        txt = (sh.getText() ? sh.getText().asString() : "").trim();
-      } catch (e) {}
-
       var w = 0, h = 0;
       try {
         w = sh.getWidth();
         h = sh.getHeight();
       } catch (e) {}
-      var isWide = w > (h * 1.25);
+      var isWide = w > (h * 1.35);
 
-      if (txt !== "" || isWide) {
+      if (isWide) {
         if (!textShape) textShape = sh;
         else if (!backingShape) backingShape = sh;
       } else {
@@ -4104,17 +4211,38 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
         try {
           applyShapeFill(oldBacking, { isTransparent: true });
           applyShapeBorder(oldBacking, { isTransparent: true });
+          applyCircleInitials(oldBacking, "", null);
         } catch (e) {}
       }
 
-      // If the template contains a backing shape element, update both its fill and border
+      var hasPhoto = false;
+      var photoBlob = null;
+      if (hasPlayer) {
+        photoBlob = resolvePlayerImageBlob(pInfo.profileId, pInfo.name, pInfo.photoUrl, headshotsMap);
+        hasPhoto = !!photoBlob;
+      }
+
+      // If the template contains a backing shape element, update fill, border, and text initials
       if (backingShapeEl) {
         if (hasPlayer) {
-          applyShapeFill(backingShapeEl, bgColorObj);
-          applyShapeBorder(backingShapeEl, borderColorObj, borderWeightNum);
+          if (hasPhoto) {
+            // Player has photo: apply configured backing fill, border, and clear any initials text
+            applyShapeFill(backingShapeEl, bgColorObj);
+            applyShapeBorder(backingShapeEl, borderColorObj, borderWeightNum);
+            applyCircleInitials(backingShapeEl, "", null);
+          } else {
+            // Player has no photo: circle background is transparent, apply border, and set player initials!
+            applyShapeFill(backingShapeEl, { isTransparent: true });
+            applyShapeBorder(backingShapeEl, borderColorObj, borderWeightNum);
+            var initials = getPlayerInitials(pInfo.name);
+            var initialsColor = (borderColorObj && !borderColorObj.isTransparent) ? borderColorObj.hex : "#fac218";
+            applyCircleInitials(backingShapeEl, initials, initialsColor);
+          }
         } else {
+          // Empty slot: transparent fill, transparent border, clear initials
           applyShapeFill(backingShapeEl, { isTransparent: true });
           applyShapeBorder(backingShapeEl, { isTransparent: true });
+          applyCircleInitials(backingShapeEl, "", null);
         }
       }
 
@@ -4122,18 +4250,21 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
         try {
           var img = (typeof imageEl.asImage === "function") ? imageEl.asImage() : imageEl;
           var blob = null;
-          if (hasPlayer) {
-            blob = resolvePlayerImageBlob(pInfo.profileId, pInfo.name, pInfo.photoUrl, headshotsMap);
-            if (!blob) {
-              // Player selected but has no uploaded photo: replace with clean backing circle PNG disc
-              blob = getCirclePngBlob(photoBgColor);
-            }
+          if (hasPlayer && hasPhoto) {
+            blob = photoBlob;
           } else {
-            // Empty slot: transparent placeholder so slot is blank
+            // Empty slot OR player without photo: 1x1 transparent PNG placeholder
             blob = getTransparentPngBlob();
           }
           if (blob && img && typeof img.replace === "function") {
             img.replace(blob);
+          }
+          if (backingShapeEl && img) {
+            if (hasPlayer && hasPhoto) {
+              adjustImageToBackingShape(img, backingShapeEl, borderWeightNum, borderColorObj);
+            } else {
+              adjustImageToBackingShape(img, backingShapeEl, 0, null);
+            }
           }
         } catch (err) {
           Logger.log("Image replace warning for slot " + pNum + ": " + err.message);
@@ -4240,7 +4371,7 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
                 w = shp.getWidth();
                 h = shp.getHeight();
               } catch (e) {}
-              var isBackingCircle = (txt === "" && Math.abs(w - h) < 25 && w < 120);
+              var isBackingCircle = (Math.abs(w - h) < 25 && w < 120 && (txt === "" || txt.length <= 3));
               if (!isBackingCircle) {
                 textShapes.push(el);
               }
@@ -4470,7 +4601,7 @@ function showSyncSlidesDialog() {
     '      <span class="card-title">Avatar Circle Styling</span>' +
     '      <div style="display: flex; align-items: center; gap: 8px;">' +
     '        <span style="font-size: 11px; color: #777;">Preview:</span>' +
-    '        <div id="circlePreview" style="width: 32px; height: 32px; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.15); transition: all 0.15s;"></div>' +
+    '        <div id="circlePreview" style="width: 32px; height: 32px; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.15); transition: all 0.15s; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, sans-serif;"></div>' +
     '      </div>' +
     '    </div>' +
     '    <!-- Background Colour -->' +
@@ -4566,9 +4697,12 @@ function showSyncSlidesDialog() {
     '    var border = currentBorder.trim().toLowerCase();' +
     '    if (border === "transparent" || border === "none" || !border) {' +
     '      circle.style.border = "1.5px dashed #cbd5e1";' +
+    '      circle.style.color = "#fac218";' +
     '    } else {' +
     '      circle.style.border = currentBorderWeight + "px solid " + border;' +
+    '      circle.style.color = border;' +
     '    }' +
+    '    circle.innerText = (bg === "transparent" || bg === "none") ? "IW" : "";' +
     '  }' +
     '  function setBgPreset(val) {' +
     '    currentBg = val;' +
