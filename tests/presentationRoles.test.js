@@ -234,36 +234,27 @@ describe('getPlayerInitials', () => {
 });
 
 describe('calculateImageSlotBounds', () => {
-  test('calculates correct inset and centering for a standard circle with 2px border', () => {
+  test('calculates correct dimensions and centering for a standard circle with 2px border', () => {
     // 36x36 shape at (100, 100), 2px border
     const bounds = calculateImageSlotBounds(100, 100, 36, 36, 2, false);
     expect(bounds).toEqual({
-      left: 102,
-      top: 102,
-      width: 32,
-      height: 32
+      left: 100,
+      top: 100,
+      width: 36,
+      height: 36
     });
-    // Check center matches exactly: 100 + 18 = 118; 102 + 16 = 118
+    // Check center matches exactly: 100 + 18 = 118
     expect(bounds.left + bounds.width / 2).toBe(118);
     expect(bounds.top + bounds.height / 2).toBe(118);
   });
 
-  test('calculates correct inset for 1px border', () => {
-    const bounds = calculateImageSlotBounds(100, 100, 36, 36, 1, false);
-    expect(bounds).toEqual({
-      left: 101,
-      top: 101,
-      width: 34,
-      height: 34
-    });
-  });
-
-  test('calculates correct inset for 3px and 4px borders', () => {
+  test('preserves 1:1 shape dimensions regardless of border weight so image is not shrunk', () => {
+    const b1 = calculateImageSlotBounds(100, 100, 36, 36, 1, false);
     const b3 = calculateImageSlotBounds(100, 100, 36, 36, 3, false);
-    expect(b3).toEqual({ left: 103, top: 103, width: 30, height: 30 });
-
     const b4 = calculateImageSlotBounds(100, 100, 36, 36, 4, false);
-    expect(b4).toEqual({ left: 104, top: 104, width: 28, height: 28 });
+    expect(b1).toEqual({ left: 100, top: 100, width: 36, height: 36 });
+    expect(b3).toEqual({ left: 100, top: 100, width: 36, height: 36 });
+    expect(b4).toEqual({ left: 100, top: 100, width: 36, height: 36 });
   });
 
   test('returns full shape dimensions when border is transparent', () => {
@@ -279,14 +270,13 @@ describe('calculateImageSlotBounds', () => {
   test('handles asymmetric shape dimensions preserving square 1:1 ratio and center alignment', () => {
     const bounds = calculateImageSlotBounds(50, 60, 42, 38, 2, false);
     // size = min(42, 38) = 38
-    // targetSize = 38 - 4 = 34
-    // targetLeft = 50 + (42 - 34) / 2 = 54
-    // targetTop = 60 + (38 - 34) / 2 = 62
+    // targetLeft = 50 + (42 - 38) / 2 = 52
+    // targetTop = 60 + (38 - 38) / 2 = 60
     expect(bounds).toEqual({
-      left: 54,
-      top: 62,
-      width: 34,
-      height: 34
+      left: 52,
+      top: 60,
+      width: 38,
+      height: 38
     });
     // Centers match:
     expect(bounds.left + bounds.width / 2).toBe(50 + 42 / 2);

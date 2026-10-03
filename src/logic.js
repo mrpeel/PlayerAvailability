@@ -817,11 +817,8 @@ function calculateImageSlotBounds(shapeLeft, shapeTop, shapeWidth, shapeHeight, 
   var sLeft = Number(shapeLeft) || 0;
   var sTop = Number(shapeTop) || 0;
 
-  var bWeight = (!isBorderTransparent && Number(borderWeight) > 0) ? Number(borderWeight) : 0;
-  var inset = bWeight;
-
   var size = Math.min(sW, sH);
-  var targetSize = Math.max(10, size - (2 * inset));
+  var targetSize = Math.max(10, size);
   var targetLeft = Math.round((sLeft + (sW - targetSize) / 2) * 100) / 100;
   var targetTop = Math.round((sTop + (sH - targetSize) / 2) * 100) / 100;
   targetSize = Math.round(targetSize * 100) / 100;

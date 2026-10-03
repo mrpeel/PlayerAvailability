@@ -479,7 +479,7 @@
 
         <div class="studio-panel">
           <div class="guide-tip-banner">
-            <strong>Face Framing:</strong> Align crown to <strong>▲ TOP OF HEAD</strong> and jaw to <strong>▼ CHIN</strong>. The face fills ~75% of the circle with clean headroom above the hair and minimal shirt below!
+            <strong>Face Framing:</strong> Align crown to <strong>▲ TOP OF HEAD</strong> and jaw to <strong>▼ CHIN</strong>. The face fills ~80% of the circle with clean headroom above the hair and minimal shirt below!
           </div>
 
           <!-- Canvas Viewport -->
@@ -622,11 +622,11 @@
     var isErasing = false;
     var cursorCoord = null;
 
-    // Head framing guide metrics (within 400x400 space) - 75% FACE CROP
-    // Head occupies 288px out of 384px circle (~75% face), keeping chin at Y=330 with comfortable headroom above
-    var GUIDE_TOP_Y = 42;      // Crown of head
+    // Head framing guide metrics (within 400x400 space) - 80% FACE CROP
+    // Head occupies 306px out of 384px circle (~80% face), keeping chin at Y=330 with comfortable headroom above
+    var GUIDE_TOP_Y = 24;      // Crown of head
     var GUIDE_CHIN_Y = 330;    // Chin
-    var GUIDE_EYE_Y = 175;     // Eye line
+    var GUIDE_EYE_Y = 170;     // Eye line
     var GUIDE_CENTER_X = 200;  // Nose / center line
     var GUIDE_CIRCLE_R = 192;  // Circle avatar crop radius
 
@@ -845,7 +845,7 @@
       checkReady();
     }
 
-    // Automatically estimates head position and scales face up to fill the 288px (75%) guide
+    // Automatically estimates head position and scales face up to fill the 306px (80%) guide
     function autoFitToGuides() {
       if (!imgLoaded) return;
       var w = cutoutCanvas.width;
@@ -877,7 +877,7 @@
         var estimatedHeadH = Math.min(subjectH * 0.52, subjectW * 1.15);
         if (estimatedHeadH < 60) estimatedHeadH = subjectH;
 
-        // Target: crown at Y = 42, chin at Y = 330 (target head height = 288px, 75% of circle)
+        // Target: crown at Y = 24, chin at Y = 330 (target head height = 306px, 80% of circle)
         var desiredScale = (GUIDE_CHIN_Y - GUIDE_TOP_Y) / estimatedHeadH;
         desiredScale = Math.max(0.40, Math.min(3.5, desiredScale));
 
@@ -1024,9 +1024,9 @@
       c.lineWidth = 2.5;
       c.stroke();
 
-      // C. Target oval (spans from Y=42 to Y=330, 75% face crop)
+      // C. Target oval (spans from Y=24 to Y=330, 80% face crop)
       c.beginPath();
-      c.ellipse(GUIDE_CENTER_X, (GUIDE_TOP_Y + GUIDE_CHIN_Y) / 2, 105, 144, 0, 0, Math.PI * 2);
+      c.ellipse(GUIDE_CENTER_X, (GUIDE_TOP_Y + GUIDE_CHIN_Y) / 2, 112, 153, 0, 0, Math.PI * 2);
       c.setLineDash([5, 4]);
       c.strokeStyle = "rgba(40, 10, 20, 0.85)";
       c.lineWidth = 2.0;
@@ -1054,7 +1054,7 @@
       c.setLineDash([]);
       drawPillBadge(c, "EYE LEVEL", GUIDE_CENTER_X, GUIDE_EYE_Y, "#4d0012", "#ffffff", 9, true);
 
-      // F. Top of Head guideline (bracket + badge) at Y = 42
+      // F. Top of Head guideline (bracket + badge) at Y = 24
       c.beginPath();
       c.moveTo(85, GUIDE_TOP_Y + 10);
       c.lineTo(85, GUIDE_TOP_Y);

@@ -5057,7 +5057,7 @@ function showPhotoStudioDialog() {
     '      <input type="file" id="fileInput" accept="image/*" style="display:none;" onchange="handleFile(this.files[0])">' +
     '    </div>' +
     '    <div class="tip-box">' +
-    '      <strong>📏 Big Face Rule:</strong> Face fills ~75% of avatar (crown at <strong>▲ TOP</strong>, jaw at <strong>▼ CHIN</strong>). Crops out shoulders and eliminates distracting shirt colors!' +
+    '      <strong>📏 Big Face Rule:</strong> Face fills ~80% of avatar (crown at <strong>▲ TOP</strong>, jaw at <strong>▼ CHIN</strong>). Crops out shoulders and eliminates distracting shirt colors!' +
     '    </div>' +
     '    <div>' +
     '      <label>Shirt Handling:</label>' +
@@ -5161,7 +5161,7 @@ function showPhotoStudioDialog() {
     '  var startMouseX = 0, startMouseY = 0;' +
     '  var startPanX = 0, startPanY = 0;' +
     '  var cursorCoord = null;' +
-    '  var GUIDE_TOP_Y = 42, GUIDE_CHIN_Y = 330, GUIDE_EYE_Y = 175, GUIDE_CENTER_X = 200, GUIDE_CIRCLE_R = 192;' +
+    '  var GUIDE_TOP_Y = 24, GUIDE_CHIN_Y = 330, GUIDE_EYE_Y = 170, GUIDE_CENTER_X = 200, GUIDE_CIRCLE_R = 192;' +
     '  var canvas = document.getElementById("cropCanvas");' +
     '  var ctx = canvas.getContext("2d");' +
     '  var normCanvas = document.createElement("canvas");' +
@@ -5410,7 +5410,7 @@ function showPhotoStudioDialog() {
     '    c.lineWidth = 2.5;' +
     '    c.stroke();' +
     '    c.beginPath();' +
-    '    c.ellipse(GUIDE_CENTER_X, (GUIDE_TOP_Y + GUIDE_CHIN_Y) / 2, 105, 144, 0, 0, Math.PI * 2);' +
+    '    c.ellipse(GUIDE_CENTER_X, (GUIDE_TOP_Y + GUIDE_CHIN_Y) / 2, 112, 153, 0, 0, Math.PI * 2);' +
     '    c.setLineDash([5, 4]);' +
     '    c.strokeStyle = "rgba(40, 10, 20, 0.85)";' +
     '    c.lineWidth = 2.0;' +
