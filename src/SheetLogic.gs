@@ -3404,6 +3404,11 @@ function formatRoundDate(dateVal) {
   var str = String(dateVal).trim();
   if (!str) return "";
 
+  // Reject round names like "Round 1", "R1", "Rd 1", or purely single numbers
+  if (/^(?:round|rd|r)\s*\d+$/i.test(str) || /^\d{1,2}$/.test(str)) {
+    return "";
+  }
+
   // If multiple dates (e.g. "2026-10-03, 2026-10-10"), take the first match day
   if (str.indexOf(",") > -1) {
     str = str.split(",")[0].trim();
@@ -3412,6 +3417,8 @@ function formatRoundDate(dateVal) {
   var ymd = normalizeDateToYYYYMMDD(str);
   if (ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
     var parts = ymd.split("-");
+    var yearNum = parseInt(parts[0], 10);
+    if (yearNum < 1950 || yearNum > 2100) return "";
     var year = parts[0].slice(-2);
     var monthIdx = parseInt(parts[1], 10) - 1;
     var day = parseInt(parts[2], 10);

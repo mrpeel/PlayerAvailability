@@ -80,3 +80,7 @@ global.Utilities = {
     getName: () => name
   }))
 };
+
+global.Logger = {
+  log: jest.fn()
+};
