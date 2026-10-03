@@ -6,6 +6,7 @@ const {
   calculateScaleTransform,
   formatRoundOpponent,
   formatFormatVenue,
+  formatRoundDate,
   parseColorHex,
   normalizeHexColor
 } = require('../src/logic');
@@ -108,6 +109,41 @@ describe('formatFormatVenue', () => {
   test('handles missing format or venue gracefully', () => {
     expect(formatFormatVenue('', 'Kalang Park')).toBe('at Kalang Park');
     expect(formatFormatVenue('Two Day', '')).toBe('Two Day game');
+  });
+});
+
+describe('formatRoundDate', () => {
+  test('formats standard ISO YYYY-MM-DD date to "d mmm yy"', () => {
+    // Exact user requirement example:
+    expect(formatRoundDate('2026-10-03')).toBe('3 Oct 26');
+    expect(formatRoundDate('2026-10-31')).toBe('31 Oct 26');
+    expect(formatRoundDate('2026-01-05')).toBe('5 Jan 26');
+    expect(formatRoundDate('2025-11-16')).toBe('16 Nov 25');
+    expect(formatRoundDate('2026-02-09')).toBe('9 Feb 26');
+  });
+
+  test('formats multi-date strings taking the first/start match date', () => {
+    expect(formatRoundDate('2026-10-03, 2026-10-10')).toBe('3 Oct 26');
+    expect(formatRoundDate('2025-11-16, 2025-11-23')).toBe('16 Nov 25');
+  });
+
+  test('formats DD/MM/YYYY date strings', () => {
+    expect(formatRoundDate('03/10/2026')).toBe('3 Oct 26');
+    expect(formatRoundDate('3/10/2026')).toBe('3 Oct 26');
+    expect(formatRoundDate('15/02/2026')).toBe('15 Feb 26');
+  });
+
+  test('formats JavaScript Date objects', () => {
+    // Note: Month 9 in JS Date is October
+    const d = new Date(2026, 9, 3);
+    expect(formatRoundDate(d)).toBe('3 Oct 26');
+  });
+
+  test('handles empty, null, undefined or invalid dates gracefully', () => {
+    expect(formatRoundDate('')).toBe('');
+    expect(formatRoundDate(null)).toBe('');
+    expect(formatRoundDate(undefined)).toBe('');
+    expect(formatRoundDate('invalid-date')).toBe('');
   });
 });
 
@@ -308,17 +344,42 @@ describe('calculateHeadGuideMetrics', () => {
     expect(m.ovalRx).toBe(113);
   });
 
+  test('calculates correct metrics for 90% fill ensuring chin drops and crown stays inside frame', () => {
+    const m = calculateHeadGuideMetrics(90);
+    expect(m.percent).toBe(90);
+    expect(m.targetHeight).toBe(346);
+    // Crown at Y=16: comfortably inside the circle (circle top is Y=8, canvas top is Y=0)
+    expect(m.topY).toBe(16);
+    expect(m.topY).toBeGreaterThan(8);
+    // Chin drops to Y=362: accounts for face size without staying stuck at 330
+    expect(m.chinY).toBe(362);
+    expect(m.chinY).toBeLessThan(392);
+    expect(m.chinY - m.topY).toBe(m.targetHeight);
+  });
+
   test('calculates correct metrics across all selectable percentage options (60% to 90%)', () => {
     const options = [60, 65, 70, 75, 80, 85, 90];
+    let prevTopY = 999;
+    let prevChinY = -1;
+
     options.forEach(pct => {
       const m = calculateHeadGuideMetrics(pct);
       expect(m.percent).toBe(pct);
-      expect(m.chinY).toBe(330);
-      expect(m.topY).toBe(330 - m.targetHeight);
-      expect(m.topY).toBeLessThan(m.chinY);
+      expect(m.chinY - m.topY).toBe(m.targetHeight);
+      // Must always remain fully within the circle avatar (Y=8 to Y=392)
+      expect(m.topY).toBeGreaterThanOrEqual(8);
+      expect(m.chinY).toBeLessThan(392);
       expect(m.eyeY).toBeGreaterThan(m.topY);
       expect(m.eyeY).toBeLessThan(m.chinY);
       expect(m.ovalRx).toBeLessThan(m.ovalRy);
+
+      // As percentage fill increases, crown moves UP (topY decreases) and chin moves DOWN (chinY increases)
+      if (prevTopY !== 999) {
+        expect(m.topY).toBeLessThan(prevTopY);
+        expect(m.chinY).toBeGreaterThan(prevChinY);
+      }
+      prevTopY = m.topY;
+      prevChinY = m.chinY;
     });
   });
 
@@ -326,7 +387,8 @@ describe('calculateHeadGuideMetrics', () => {
     const m = calculateHeadGuideMetrics(0.75);
     expect(m.percent).toBe(75);
     expect(m.targetHeight).toBe(288);
-    expect(m.topY).toBe(42);
+    expect(m.topY).toBe(27);
+    expect(m.chinY).toBe(315);
   });
 
   test('clamps out-of-bounds or invalid inputs safely', () => {
@@ -342,34 +404,41 @@ describe('calculateHeadGuideMetrics', () => {
 });
 
 describe('calculateScaleTransform', () => {
-  test('calculates enlargement transform anchored at chin (Y=330)', () => {
+  test('calculates proportional transform anchored at head (Y=85) by default', () => {
     // Upsize 75% -> 80% with factor 1.067
+    const t = calculateScaleTransform(1.067, 'head', 400, 400);
+    expect(t.newWidth).toBe(426.8);
+    expect(t.newHeight).toBe(426.8);
+    expect(t.newX).toBe(-13.4);
+    expect(t.newY).toBe(-5.69);
+
+    // Maps 75% crown (Y=27) directly to 80% crown (Y=23)
+    expect(Math.round(t.newY + 27 * t.multiplier)).toBe(23);
+    // Maps 75% chin (Y=315) directly to 80% chin (Y=330)
+    expect(Math.round(t.newY + 315 * t.multiplier)).toBe(330);
+  });
+
+  test('calculates enlargement transform anchored at chin (Y=330) when specified', () => {
     const t = calculateScaleTransform(1.067, 'chin', 400, 400);
     expect(t.newWidth).toBe(426.8);
     expect(t.newHeight).toBe(426.8);
     expect(t.newX).toBe(-13.4);
     expect(t.newY).toBe(-22.11);
-
-    // Verify center remains at 200
-    expect(Math.round(t.newX + 200 * t.multiplier)).toBe(200);
-
-    // Verify chin remains at 330
     expect(Math.round(t.newY + 330 * t.multiplier)).toBe(330);
   });
 
-  test('calculates shrink transform anchored at chin (Y=330)', () => {
+  test('calculates shrink transform anchored at head (Y=85)', () => {
     // Shrink 85% -> 80% with factor 0.941
-    const t = calculateScaleTransform(0.941, 'chin', 400, 400);
+    const t = calculateScaleTransform(0.941, 'head', 400, 400);
     expect(t.newWidth).toBe(376.4);
     expect(t.newHeight).toBe(376.4);
     expect(t.newX).toBe(11.8);
-    expect(t.newY).toBe(19.47);
+    expect(t.newY).toBe(5.02);
 
-    // Verify center remains at 200
-    expect(Math.round(t.newX + 200 * t.multiplier)).toBe(200);
-
-    // Verify chin remains at 330
-    expect(Math.round(t.newY + 330 * t.multiplier)).toBe(330);
+    // Maps 85% crown (Y=20) directly to 80% crown (Y=23)
+    expect(Math.round(t.newY + 20 * t.multiplier)).toBe(24);
+    // Maps 85% chin (Y=346) directly to 80% chin (Y=330)
+    expect(Math.round(t.newY + 346 * t.multiplier)).toBe(331);
   });
 
   test('calculates transform centered at canvas center (200, 200)', () => {
@@ -397,27 +466,6 @@ describe('calculateScaleTransform', () => {
 
     const tNeg = calculateScaleTransform(-0.5, 'chin');
     expect(tNeg.multiplier).toBe(1.0);
-  });
-
-  test('verifies crown coordinate transformation between 75% and 80% head fill', () => {
-    // 75% fill crown is at Y = 42
-    const m75 = calculateHeadGuideMetrics(75);
-    expect(m75.topY).toBe(42);
-
-    // 80% fill crown is at Y = 23
-    const m80 = calculateHeadGuideMetrics(80);
-    expect(m80.topY).toBe(23);
-
-    // Scaling 75% -> 80% (1.067x) anchored at chin (330)
-    const tEnlarge = calculateScaleTransform(1.067, 'chin', 400, 400);
-    const scaledCrownY = Math.round(tEnlarge.newY + m75.topY * tEnlarge.multiplier);
-    expect(scaledCrownY).toBe(m80.topY); // Exactly Y=23!
-
-    // Scaling 85% -> 80% (0.941x) anchored at chin (330)
-    const m85 = calculateHeadGuideMetrics(85);
-    const tShrink = calculateScaleTransform(0.941, 'chin', 400, 400);
-    const shrunkCrownY = Math.round(tShrink.newY + m85.topY * tShrink.multiplier);
-    expect(shrunkCrownY).toBe(m80.topY); // Exactly Y=23!
   });
 });
 

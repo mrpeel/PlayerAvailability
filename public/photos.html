@@ -652,8 +652,10 @@
     function setHeadFillPercent(val) {
       currentFillPercent = parseInt(val, 10) || 80;
       var targetH = Math.round((currentFillPercent / 100) * 384);
-      GUIDE_CHIN_Y = 330;
-      GUIDE_TOP_Y = GUIDE_CHIN_Y - targetH;
+      var totalMargin = 384 - targetH;
+      var topMargin = Math.round(totalMargin * 0.20);
+      GUIDE_TOP_Y = 8 + topMargin;
+      GUIDE_CHIN_Y = GUIDE_TOP_Y + targetH;
       GUIDE_EYE_Y = Math.round(GUIDE_TOP_Y + targetH * 0.477);
       GUIDE_OVAL_RY = Math.round(targetH / 2);
       GUIDE_OVAL_RX = Math.round(GUIDE_OVAL_RY * 0.732);
@@ -1107,7 +1109,8 @@
       c.strokeStyle = "#fac218";
       c.lineWidth = 2;
       c.stroke();
-      drawPillBadge(c, "▲ TOP OF HEAD", GUIDE_CENTER_X, GUIDE_TOP_Y - 10, "#4d0012", "#fac218", 10, true);
+      var topBadgeY = GUIDE_TOP_Y < 22 ? (GUIDE_TOP_Y + 13) : (GUIDE_TOP_Y - 10);
+      drawPillBadge(c, "▲ TOP OF HEAD", GUIDE_CENTER_X, topBadgeY, "#4d0012", "#fac218", 10, true);
 
       // G. Chin guideline (bracket + badge) at Y = 330
       c.beginPath();

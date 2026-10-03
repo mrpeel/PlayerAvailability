@@ -3381,6 +3381,124 @@ function formatFormatVenue(format, venue) {
 }
 
 
+/**
+ * Formats a round start date into "d mmm yy" format (e.g. "2026-10-03" -> "3 Oct 26").
+ * Accepts YYYY-MM-DD, DD/MM/YYYY, multi-date strings (takes first date), or Date objects.
+ *
+ * @param {string|Date} dateVal - Raw date value or string.
+ * @returns {string} Formatted date string in "d mmm yy" format, or empty string if invalid.
+ */
+function formatRoundDate(dateVal) {
+  if (!dateVal) return "";
+
+  var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  if (dateVal instanceof Date) {
+    if (isNaN(dateVal.getTime())) return "";
+    var d = dateVal.getDate();
+    var m = months[dateVal.getMonth()];
+    var y = String(dateVal.getFullYear()).slice(-2);
+    return d + " " + m + " " + y;
+  }
+
+  var str = String(dateVal).trim();
+  if (!str) return "";
+
+  // If multiple dates (e.g. "2026-10-03, 2026-10-10"), take the first match day
+  if (str.indexOf(",") > -1) {
+    str = str.split(",")[0].trim();
+  }
+
+  var ymd = normalizeDateToYYYYMMDD(str);
+  if (ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    var parts = ymd.split("-");
+    var year = parts[0].slice(-2);
+    var monthIdx = parseInt(parts[1], 10) - 1;
+    var day = parseInt(parts[2], 10);
+    if (monthIdx >= 0 && monthIdx < 12) {
+      return day + " " + months[monthIdx] + " " + year;
+    }
+  }
+
+  return "";
+}
+
+
+/**
+ * Resolves the round start date formatted as "d mmm yy" (e.g. "3 Oct 26").
+ * Checks activeRound string/Date, active round sheet B1 cell, Presentation_Staging B1 cell,
+ * and the Fixtures sheet.
+ *
+ * @param {string|Date} activeRound - The round identifier or date.
+ * @param {Spreadsheet} [s] - The spreadsheet object.
+ * @returns {string} Formatted date string in "d mmm yy" format (e.g. "3 Oct 26"), or "".
+ */
+function resolveRoundStartDate(activeRound, s) {
+  // 1. Direct format if activeRound is a valid date or date string
+  var direct = formatRoundDate(activeRound);
+  if (direct) return direct;
+
+  var ss = s || (typeof getSS === "function" ? getSS() : null);
+  if (!ss) return "";
+
+  // 2. Check active round sheet B1 (Match Date)
+  if (activeRound) {
+    try {
+      var rSheet = ss.getSheetByName(String(activeRound));
+      if (rSheet) {
+        var b1 = rSheet.getRange("B1").getValue();
+        var fromB1 = formatRoundDate(b1);
+        if (fromB1) return fromB1;
+      }
+    } catch (e) {}
+  }
+
+  // 3. Check Presentation_Staging B1
+  try {
+    var staging = ss.getSheetByName("Presentation_Staging");
+    if (staging) {
+      var stB1 = staging.getRange("B1").getValue();
+      var fromStB1 = formatRoundDate(stB1);
+      if (fromStB1) return fromStB1;
+    }
+  } catch (e) {}
+
+  // 4. Check Fixtures sheet by matching round name
+  if (activeRound) {
+    try {
+      var fixSheet = ss.getSheetByName("Fixtures");
+      if (fixSheet && fixSheet.getLastRow() > 1) {
+        var values = fixSheet.getDataRange().getValues();
+        var headers = values[0];
+        var dateCol = 0;
+        headers.forEach(function(h, idx) {
+          var hLower = String(h || "").trim().toLowerCase();
+          if (hLower === "game date" || hLower === "date") dateCol = idx;
+        });
+        var aRoundNorm = String(activeRound).trim().toLowerCase();
+        for (var r = 1; r < values.length; r++) {
+          var row = values[r];
+          var gDate = row[dateCol];
+          if (normalizeDateToYYYYMMDD(gDate) === normalizeDateToYYYYMMDD(activeRound)) {
+            var fDate = formatRoundDate(gDate);
+            if (fDate) return fDate;
+          }
+          for (var c = 0; c < row.length; c++) {
+            if (String(row[c] || "").trim().toLowerCase() === aRoundNorm) {
+              var fDate = formatRoundDate(gDate);
+              if (fDate) return fDate;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  return "";
+}
+
+
+
 var TRANSPARENT_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==";
 
 /**
@@ -4065,9 +4183,20 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
   if (!staging) return { success: false, message: "Presentation_Staging tab not found." };
 
   // Always synchronize Presentation_Staging layout and formulas for targetRound
-  var activeRound = targetRound || String(staging.getRange("B1").getValue() || "").trim();
+  var rawB1 = staging.getRange("B1").getValue();
+  var activeRound = targetRound;
+  if (!activeRound) {
+    if (rawB1 instanceof Date) {
+      activeRound = normalizeDateToYYYYMMDD(rawB1);
+    } else {
+      activeRound = String(rawB1 || "").trim();
+    }
+  }
   syncPresentationStagingHub(s, activeRound);
   SpreadsheetApp.flush();
+
+  // Resolve round start date formatted as "d mmm yy" (e.g. "3 Oct 26")
+  var roundStartDateFormatted = resolveRoundStartDate(activeRound, s);
 
   // Read player photos map from Players tab (both by Profile ID and Player Name)
   var playerSheet = s.getSheetByName("Players");
@@ -4174,6 +4303,7 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
       prefix: f.prefix,
       defaultIdx: f.defaultIdx,
       round: roundVal,
+      roundDate: roundStartDateFormatted,
       opponent: oppVal,
       venue: venVal,
       format: fmtVal,
@@ -4189,6 +4319,7 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
 
     var roundOpponentText = formatRoundOpponent(t.round, t.prefix, t.opponent);
     var formatVenueText = formatFormatVenue(t.format, t.venue);
+    var roundDateText = t.roundDate || roundStartDateFormatted;
 
     // 1. Element-by-element & Group Alt Text Tag Matching
     var matchedPlayerTags = {};
@@ -4286,7 +4417,9 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
     elements.forEach(function(el) {
       try {
         var type = el.getPageElementType();
-        var tag = String(el.getTitle() || el.getDescription() || "").trim().toUpperCase();
+        var title = String(el.getTitle() || "").trim().toUpperCase();
+        var desc = String(el.getDescription() || "").trim().toUpperCase();
+        var tag = title || desc;
 
         // A. If it's a GROUP container
         if (type === SlidesApp.PageElementType.GROUP) {
@@ -4299,7 +4432,9 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
           // 2. If group itself is not tagged, check if ANY child inside has the slot ID tag
           if (slotNum === null) {
             for (var c = 0; c < children.length; c++) {
-              var cTag = String(children[c].getTitle() || children[c].getDescription() || "").trim().toUpperCase();
+              var cTitle = String(children[c].getTitle() || "").trim().toUpperCase();
+              var cDesc = String(children[c].getDescription() || "").trim().toUpperCase();
+              var cTag = cTitle || cDesc;
               var foundSlot = extractSlotNumberForTeam(cTag, t.prefix);
               if (foundSlot !== null) {
                 slotNum = foundSlot;
@@ -4319,26 +4454,65 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
             return;
           }
 
+          // If group is not a player slot, check children for ROUND_DATE and match tags
+          for (var c = 0; c < children.length; c++) {
+            var child = children[c];
+            try {
+              if (child.getPageElementType() === SlidesApp.PageElementType.SHAPE) {
+                var cTitle = String(child.getTitle() || "").trim().toUpperCase();
+                var cDesc = String(child.getDescription() || "").trim().toUpperCase();
+                var cTag = cTitle || cDesc;
+                var isChildRoundDate = (cDesc === "ROUND_DATE" || cTitle === "ROUND_DATE" || cTag === "ROUND_DATE" ||
+                                        cDesc === t.prefix + "_ROUND_DATE" || cTitle === t.prefix + "_ROUND_DATE" ||
+                                        cTag === t.prefix + "_ROUND_DATE" || cTag === t.prefix + "__ROUND_DATE");
+                if (isChildRoundDate) {
+                  child.asShape().getText().setText(roundDateText);
+                } else if (cTag === t.prefix + "_ROUND_OPPONENT" || cTag === t.prefix + "__ROUND_OPPONENT" || cTag === "ROUND_OPPONENT") {
+                  child.asShape().getText().setText(roundOpponentText);
+                } else if (cTag === t.prefix + "_FORMAT_VENUE" || cTag === t.prefix + "__FORMAT_VENUE" || cTag === "FORMAT_VENUE") {
+                  child.asShape().getText().setText(formatVenueText);
+                } else if (cTag === t.prefix + "_ROUND" || cTag === "ROUND" || cDesc === "ROUND" || cTitle === "ROUND") {
+                  child.asShape().getText().setText(t.round);
+                } else if (cTag === t.prefix + "_OPPONENT" || cTag === "OPPONENT" || cDesc === "OPPONENT" || cTitle === "OPPONENT") {
+                  child.asShape().getText().setText(t.opponent);
+                } else if (cTag === t.prefix + "_VENUE" || cTag === "VENUE" || cDesc === "VENUE" || cTitle === "VENUE") {
+                  child.asShape().getText().setText(t.venue);
+                } else if (cTag === t.prefix + "_FORMAT" || cTag === "FORMAT" || cDesc === "FORMAT" || cTitle === "FORMAT") {
+                  child.asShape().getText().setText(t.format);
+                }
+              }
+            } catch (grpChildErr) {}
+          }
+
           return;
         }
 
-        // B. Match concatenated match tags
-        if (tag === t.prefix + "_ROUND_OPPONENT" || tag === t.prefix + "__ROUND_OPPONENT" || tag === "ROUND_OPPONENT") {
+        // B. Match concatenated match tags & metadata tags
+        var isRoundDate = (desc === "ROUND_DATE" || title === "ROUND_DATE" || tag === "ROUND_DATE" ||
+                           desc === t.prefix + "_ROUND_DATE" || title === t.prefix + "_ROUND_DATE" ||
+                           tag === t.prefix + "_ROUND_DATE" || tag === t.prefix + "__ROUND_DATE");
+
+        if (isRoundDate) {
+          if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(roundDateText);
+        } else if (tag === t.prefix + "_ROUND_OPPONENT" || tag === t.prefix + "__ROUND_OPPONENT" || tag === "ROUND_OPPONENT") {
           if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(roundOpponentText);
         } else if (tag === t.prefix + "_FORMAT_VENUE" || tag === t.prefix + "__FORMAT_VENUE" || tag === "FORMAT_VENUE") {
           if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(formatVenueText);
-        } else if (tag === t.prefix + "_ROUND" || tag === "ROUND") {
+        } else if (tag === t.prefix + "_ROUND" || tag === "ROUND" || desc === "ROUND" || title === "ROUND") {
           if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.round);
-        } else if (tag === t.prefix + "_OPPONENT" || tag === "OPPONENT") {
+        } else if (tag === t.prefix + "_OPPONENT" || tag === "OPPONENT" || desc === "OPPONENT" || title === "OPPONENT") {
           if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.opponent);
-        } else if (tag === t.prefix + "_VENUE" || tag === "VENUE") {
+        } else if (tag === t.prefix + "_VENUE" || tag === "VENUE" || desc === "VENUE" || title === "VENUE") {
           if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.venue);
-        } else if (tag === t.prefix + "_FORMAT" || tag === "FORMAT") {
+        } else if (tag === t.prefix + "_FORMAT" || tag === "FORMAT" || desc === "FORMAT" || title === "FORMAT") {
           if (type === SlidesApp.PageElementType.SHAPE) el.asShape().getText().setText(t.format);
         }
 
         // C. Match standalone Shape or Image elements tagged with slot ID
         var elSlotNum = extractSlotNumberForTeam(tag, t.prefix);
+        if (elSlotNum === null && desc) {
+          elSlotNum = extractSlotNumberForTeam(desc, t.prefix);
+        }
         if (elSlotNum !== null) {
           if (type === SlidesApp.PageElementType.SHAPE) {
             processSlotElements(elSlotNum, el, null, null, null);
@@ -4455,6 +4629,8 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
                 tbl.getCell(r, c + 1).getText().setText(t.venue);
               } else if (label === "format" && c + 1 < tbl.getNumColumns()) {
                 tbl.getCell(r, c + 1).getText().setText(t.format);
+              } else if ((label === "date" || label === "round date" || label === "match date") && c + 1 < tbl.getNumColumns()) {
+                tbl.getCell(r, c + 1).getText().setText(roundDateText);
               }
             }
           }
@@ -4477,6 +4653,45 @@ function syncPresentationStagingToSlides(roundDateOrSs, optBgColorOrSs, optBorde
       }
     } catch (cleanErr) {}
   });
+
+  // 6. Global pass: Update any standalone shapes or group shapes across ALL slides tagged with ROUND_DATE
+  if (roundStartDateFormatted && slides && slides.length > 0) {
+    slides.forEach(function(sItem) {
+      try {
+        var sEls = sItem.getPageElements();
+        sEls.forEach(function(sEl) {
+          try {
+            var seType = sEl.getPageElementType();
+            var seTitle = String(sEl.getTitle() || "").trim().toUpperCase();
+            var seDesc = String(sEl.getDescription() || "").trim().toUpperCase();
+            if (seType === SlidesApp.PageElementType.SHAPE) {
+              if (seDesc === "ROUND_DATE" || seTitle === "ROUND_DATE" || (seTitle || seDesc) === "ROUND_DATE") {
+                sEl.asShape().getText().setText(roundStartDateFormatted);
+              }
+            } else if (seType === SlidesApp.PageElementType.GROUP) {
+              function updateRoundDateInGroup(g) {
+                var gChildren = g.getChildren();
+                gChildren.forEach(function(gChild) {
+                  try {
+                    if (gChild.getPageElementType() === SlidesApp.PageElementType.GROUP) {
+                      updateRoundDateInGroup(gChild.asGroup());
+                    } else if (gChild.getPageElementType() === SlidesApp.PageElementType.SHAPE) {
+                      var gcTitle = String(gChild.getTitle() || "").trim().toUpperCase();
+                      var gcDesc = String(gChild.getDescription() || "").trim().toUpperCase();
+                      if (gcDesc === "ROUND_DATE" || gcTitle === "ROUND_DATE" || (gcTitle || gcDesc) === "ROUND_DATE") {
+                        gChild.asShape().getText().setText(roundStartDateFormatted);
+                      }
+                    }
+                  } catch (gErr) {}
+                });
+              }
+              updateRoundDateInGroup(sEl.asGroup());
+            }
+          } catch (eErr) {}
+        });
+      } catch (slErr) {}
+    });
+  }
 
   return { success: true, message: "Successfully synced " + (isT20 ? "2 T20 teams" : "all 5 teams") + " to Google Slides using permanent element IDs!" };
 }
@@ -5190,8 +5405,10 @@ function showPhotoStudioDialog() {
     '  function setHeadFillPercent(val) {' +
     '    currentFillPercent = parseInt(val, 10) || 80;' +
     '    var targetH = Math.round((currentFillPercent / 100) * 384);' +
-    '    GUIDE_CHIN_Y = 330;' +
-    '    GUIDE_TOP_Y = GUIDE_CHIN_Y - targetH;' +
+    '    var totalMargin = 384 - targetH;' +
+    '    var topMargin = Math.round(totalMargin * 0.20);' +
+    '    GUIDE_TOP_Y = 8 + topMargin;' +
+    '    GUIDE_CHIN_Y = GUIDE_TOP_Y + targetH;' +
     '    GUIDE_EYE_Y = Math.round(GUIDE_TOP_Y + targetH * 0.477);' +
     '    GUIDE_OVAL_RY = Math.round(targetH / 2);' +
     '    GUIDE_OVAL_RX = Math.round(GUIDE_OVAL_RY * 0.732);' +
@@ -5468,7 +5685,8 @@ function showPhotoStudioDialog() {
     '    c.beginPath();' +
     '    c.moveTo(85, GUIDE_TOP_Y + 10); c.lineTo(85, GUIDE_TOP_Y); c.lineTo(315, GUIDE_TOP_Y); c.lineTo(315, GUIDE_TOP_Y + 10);' +
     '    c.strokeStyle = "#fac218"; c.lineWidth = 2; c.stroke();' +
-    '    drawBadge(c, "▲ TOP OF HEAD", GUIDE_CENTER_X, GUIDE_TOP_Y - 10, "#4d0012", "#fac218", 10, true);' +
+    '    var topBadgeY = GUIDE_TOP_Y < 22 ? (GUIDE_TOP_Y + 13) : (GUIDE_TOP_Y - 10);' +
+    '    drawBadge(c, "▲ TOP OF HEAD", GUIDE_CENTER_X, topBadgeY, "#4d0012", "#fac218", 10, true);' +
     '    c.beginPath();' +
     '    c.moveTo(95, GUIDE_CHIN_Y - 10); c.lineTo(95, GUIDE_CHIN_Y); c.lineTo(305, GUIDE_CHIN_Y); c.lineTo(305, GUIDE_CHIN_Y - 10);' +
     '    c.strokeStyle = "#fac218"; c.lineWidth = 2; c.stroke();' +
@@ -6422,7 +6640,7 @@ function menuBatchResizeHeadshots() {
     ui.alert("Invalid multiplier entered. Please enter a positive number (e.g. 1.067).");
     return;
   }
-  batchResizeAllHeadshots(val, "chin");
+  batchResizeAllHeadshots(val, "head");
 }
 
 
@@ -6430,7 +6648,7 @@ function menuBatchResizeHeadshots() {
  * Convenience zero-argument function to run manually from Apps Script Editor to enlarge photos from 75% to 80% (1.067x).
  */
 function runBatchResizeEnlarge75to80() {
-  return batchResizeAllHeadshots(1.067, "chin");
+  return batchResizeAllHeadshots(1.067, "head");
 }
 
 
@@ -6438,21 +6656,21 @@ function runBatchResizeEnlarge75to80() {
  * Convenience zero-argument function to run manually from Apps Script Editor to shrink photos from 85% to 80% (0.941x).
  */
 function runBatchResizeShrink85to80() {
-  return batchResizeAllHeadshots(0.941, "chin");
+  return batchResizeAllHeadshots(0.941, "head");
 }
 
 
 /**
- * Resizes all headshot images in Google Drive by multiplying dimensions and anchoring at the chin (Y=330) or center.
+ * Resizes all headshot images in Google Drive by multiplying dimensions and proportionally anchoring head framing.
  * Uses an autonomous, self-executing HTML5 Canvas dialog for lossless bicubic rendering with real-time progress.
  *
  * @param {number} [optMultiplier=1.067] - Scale factor (e.g. 1.067 to enlarge 75%→80%, 0.941 to shrink 85%→80%)
- * @param {string} [optAnchor='chin'] - 'chin' (keeps jaw anchored at Y=330) or 'center'
+ * @param {string} [optAnchor='head'] - 'head' (proportional: adjusts crown & chin), 'chin', or 'center'
  */
 function batchResizeAllHeadshots(optMultiplier, optAnchor) {
   var mult = parseFloat(optMultiplier);
   if (isNaN(mult) || mult <= 0) mult = 1.067;
-  var anchor = (optAnchor === "center") ? "center" : "chin";
+  var anchor = (optAnchor === "center") ? "center" : (optAnchor === "chin" ? "chin" : "head");
 
   var transform = calculateScaleTransform(mult, anchor, 400, 400);
 
@@ -6485,6 +6703,7 @@ function batchResizeAllHeadshots(optMultiplier, optAnchor) {
  */
 function buildBatchResizeHtml(multiplier, anchor, transform) {
   var transformJson = JSON.stringify(transform);
+  var anchorDesc = (anchor === "chin") ? "Chin (Y=330)" : (anchor === "center" ? "Center" : "Proportional (Crown & Chin)");
   var html = '<!DOCTYPE html>' +
     '<html><head><meta charset="utf-8">' +
     '<style>' +
@@ -6505,7 +6724,7 @@ function buildBatchResizeHtml(multiplier, anchor, transform) {
     '  <h2>🏏 Batch Resize Headshots</h2>' +
     '  <div style="margin-bottom:12px;">' +
     '    <span class="badge">' + multiplier + 'x Scale</span>' +
-    '    <span class="badge badge-secondary">Anchor: ' + (anchor === "chin" ? "Chin (Y=330)" : "Center") + '</span>' +
+    '    <span class="badge badge-secondary">Anchor: ' + anchorDesc + '</span>' +
     '    <span class="badge badge-secondary">Canvas: 400x400</span>' +
     '  </div>' +
     '  <div class="progress-wrap">' +

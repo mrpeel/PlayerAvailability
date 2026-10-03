@@ -855,8 +855,12 @@ function calculateHeadGuideMetrics(percentFill) {
 
   var pct = num / 100;
   var targetH = Math.round(pct * 384);
-  var chinY = 330;
-  var topY = chinY - targetH;
+  var totalMargin = 384 - targetH;
+  // Avatar circle spans Y=8 to Y=392 (diameter 384, center 200, 200).
+  // Distribute vertical margin proportionally: 20% to top headroom, 80% below chin.
+  var topMargin = Math.round(totalMargin * 0.20);
+  var topY = 8 + topMargin;
+  var chinY = topY + targetH;
   var eyeY = Math.round(topY + targetH * 0.477);
   var ovalRy = Math.round(targetH / 2);
   var ovalRx = Math.round(ovalRy * 0.732);
@@ -876,7 +880,7 @@ function calculateHeadGuideMetrics(percentFill) {
  * Calculates coordinate and size transformations for scaling an image on a fixed canvas.
  *
  * @param {number} multiplier - Scale factor (e.g. 1.067 to enlarge, 0.941 to shrink)
- * @param {string} [anchor='chin'] - 'chin' (anchors at Y=330) or 'center' (anchors at Y=200)
+ * @param {string|number} [anchor='head'] - 'head' (proportional anchor at Y=85), 'center' (Y=200), 'chin' (Y=330), or explicit Y coordinate
  * @param {number} [canvasWidth=400] - Canvas width in pixels
  * @param {number} [canvasHeight=400] - Canvas height in pixels
  * @returns {{
@@ -897,7 +901,17 @@ function calculateScaleTransform(multiplier, anchor, canvasWidth, canvasHeight) 
   var cH = Number(canvasHeight) || 400;
 
   var anchorX = cW / 2;
-  var anchorY = (anchor === 'center') ? (cH / 2) : 330;
+  var anchorY;
+  if (typeof anchor === 'number' && !isNaN(anchor)) {
+    anchorY = anchor;
+  } else if (anchor === 'center') {
+    anchorY = cH / 2;
+  } else if (anchor === 'chin') {
+    anchorY = 330;
+  } else {
+    // Proportional head anchor (Y=85): ensures both crown and chin adjust dynamically
+    anchorY = 85;
+  }
 
   var newW = Math.round(cW * m * 100) / 100;
   var newH = Math.round(cH * m * 100) / 100;
@@ -1208,6 +1222,49 @@ function formatFormatVenue(format, venue) {
   }
   return "";
 }
+
+/**
+ * Formats a round start date into "d mmm yy" format (e.g. "2026-10-03" -> "3 Oct 26").
+ * Accepts YYYY-MM-DD, DD/MM/YYYY, multi-date strings (takes first date), or Date objects.
+ *
+ * @param {string|Date} dateVal - Raw date value or string.
+ * @returns {string} Formatted date string in "d mmm yy" format, or empty string if invalid.
+ */
+function formatRoundDate(dateVal) {
+  if (!dateVal) return "";
+
+  var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  if (dateVal instanceof Date) {
+    if (isNaN(dateVal.getTime())) return "";
+    var d = dateVal.getDate();
+    var m = months[dateVal.getMonth()];
+    var y = String(dateVal.getFullYear()).slice(-2);
+    return d + " " + m + " " + y;
+  }
+
+  var str = String(dateVal).trim();
+  if (!str) return "";
+
+  // If multiple dates (e.g. "2026-10-03, 2026-10-10"), take the first match day
+  if (str.indexOf(",") > -1) {
+    str = str.split(",")[0].trim();
+  }
+
+  var ymd = normalizeDateToYYYYMMDD(str);
+  if (ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    var parts = ymd.split("-");
+    var year = parts[0].slice(-2);
+    var monthIdx = parseInt(parts[1], 10) - 1;
+    var day = parseInt(parts[2], 10);
+    if (monthIdx >= 0 && monthIdx < 12) {
+      return day + " " + months[monthIdx] + " " + year;
+    }
+  }
+
+  return "";
+}
+
 
 /**
  * Parses a hex color string (with or without #, 6-digit or 8-digit RRGGBBAA, or 'transparent')
@@ -2317,6 +2374,7 @@ if (typeof module !== 'undefined' && module.exports) {
     calculateScaleTransform,
     formatRoundOpponent,
     formatFormatVenue,
+    formatRoundDate,
     parseColorHex,
     normalizeHexColor,
     generateCirclePngBase64,
