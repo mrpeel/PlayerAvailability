@@ -44,6 +44,27 @@ function checkHeadshotFolder() {
 
 
 /**
+ * Detects whether a round worksheet has the slot number column as Column A.
+ * Checks B5 ("Round:"), A9 (1), or B1 ("Match Date:").
+ *
+ * @param {Sheet} ws The round sheet.
+ * @returns {boolean} True if numbered round sheet.
+ */
+function isNumberedRoundSheet(ws) {
+  if (!ws) return false;
+  try {
+    var b5 = String(ws.getRange("B5").getValue() || "").trim();
+    if (b5.toLowerCase() === "round:") return true;
+    var a9 = ws.getRange("A9").getValue();
+    if (a9 === 1 || a9 === "1" || String(a9).trim() === "1") return true;
+    var b1 = String(ws.getRange("B1").getValue() || "").trim();
+    if (b1.toLowerCase().indexOf("match date") > -1) return true;
+  } catch (e) {}
+  return false;
+}
+
+
+/**
  * WORKSPACE GENERATOR: Spawns a standalone date snapshot ledger sheet.
  */
 function deployVerticalRoundSheet(ss, dateStr) {
@@ -96,17 +117,18 @@ function deployVerticalRoundSheet(ss, dateStr) {
   var headerBg = isT20 ? "#fbbc04" : LCC_PALETTE.maroonBg;
   var headerFg = isT20 ? "#000000" : LCC_PALETTE.maroonFg;
 
-  // Header Metadata (T20 uses background: #fbbc04 and text: black)
+  // Header Metadata (Col A empty, Col B label, Col C date)
   if (isT20) {
-    ws.getRange("A1").setValue("Match Date (T20):").setFontWeight("bold").setBackground("#fbbc04").setFontColor("#000000");
-    ws.getRange("B1").setValue(targetDate).setNumberFormat("dd/mm/yyyy").setBackground("#fbbc04").setFontColor("#000000").setHorizontalAlignment("center").setFontWeight("bold");
+    ws.getRange("B1").setValue("Match Date (T20):").setFontWeight("bold").setBackground("#fbbc04").setFontColor("#000000");
+    ws.getRange("C1").setValue(targetDate).setNumberFormat("dd/mm/yyyy").setBackground("#fbbc04").setFontColor("#000000").setHorizontalAlignment("center").setFontWeight("bold");
   } else {
-    ws.getRange("A1").setValue("Match Date:").setFontWeight("bold");
-    ws.getRange("B1").setValue(targetDate).setNumberFormat("dd/mm/yyyy").setBackground(LCC_PALETTE.inputHighlight).setHorizontalAlignment("center").setFontWeight("bold");
+    ws.getRange("B1").setValue("Match Date:").setFontWeight("bold");
+    ws.getRange("C1").setValue(targetDate).setNumberFormat("dd/mm/yyyy").setBackground(LCC_PALETTE.inputHighlight).setHorizontalAlignment("center").setFontWeight("bold");
   }
-  ws.getRange("A2:B2").clear();
-  ws.getRange("G1").setValue("Roster Last Synced:").setFontWeight("bold");
-  ws.getRange("H1").setValue(new Date()).setNumberFormat("dd/mm/yyyy hh:mm").setFontColor("#666666");
+  ws.getRange("A1").clearContent();
+  ws.getRange("A2:C2").clear();
+  ws.getRange("H1").setValue("Roster Last Synced:").setFontWeight("bold");
+  ws.getRange("I1").setValue(new Date()).setNumberFormat("dd/mm/yyyy hh:mm").setFontColor("#666666");
 
   // Vertical Team Stack (T20 has 2 frames, Standard has 5 frames)
   var frames = getRoundFrames(isT20);
@@ -118,38 +140,50 @@ function deployVerticalRoundSheet(ss, dateStr) {
     var ven = fixInfo ? (fixInfo[pKey + " venue"] || (isT20 ? fixInfo["1st venue"] : "") || "") : "";
     var fmt = fixInfo ? (fixInfo[pKey + " format"] || (isT20 ? "T20" : "") || "") : "";
 
-    // Team Banner
-    ws.getRange(f.start, 1, 1, 2).merge().setValue(f.name).setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
+    // Team Banner: Extended to the left (cell A joined into header cell -> A to C merged)
+    ws.getRange(f.start, 1, 1, 3).merge().setValue(f.name).setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
     
-    // 4 Metadata rows: Round, Opponent, Venue, Format
-    ws.getRange(f.start + 1, 1).setValue("Round:").setFontStyle("italic");
-    ws.getRange(f.start + 1, 2).setValue(rnd);
-    ws.getRange(f.start + 2, 1).setValue("Opponent:").setFontStyle("italic");
-    ws.getRange(f.start + 2, 2).setValue(opp);
-    ws.getRange(f.start + 3, 1).setValue("Venue:").setFontStyle("italic");
-    ws.getRange(f.start + 3, 2).setValue(ven);
-    ws.getRange(f.start + 4, 1).setValue("Format:").setFontStyle("italic");
-    ws.getRange(f.start + 4, 2).setValue(fmt);
+    // 4 Metadata rows: Round, Opponent, Venue, Format (Col A blank, Col B label, Col C value)
+    ws.getRange(f.start + 1, 2).setValue("Round:").setFontStyle("italic");
+    ws.getRange(f.start + 1, 3).setValue(rnd);
+    ws.getRange(f.start + 2, 2).setValue("Opponent:").setFontStyle("italic");
+    ws.getRange(f.start + 2, 3).setValue(opp);
+    ws.getRange(f.start + 3, 2).setValue("Venue:").setFontStyle("italic");
+    ws.getRange(f.start + 3, 3).setValue(ven);
+    ws.getRange(f.start + 4, 2).setValue("Format:").setFontStyle("italic");
+    ws.getRange(f.start + 4, 3).setValue(fmt);
 
-    // Player Slot Rows: Default Captain, Vice Captain, Wicket Keeper, Player...
+    // Player Slot Rows: Col A (Slot Number), Col B (Role), Col C (Player Name)
     var structure = [];
     for (var s = 0; s < f.slots; s++) {
       var defaultRole = "Player";
       if (s === 0) defaultRole = "Captain";
       else if (s === 1) defaultRole = "Vice Captain";
       else if (s === 2) defaultRole = "Wicket Keeper";
-      structure.push([defaultRole, ""]);
+      structure.push([s + 1, defaultRole, ""]);
     }
-    ws.getRange(f.start + 5, 1, f.slots, 2).setValues(structure);
-    ws.getRange(f.start + 5, 1, f.slots, 1).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
-    ws.getRange(f.start, 1, 5 + f.slots, 2).setBorder(true, true, true, true, true, true, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
+    ws.getRange(f.start + 5, 1, f.slots, 3).setValues(structure);
+
+    // Slot numbers: Hanken Grotesk, bold, 8pt, right-aligned
+    ws.getRange(f.start + 5, 1, f.slots, 1)
+      .setFontFamily("Hanken Grotesk")
+      .setFontWeight("bold")
+      .setFontSize(8)
+      .setHorizontalAlignment("right");
+
+    // Slot roles: bold, zebraLight background
+    ws.getRange(f.start + 5, 2, f.slots, 1)
+      .setFontWeight("bold")
+      .setBackground(LCC_PALETTE.zebraLight);
+
+    ws.getRange(f.start, 1, 5 + f.slots, 3).setBorder(true, true, true, true, true, true, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
   });
 
-  // Col D: Dynamic Virtual "Available for Selection" Pool
-  ws.getRange("D3").setValue("AVAILABLE FOR SELECTION").setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
-  ws.getRange("D4").setValue("(Dynamic Unselected Pool)").setFontStyle("italic").setFontColor("#666666");
-  ws.getRange("D5").setFormula(`=IFERROR(SORT(FILTER(G5:G, G5:G<>"", COUNTIF(B:B, G5:G)=0)), "")`);
-  ws.getRange("D3:D150").setBorder(true, true, true, true, false, false, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
+  // Col E: Dynamic Virtual "Available for Selection" Pool
+  ws.getRange("E3").setValue("AVAILABLE FOR SELECTION").setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
+  ws.getRange("E4").setValue("(Dynamic Unselected Pool)").setFontStyle("italic").setFontColor("#666666");
+  ws.getRange("E5").setFormula(`=IFERROR(SORT(FILTER(H5:H, H5:H<>"", COUNTIF(C:C, H5:H)=0)), "")`);
+  ws.getRange("E3:E150").setBorder(true, true, true, true, false, false, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
 
   // Extract Global Profiles and Populate Hard Snapshot Registries (filtered for T20 if isT20)
   var playerSheet = ss.getSheetByName("Players");
@@ -163,22 +197,22 @@ function deployVerticalRoundSheet(ss, dateStr) {
     unknownSnapshot = filterRes.unknownSnapshot;
   }
 
-  // List 2: Available for Round (Cols F-I)
-  ws.getRange("F3:I3").merge().setValue("AVAILABLE FOR ROUND").setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
-  ws.getRange("F4:I4").setValues([["Profile ID", "Player Name", "Notes Context", "Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
+  // List 2: Available for Round (Cols G-J)
+  ws.getRange("G3:J3").merge().setValue("AVAILABLE FOR ROUND").setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
+  ws.getRange("G4:J4").setValues([["Profile ID", "Player Name", "Notes Context", "Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
 
-  // List 3: Unavailable for Round (Cols K-N)
-  ws.getRange("K3:N3").merge().setValue("UNAVAILABLE FOR ROUND").setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
-  ws.getRange("K4:N4").setValues([["Profile ID", "Player Name", "Exemption Notes", "Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
+  // List 3: Unavailable for Round (Cols L-O)
+  ws.getRange("L3:O3").merge().setValue("UNAVAILABLE FOR ROUND").setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
+  ws.getRange("L4:O4").setValues([["Profile ID", "Player Name", "Exemption Notes", "Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
   if (unavailableSnapshot.length > 0) {
-    ws.getRange(5, 11, unavailableSnapshot.length, 4).setValues(unavailableSnapshot);
+    ws.getRange(5, 12, unavailableSnapshot.length, 4).setValues(unavailableSnapshot);
   }
 
-  // List 4: Unknown Status Pool Ledger (Cols P-S)
-  ws.getRange("P3:S3").merge().setValue("UNKNOWN AVAILABILITY STATUS").setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
-  ws.getRange("P4:S4").setValues([["Profile ID", "Player Name", "Notes Context", "Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
+  // List 4: Unknown Status Pool Ledger (Cols Q-T)
+  ws.getRange("Q3:T3").merge().setValue("UNKNOWN AVAILABILITY STATUS").setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
+  ws.getRange("Q4:T4").setValues([["Profile ID", "Player Name", "Notes Context", "Switcher"]]).setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
   if (unknownSnapshot.length > 0) {
-    ws.getRange(5, 16, unknownSnapshot.length, 4).setValues(unknownSnapshot);
+    ws.getRange(5, 17, unknownSnapshot.length, 4).setValues(unknownSnapshot);
   }
 
   // Action Dropdown Validations
@@ -186,22 +220,22 @@ function deployVerticalRoundSheet(ss, dateStr) {
   var unavailRule = SpreadsheetApp.newDataValidation().requireValueInList(["✅ Move to Available"], true).build();
   var unknownRule = SpreadsheetApp.newDataValidation().requireValueInList(["✅ Move to Available", "🚫 Move to Unavailable"], true).build();
 
-  ws.getRange("I5:I150").setDataValidation(availRule);
-  ws.getRange("N5:N150").setDataValidation(unavailRule);
-  ws.getRange("S5:S150").setDataValidation(unknownRule);
+  ws.getRange("J5:J150").setDataValidation(availRule);
+  ws.getRange("O5:O150").setDataValidation(unavailRule);
+  ws.getRange("T5:T150").setDataValidation(unknownRule);
 
-  // Col B Selection Dropdowns linked to dynamic pools
+  // Selection Dropdowns linked to dynamic pools
   applySelectionValidationRules(ws);
 
-  // Setup Column U and Column V WhatsApp messaging
+  // Setup Column V and Column W WhatsApp messaging
   setupWhatsAppMessageColumns(ws, targetDate);
 
   // Column Widths & Hide Technical ProfileID and Helper Columns
   applyRoundTabColumnWidths(ws);
 
-  ws.hideColumns(6);  // Col F (ProfileID)
-  ws.hideColumns(11); // Col K (ProfileID)
-  ws.hideColumns(16); // Col P (ProfileID)
+  ws.hideColumns(7);  // Col G (ProfileID)
+  ws.hideColumns(12); // Col L (ProfileID)
+  ws.hideColumns(17); // Col Q (ProfileID)
 
   // Apply clean Hanken Grotesk font across round sheet
   try {
@@ -362,12 +396,78 @@ function updateGlobalStatus(profileId, status, returnDate) {
 
   if (foundRow === -1) throw new Error("Player ID " + profileId + " not found in Master directory.");
 
-  playerSheet.getRange(foundRow, 7).setValue(status);
-  if (returnDate !== undefined && returnDate !== null) {
-    playerSheet.getRange(foundRow, 8).setValue(returnDate);
+  var canonStatus = normalizeGlobalStatus(status);
+  var returnKey = (canonStatus === "Active") ? "" : toDateKey(returnDate);
+
+  playerSheet.getRange(foundRow, 7).setValue(canonStatus);
+  if (canonStatus === "Active" || returnDate !== undefined && returnDate !== null) {
+    playerSheet.getRange(foundRow, 8).setValue(returnKey);
   }
 
-  return { status: "success", success: true };
+  var roundsUpdated = applyGlobalStatusToRoundTabs(ss, profileId, canonStatus, returnKey);
+
+  return { status: "success", success: true, globalStatus: canonStatus, expectedReturnDate: returnKey, roundsUpdated: roundsUpdated };
+}
+
+
+/**
+ * Reflects a player's GlobalStatus on every round tab dated today or later.
+ * - Exempt for that round: moved to Unavailable with an exemption note.
+ * - Not exempt: if they were only in Unavailable because of a previous global
+ *   exemption, they go back to Unknown. Real round responses are left alone.
+ * - Missing from the tab entirely: re-inserted into the correct list.
+ * Returns the names of the round tabs that were touched.
+ */
+function applyGlobalStatusToRoundTabs(ss, profileId, canonStatus, returnKey) {
+  var nonRoundNames = ["Players", "Fixtures", "Config", "Admins", "Presentation_Staging", "Availability_Log", "WhatsApp_Contacts"];
+  var todayKey = toDateKey(new Date());
+  var touched = [];
+  var targetId = String(profileId).trim();
+
+  ss.getSheets().forEach(function(ws) {
+    var name = ws.getName();
+    if (nonRoundNames.indexOf(name) > -1) return;
+    var roundKey = toDateKey(name);
+    if (!roundKey || roundKey < todayKey) return;
+
+    var isNumbered = isNumberedRoundSheet(ws);
+    var unavailCol = isNumbered ? 12 : 11;
+    var placement = resolveGlobalStatusPlacement(canonStatus, returnKey, roundKey);
+    var current = findPlayerInRoundLists(ws, targetId);
+
+    if (placement.list === "Unavailable") {
+      if (current && current.col === unavailCol && current.note === placement.note) return;
+      executeRealtimeAppListMovement(ws, targetId, "Unavailable", placement.note);
+      touched.push(name);
+    } else if (!current) {
+      executeRealtimeAppListMovement(ws, targetId, "Unknown", "");
+      touched.push(name);
+    } else if (current.col === unavailCol && isGlobalStatusNote(current.note)) {
+      executeRealtimeAppListMovement(ws, targetId, "Unknown", "");
+      touched.push(name);
+    }
+  });
+
+  return touched;
+}
+
+
+/**
+ * Locates a player across the Available (7/6) / Unavailable (12/11) / Unknown (17/16)
+ * lists on a round tab. Returns { col, row, note } or null.
+ */
+function findPlayerInRoundLists(ws, profileId) {
+  var isNumbered = isNumberedRoundSheet(ws);
+  var cols = isNumbered ? [7, 12, 17] : [6, 11, 16];
+  for (var c = 0; c < cols.length; c++) {
+    var vals = ws.getRange(5, cols[c], 100, 3).getValues();
+    for (var r = 0; r < vals.length; r++) {
+      if (String(vals[r][0]).trim() === profileId) {
+        return { col: cols[c], row: 5 + r, note: String(vals[r][2] || "") };
+      }
+    }
+  }
+  return null;
 }
 
 
@@ -477,9 +577,14 @@ function getAdminData(phone, dateStrOrRoundNum) {
   var unknownNames = [];
 
   if (roundSheet) {
-    var aVals = roundSheet.getRange(5, 7, 100, 1).getValues();
-    var uVals = roundSheet.getRange(5, 12, 100, 1).getValues();
-    var unkWVals = roundSheet.getRange(5, 17, 100, 1).getValues();
+    var isNumbered = isNumberedRoundSheet(roundSheet);
+    var aCol = isNumbered ? 8 : 7;
+    var uCol = isNumbered ? 13 : 12;
+    var unkCol = isNumbered ? 18 : 17;
+
+    var aVals = roundSheet.getRange(5, aCol, 100, 1).getValues();
+    var uVals = roundSheet.getRange(5, uCol, 100, 1).getValues();
+    var unkWVals = roundSheet.getRange(5, unkCol, 100, 1).getValues();
 
     aVals.forEach(function(r) { if (r[0]) availNames.push(String(r[0]).trim()); });
     uVals.forEach(function(r) { if (r[0]) unavailNames.push(String(r[0]).trim()); });
@@ -586,7 +691,7 @@ function simulateRoundAvailability(dateStr) {
     return {
       profileId: String(r[idIdx]).trim(),
       fullName: fn,
-      globalStatus: String(r[statusIdx] || "Active").trim()
+      globalStatus: normalizeGlobalStatus(r[statusIdx])
     };
   }).filter(function(p) { return p !== null && p.profileId !== ""; });
 
@@ -705,8 +810,8 @@ function getInitialData(phone, dateStr) {
         firstName: row[firstNameIdx],
         lastName: row[lastNameIdx],
         fullName: row[fullNameIdx] || (row[firstNameIdx] + " " + row[lastNameIdx]),
-        globalStatus: row[statusIdx],
-        expectedReturnDate: row[returnDateIdx] ? String(row[returnDateIdx]) : "",
+        globalStatus: normalizeGlobalStatus(row[statusIdx]),
+        expectedReturnDate: toDateKey(row[returnDateIdx]),
         juniorLevel: row[juniorLevelIdx] || "",
         photoUrl: getPlayerPhotoUrl(pId)
       };
@@ -750,9 +855,14 @@ function getInitialData(phone, dateStr) {
     const householdNotes = {};
 
     if (dateSheet) {
-      const availIds = dateSheet.getRange(5, 6, 100, 3).getValues();
-      const unavailIds = dateSheet.getRange(5, 11, 100, 3).getValues();
-      const unknownIds = dateSheet.getRange(5, 16, 100, 3).getValues();
+      var isNumbered = isNumberedRoundSheet(dateSheet);
+      var availCol = isNumbered ? 7 : 6;
+      var unavailCol = isNumbered ? 12 : 11;
+      var unknownCol = isNumbered ? 17 : 16;
+
+      const availIds = dateSheet.getRange(5, availCol, 100, 3).getValues();
+      const unavailIds = dateSheet.getRange(5, unavailCol, 100, 3).getValues();
+      const unknownIds = dateSheet.getRange(5, unknownCol, 100, 3).getValues();
 
       household.forEach(player => {
         const pId = player.profileId;
@@ -788,7 +898,8 @@ function getInitialData(phone, dateStr) {
     }
 
     var roundNumStr = fixtureInfo['1st Round'] || fixtureInfo['RoundID'] || 'Round 1';
-    var formatStr = fixtureInfo['1st Format'] || 'Two Day';
+    // Mixed rounds resolve to two-day if ANY team has a two-day game.
+    var formatStr = resolveRoundFormat(fixtureInfo);
     var gameDateStr = fixtureInfo['Game Date'] || targetSheetName;
 
     return {
@@ -1102,7 +1213,8 @@ function movePlayerRowsBetweenLists(sheet, sourceRow, sourceStartCol, destStartC
  * Called by web app (doPost), simulateRoundAvailability, and injury/inactive dialogs.
  */
 function executeRealtimeAppListMovement(ws, profileId, response, notes) {
-  var colMap = [6, 11, 16]; // Col F (Available), Col K (Unavailable), Col P (Unknown)
+  var isNumbered = isNumberedRoundSheet(ws);
+  var colMap = isNumbered ? [7, 12, 17] : [6, 11, 16]; // Col G/F (Available), Col L/K (Unavailable), Col Q/P (Unknown)
   var foundRow = -1;
   var foundCol = -1;
   var targetProfileId = String(profileId || "").trim();
@@ -1121,16 +1233,19 @@ function executeRealtimeAppListMovement(ws, profileId, response, notes) {
     if (foundRow !== -1) break;
   }
 
-  // Determine destination column: Col 6 (Available), Col 11 (Unavailable), Col 16 (Unknown)
-  var targetDestCol = 6;
+  // Determine destination column
+  var availDest = isNumbered ? 7 : 6;
+  var unavailDest = isNumbered ? 12 : 11;
+  var unknownDest = isNumbered ? 17 : 16;
+  var targetDestCol = availDest;
   var respLower = String(response || "").toLowerCase();
   if (respLower === "unavailable" || respLower.indexOf("unavail") > -1) {
-    targetDestCol = 11;
+    targetDestCol = unavailDest;
   } else if (respLower === "unknown") {
-    targetDestCol = 16;
+    targetDestCol = unknownDest;
   } else {
     // "Available", "Both Days", "Day 1 Only", "Day 2 Only"
-    targetDestCol = 6;
+    targetDestCol = availDest;
   }
 
   // If found in a list
@@ -1234,15 +1349,23 @@ function onEdit(e) {
   if (sheet.getName() === "Players" || sheet.getName() === "Fixtures" || sheet.getName() === "Config" || sheet.getName() === "Admins") return;
   if (row < 5 || !value) return;
 
-  if (col === 9 && value === "🚫 Move to Unavailable") {
-    movePlayerRowsBetweenLists(sheet, row, 6, 11);
+  var isNumbered = isNumberedRoundSheet(sheet);
+  var availSwitcherCol = isNumbered ? 10 : 9;
+  var unavailSwitcherCol = isNumbered ? 15 : 14;
+  var unknownSwitcherCol = isNumbered ? 20 : 19;
+  var availStartCol = isNumbered ? 7 : 6;
+  var unavailStartCol = isNumbered ? 12 : 11;
+  var unknownStartCol = isNumbered ? 17 : 16;
+
+  if (col === availSwitcherCol && value === "🚫 Move to Unavailable") {
+    movePlayerRowsBetweenLists(sheet, row, availStartCol, unavailStartCol);
     range.setValue("");
-  } else if (col === 14 && value === "✅ Move to Available") {
-    movePlayerRowsBetweenLists(sheet, row, 11, 6);
+  } else if (col === unavailSwitcherCol && value === "✅ Move to Available") {
+    movePlayerRowsBetweenLists(sheet, row, unavailStartCol, availStartCol);
     range.setValue("");
-  } else if (col === 19) {
-    if (value === "✅ Move to Available") movePlayerRowsBetweenLists(sheet, row, 16, 6);
-    else if (value === "🚫 Move to Unavailable") movePlayerRowsBetweenLists(sheet, row, 16, 11);
+  } else if (col === unknownSwitcherCol) {
+    if (value === "✅ Move to Available") movePlayerRowsBetweenLists(sheet, row, unknownStartCol, availStartCol);
+    else if (value === "🚫 Move to Unavailable") movePlayerRowsBetweenLists(sheet, row, unknownStartCol, unavailStartCol);
     range.setValue("");
   }
 }
@@ -1305,7 +1428,9 @@ function onOpen() {
 /**
  * Applies dropdown validation rules to the Players tab:
  * - Col F (T20Squad): Yes, No
- * - Col G (GlobalStatus): Active, Injured, Long-Term Away, Inactive
+ * - Col G (GlobalStatus): GLOBAL_STATUS_OPTIONS (logic.js)
+ * Also rewrites legacy GlobalStatus values (e.g. "UnavailableUntil") to their
+ * canonical form so they pass validation.
  */
 function applyPlayersValidationRules(playerSheet) {
   if (!playerSheet) return;
@@ -1321,10 +1446,28 @@ function applyPlayersValidationRules(playerSheet) {
 
     // 2. GlobalStatus Validation (Col G / Col 7)
     var statusRule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(["Active", "Injured", "Long-Term Away", "Inactive"], true)
+      .requireValueInList(GLOBAL_STATUS_OPTIONS, true)
       .setAllowInvalid(true)
       .build();
     playerSheet.getRange(2, 7, maxRows - 1, 1).setDataValidation(statusRule);
+
+    // 3. Migrate legacy status values in place
+    var lastRow = playerSheet.getLastRow();
+    if (lastRow > 1) {
+      var statusRange = playerSheet.getRange(2, 7, lastRow - 1, 1);
+      var statusVals = statusRange.getValues();
+      var changed = false;
+      for (var i = 0; i < statusVals.length; i++) {
+        var raw = statusVals[i][0];
+        if (raw === "" || raw === null) continue;
+        var canon = normalizeGlobalStatus(raw);
+        if (canon !== raw) {
+          statusVals[i][0] = canon;
+          changed = true;
+        }
+      }
+      if (changed) statusRange.setValues(statusVals);
+    }
   } catch (err) {
     Logger.log("applyPlayersValidationRules error: " + err.message);
   }
@@ -1344,21 +1487,10 @@ function applyPlayersValidationRules(playerSheet) {
 function applySelectionValidationRules(ws) {
   if (!ws) return;
   try {
-    // Col D: Global unselected pool (Alphabetical)
-    ws.getRange("D5").setFormula(`=IFERROR(SORT(FILTER(G5:G, G5:G<>"", COUNTIF(B:B, G5:G)=0)), "")`);
-
+    var isNumbered = isNumberedRoundSheet(ws);
     var isT20 = isT20Fixture(ws.getName()) || String(ws.getRange("A4").getValue()).indexOf("T20") > -1;
     var frames = getRoundFrames(isT20);
     var maxRowToCheck = isT20 ? 39 : 95;
-
-    var maxCols = ws.getMaxColumns();
-    var neededCols = isT20 ? 60 : 95;
-    if (maxCols < neededCols) {
-      ws.insertColumnsAfter(maxCols, neededCols - maxCols);
-    }
-
-    var startCol = 27; // Col AA (Col 27)
-    var slotIndex = 0;
 
     var roleOptions = [
       "Captain",
@@ -1373,32 +1505,85 @@ function applySelectionValidationRules(ws) {
       .setAllowInvalid(true)
       .build();
 
-    frames.forEach(function(f) {
-      for (var s = 0; s < f.slots; s++) {
-        var row = f.start + 5 + s;
-        var helperCol = startCol + slotIndex;
-        slotIndex++;
+    if (isNumbered) {
+      // Col E: Global unselected pool (Alphabetical)
+      ws.getRange("E5").setFormula(`=IFERROR(SORT(FILTER(H5:H, H5:H<>"", COUNTIF(C:C, H5:H)=0)), "")`);
 
-        // Apply Role Data Validation to Column A
-        ws.getRange(row, 1).setDataValidation(roleRule);
-
-        // Set helper header and dynamic formula (Alphabetical A-Z)
-        ws.getRange(3, helperCol).setValue("SLOT_" + row);
-        ws.getRange(5, helperCol).setFormula(
-          '=IFERROR(SORT(FILTER(G$5:G, (COUNTIF($B$9:$B$' + maxRowToCheck + ', G$5:G)=0) + (G$5:G=B' + row + '))), "")'
-        );
-
-        // Apply Data Validation to this specific slot
-        var rule = SpreadsheetApp.newDataValidation()
-          .requireValueInRange(ws.getRange(5, helperCol, 100, 1), true)
-          .setAllowInvalid(true)
-          .build();
-        ws.getRange(row, 2).setDataValidation(rule);
+      var maxCols = ws.getMaxColumns();
+      var neededCols = isT20 ? 61 : 96;
+      if (maxCols < neededCols) {
+        ws.insertColumnsAfter(maxCols, neededCols - maxCols);
       }
-    });
 
-    // Hide all helper columns (Col 27 onwards)
-    ws.hideColumns(27, slotIndex);
+      var startCol = 28; // Col AB (Col 28)
+      var slotIndex = 0;
+
+      frames.forEach(function(f) {
+        for (var s = 0; s < f.slots; s++) {
+          var row = f.start + 5 + s;
+          var helperCol = startCol + slotIndex;
+          slotIndex++;
+
+          // Apply Role Data Validation to Column B (Col 2)
+          ws.getRange(row, 2).setDataValidation(roleRule);
+
+          // Set helper header and dynamic formula (Alphabetical A-Z)
+          ws.getRange(3, helperCol).setValue("SLOT_" + row);
+          ws.getRange(5, helperCol).setFormula(
+            '=IFERROR(SORT(FILTER(H$5:H, (COUNTIF($C$9:$C$' + maxRowToCheck + ', H$5:H)=0) + (H$5:H=C' + row + '))), "")'
+          );
+
+          // Apply Data Validation to this specific slot in Column C (Col 3)
+          var rule = SpreadsheetApp.newDataValidation()
+            .requireValueInRange(ws.getRange(5, helperCol, 100, 1), true)
+            .setAllowInvalid(true)
+            .build();
+          ws.getRange(row, 3).setDataValidation(rule);
+        }
+      });
+
+      // Hide all helper columns (Col 28 onwards)
+      ws.hideColumns(28, slotIndex);
+    } else {
+      // Col D: Global unselected pool (Alphabetical)
+      ws.getRange("D5").setFormula(`=IFERROR(SORT(FILTER(G5:G, G5:G<>"", COUNTIF(B:B, G5:G)=0)), "")`);
+
+      var maxCols = ws.getMaxColumns();
+      var neededCols = isT20 ? 60 : 95;
+      if (maxCols < neededCols) {
+        ws.insertColumnsAfter(maxCols, neededCols - maxCols);
+      }
+
+      var startCol = 27; // Col AA (Col 27)
+      var slotIndex = 0;
+
+      frames.forEach(function(f) {
+        for (var s = 0; s < f.slots; s++) {
+          var row = f.start + 5 + s;
+          var helperCol = startCol + slotIndex;
+          slotIndex++;
+
+          // Apply Role Data Validation to Column A
+          ws.getRange(row, 1).setDataValidation(roleRule);
+
+          // Set helper header and dynamic formula (Alphabetical A-Z)
+          ws.getRange(3, helperCol).setValue("SLOT_" + row);
+          ws.getRange(5, helperCol).setFormula(
+            '=IFERROR(SORT(FILTER(G$5:G, (COUNTIF($B$9:$B$' + maxRowToCheck + ', G$5:G)=0) + (G$5:G=B' + row + '))), "")'
+          );
+
+          // Apply Data Validation to this specific slot
+          var rule = SpreadsheetApp.newDataValidation()
+            .requireValueInRange(ws.getRange(5, helperCol, 100, 1), true)
+            .setAllowInvalid(true)
+            .build();
+          ws.getRange(row, 2).setDataValidation(rule);
+        }
+      });
+
+      // Hide all helper columns (Col 27 onwards)
+      ws.hideColumns(27, slotIndex);
+    }
   } catch (err) {
     Logger.log("applySelectionValidationRules error: " + err.message);
   }
@@ -1449,8 +1634,9 @@ function cleanConfigTabTemplates(ss) {
 
 
 /**
- * Sets up Column U and Column V on a round sheet for WhatsApp messages.
- * Uses merged ranges U4:U20 and V4:V20 so text flows downward without increasing Row 4 height!
+ * Sets up WhatsApp message columns on a round sheet.
+ * Numbered layout: Columns V and W referencing Match Date in C1.
+ * Legacy layout: Columns U and V referencing Match Date in B1.
  */
 function setupWhatsAppMessageColumns(ws, dateStr) {
   if (!ws) return;
@@ -1458,96 +1644,250 @@ function setupWhatsAppMessageColumns(ws, dateStr) {
   var isT20 = isT20Fixture(dStr) || String(ws.getRange("A4").getValue()).indexOf("T20") > -1;
   var headerBg = isT20 ? "#fbbc04" : LCC_PALETTE.maroonBg;
   var headerFg = isT20 ? "#000000" : LCC_PALETTE.maroonFg;
+  var isNumbered = isNumberedRoundSheet(ws);
 
-  // Column U (Col 21) Header & Merged Card
-  ws.getRange("U3").setValue(dStr + " Availability Request Message")
-    .setFontWeight("bold")
-    .setBackground(headerBg)
-    .setFontColor(headerFg)
-    .setHorizontalAlignment("center");
+  if (isNumbered) {
+    // Column V (Col 22) Header & Merged Card
+    ws.getRange("V3").setValue(dStr + " Availability Request Message")
+      .setFontWeight("bold")
+      .setBackground(headerBg)
+      .setFontColor(headerFg)
+      .setHorizontalAlignment("center");
 
-  // Unmerge first if previously merged to allow clean formula assignment
+    try {
+      ws.getRange("V4:V20").breakApart();
+    } catch (e) {}
+
+    var vCard = ws.getRange("V4:V20");
+    vCard.merge();
+    vCard.setFormula(
+      '="🏏 *LABURNUM CC ROUND AVAILABILITY* 🏏" & CHAR(10) & CHAR(10) & ' +
+      '"Please submit your availability for the upcoming round (" & TEXT(C1, "yyyy-mm-dd") & "):" & CHAR(10) & ' +
+      '"https://lcc-availability.web.app/?round=" & TEXT(C1, "yyyy-mm-dd")'
+    ).setWrap(true).setVerticalAlignment("top");
+
+    // Column W (Col 23) Header & Merged Card
+    ws.getRange("W3").setValue(dStr + " Wall of Shame Message")
+      .setFontWeight("bold")
+      .setBackground(headerBg)
+      .setFontColor(headerFg)
+      .setHorizontalAlignment("center");
+
+    try {
+      ws.getRange("W4:W20").breakApart();
+    } catch (e) {}
+
+    var wCard = ws.getRange("W4:W20");
+    wCard.merge();
+    wCard.setFormula(
+      '=LCC_WALL_OF_SHAME(C1, COUNTA(H5:H) + COUNTA(M5:M), R5:R150)'
+    ).setWrap(true).setVerticalAlignment("top");
+
+    try {
+      ws.getRange("V3:V20").setBorder(true, true, true, true, false, false, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
+      ws.getRange("W3:W20").setBorder(true, true, true, true, false, false, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
+      vCard.setBackground(LCC_PALETTE.zebraLight);
+      wCard.setBackground(LCC_PALETTE.zebraLight);
+    } catch (e) {}
+
+    try {
+      ws.setRowHeight(4, 24);
+    } catch (e) {}
+
+    applyRoundTabColumnWidths(ws);
+
+    try {
+      ws.unhideColumn(ws.getRange("V1"));
+      ws.unhideColumn(ws.getRange("W1"));
+    } catch (e) {}
+  } else {
+    // Column U (Col 21) Header & Merged Card (Legacy)
+    ws.getRange("U3").setValue(dStr + " Availability Request Message")
+      .setFontWeight("bold")
+      .setBackground(headerBg)
+      .setFontColor(headerFg)
+      .setHorizontalAlignment("center");
+
+    try {
+      ws.getRange("U4:U20").breakApart();
+    } catch (e) {}
+
+    var uCard = ws.getRange("U4:U20");
+    uCard.merge();
+    uCard.setFormula(
+      '="🏏 *LABURNUM CC ROUND AVAILABILITY* 🏏" & CHAR(10) & CHAR(10) & ' +
+      '"Please submit your availability for the upcoming round (" & TEXT(B1, "yyyy-mm-dd") & "):" & CHAR(10) & ' +
+      '"https://lcc-availability.web.app/?round=" & TEXT(B1, "yyyy-mm-dd")'
+    ).setWrap(true).setVerticalAlignment("top");
+
+    // Column V (Col 22) Header & Merged Card (Legacy)
+    ws.getRange("V3").setValue(dStr + " Wall of Shame Message")
+      .setFontWeight("bold")
+      .setBackground(headerBg)
+      .setFontColor(headerFg)
+      .setHorizontalAlignment("center");
+
+    try {
+      ws.getRange("V4:V20").breakApart();
+    } catch (e) {}
+
+    var vCardLegacy = ws.getRange("V4:V20");
+    vCardLegacy.merge();
+    vCardLegacy.setFormula(
+      '=LCC_WALL_OF_SHAME(B1, COUNTA(G5:G) + COUNTA(L5:L), Q5:Q150)'
+    ).setWrap(true).setVerticalAlignment("top");
+
+    try {
+      ws.getRange("U3:U20").setBorder(true, true, true, true, false, false, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
+      ws.getRange("V3:V20").setBorder(true, true, true, true, false, false, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
+      uCard.setBackground(LCC_PALETTE.zebraLight);
+      vCardLegacy.setBackground(LCC_PALETTE.zebraLight);
+    } catch (e) {}
+
+    try {
+      ws.setRowHeight(4, 24);
+    } catch (e) {}
+
+    applyRoundTabColumnWidths(ws);
+
+    try {
+      ws.unhideColumn(ws.getRange("U1"));
+      ws.unhideColumn(ws.getRange("V1"));
+    } catch (e) {}
+  }
+}
+
+
+/**
+ * Ensures Column A slot numbers (1-12 for 1s/2s, 1-13 for 3s/4s/5s) and formatting
+ * are applied across all team frames on a numbered round sheet.
+ *
+ * @param {Sheet} ws
+ */
+function ensureRoundSlotNumbers(ws) {
+  if (!ws || !isNumberedRoundSheet(ws)) return;
   try {
-    ws.getRange("U4:U20").breakApart();
-  } catch (e) {}
+    var isT20 = isT20Fixture(ws.getName()) || String(ws.getRange("A4").getValue()).indexOf("T20") > -1;
+    var frames = getRoundFrames(isT20);
 
-  var uCard = ws.getRange("U4:U20");
-  uCard.merge();
-  uCard.setFormula(
-    '="🏏 *LABURNUM CC ROUND AVAILABILITY* 🏏" & CHAR(10) & CHAR(10) & ' +
-    '"Please submit your availability for the upcoming round (" & TEXT(B1, "yyyy-mm-dd") & "):" & CHAR(10) & ' +
-    '"https://lcc-availability.web.app/?round=" & TEXT(B1, "yyyy-mm-dd")'
-  ).setWrap(true).setVerticalAlignment("top");
+    frames.forEach(function(f) {
+      // Ensure team header banner merges A, B, C
+      try {
+        var bannerRange = ws.getRange(f.start, 1, 1, 3);
+        if (!bannerRange.isPartOfMerge()) {
+          bannerRange.merge();
+        }
+      } catch (e) {}
 
-  // Column V (Col 22) Header & Merged Card
-  ws.getRange("V3").setValue(dStr + " Wall of Shame Message")
-    .setFontWeight("bold")
-    .setBackground(headerBg)
-    .setFontColor(headerFg)
-    .setHorizontalAlignment("center");
-
-  try {
-    ws.getRange("V4:V20").breakApart();
-  } catch (e) {}
-
-  var vCard = ws.getRange("V4:V20");
-  vCard.merge();
-  vCard.setFormula(
-    '=LCC_WALL_OF_SHAME(B1, COUNTA(G5:G) + COUNTA(L5:L), Q5:Q150)'
-  ).setWrap(true).setVerticalAlignment("top");
-
-  // Card Borders and Background Styling
-  try {
-    ws.getRange("U3:U20").setBorder(true, true, true, true, false, false, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
-    ws.getRange("V3:V20").setBorder(true, true, true, true, false, false, LCC_PALETTE.grayBorder, SpreadsheetApp.BorderStyle.SOLID);
-    uCard.setBackground(LCC_PALETTE.zebraLight);
-    vCard.setBackground(LCC_PALETTE.zebraLight);
-  } catch (e) {}
-
-  // Explicitly reset Row 4 height to standard compact height (24px)
-  try {
-    ws.setRowHeight(4, 24);
-  } catch (e) {}
-
-  // Apply column widths
-  applyRoundTabColumnWidths(ws);
-
-  // Unhide Columns 21 & 22 if they were previously hidden
-  try {
-    ws.unhideColumn(ws.getRange("U1"));
-    ws.unhideColumn(ws.getRange("V1"));
-  } catch (e) {}
+      // Populate slot numbers in Col A
+      var numValues = [];
+      for (var s = 0; s < f.slots; s++) {
+        numValues.push([s + 1]);
+      }
+      var numRange = ws.getRange(f.start + 5, 1, f.slots, 1);
+      numRange.setValues(numValues);
+      numRange.setFontFamily("Hanken Grotesk")
+        .setFontWeight("bold")
+        .setFontSize(8)
+        .setHorizontalAlignment("right");
+    });
+  } catch (e) {
+    Logger.log("ensureRoundSlotNumbers error: " + e.message);
+  }
 }
 
 
 /**
  * Standard column width calculator for round selection tabs.
- * Switchers 57px, Notes 143px, Names 153px, Notes font size 9pt.
+ * In numbered layout:
+ *   Col 1 (A): 22px (as narrow as possible for slot numbers 1-13)
+ *   Col 2 (B): 110px (Slot roles)
+ *   Col 3 (C): 190px (Player names)
+ *   Col 4 (D): 20px (Spacer)
+ *   Col 5 (E): 190px (Available for Selection dynamic pool)
+ *   Col 6 (F): 20px (Spacer)
+ *   Cols 7-10 (G-J): 80px, 153px, 143px, 57px (Available for Round)
+ *   Col 11 (K): 20px (Spacer)
+ *   Cols 12-15 (L-O): 80px, 153px, 163px, 57px (Unavailable for Round)
+ *   Col 16 (P): 20px (Spacer)
+ *   Cols 17-20 (Q-T): 80px, 153px, 143px, 57px (Unknown Status)
+ *   Col 21 (U): 20px (Spacer)
+ *   Col 22 (V): 330px (Availability Message)
+ *   Col 23 (W): 330px (Wall of Shame Message)
+ *   Col 24 (X): 20px (Spacer)
  */
 function applyRoundTabColumnWidths(ws) {
   if (!ws) return;
-  ws.setColumnWidth(1, 110); ws.setColumnWidth(2, 190); ws.setColumnWidth(3, 20);
-  ws.setColumnWidth(4, 190); ws.setColumnWidth(5, 20);
-  ws.setColumnWidth(6, 80);  ws.setColumnWidth(7, 153); ws.setColumnWidth(8, 143); ws.setColumnWidth(9, 57); ws.setColumnWidth(10, 20);
-  ws.setColumnWidth(11, 80); ws.setColumnWidth(12, 153); ws.setColumnWidth(13, 143); ws.setColumnWidth(14, 57); ws.setColumnWidth(15, 20);
-  ws.setColumnWidth(16, 80); ws.setColumnWidth(17, 153); ws.setColumnWidth(18, 143); ws.setColumnWidth(19, 57); ws.setColumnWidth(20, 20);
-  ws.setColumnWidth(21, 330); // Col U (Availability Message)
-  ws.setColumnWidth(22, 330); // Col V (Wall of Shame Message)
-  ws.setColumnWidth(23, 20);  // Col W (Spacer)
+  var isNumbered = isNumberedRoundSheet(ws);
 
-  // Update header text to "Switcher" if existing
-  try {
-    if (String(ws.getRange("I4").getValue()).indexOf("Switcher") > -1) ws.getRange("I4").setValue("Switcher");
-    if (String(ws.getRange("N4").getValue()).indexOf("Switcher") > -1) ws.getRange("N4").setValue("Switcher");
-    if (String(ws.getRange("S4").getValue()).indexOf("Switcher") > -1) ws.getRange("S4").setValue("Switcher");
-  } catch (e) {}
+  if (isNumbered) {
+    ws.setColumnWidth(1, 22);  // Col A: Slot numbers (as narrow as possible)
+    ws.setColumnWidth(2, 110); // Col B: Role
+    ws.setColumnWidth(3, 190); // Col C: Player Name
+    ws.setColumnWidth(4, 20);  // Col D: Spacer
+    ws.setColumnWidth(5, 190); // Col E: Available for Selection dynamic pool
+    ws.setColumnWidth(6, 20);  // Col F: Spacer
+    ws.setColumnWidth(7, 80);  ws.setColumnWidth(8, 153); ws.setColumnWidth(9, 143); ws.setColumnWidth(10, 57); ws.setColumnWidth(11, 20);
+    ws.setColumnWidth(12, 80); ws.setColumnWidth(13, 153); ws.setColumnWidth(14, 163); ws.setColumnWidth(15, 57); ws.setColumnWidth(16, 20);
+    ws.setColumnWidth(17, 80); ws.setColumnWidth(18, 153); ws.setColumnWidth(19, 143); ws.setColumnWidth(20, 57); ws.setColumnWidth(21, 20);
+    ws.setColumnWidth(22, 330); // Col V (Availability Message)
+    ws.setColumnWidth(23, 330); // Col W (Wall of Shame Message)
+    ws.setColumnWidth(24, 20);  // Col X (Spacer)
 
-  // Format Notes values (Row 5 and below) with 9pt font
-  try {
-    ws.getRange("H5:H150").setFontSize(9);
-    ws.getRange("M5:M150").setFontSize(9);
-    ws.getRange("R5:R150").setFontSize(9);
-  } catch (e) {}
+    // Update header text to "Switcher" if existing
+    try {
+      if (String(ws.getRange("J4").getValue()).indexOf("Switcher") > -1) ws.getRange("J4").setValue("Switcher");
+      if (String(ws.getRange("O4").getValue()).indexOf("Switcher") > -1) ws.getRange("O4").setValue("Switcher");
+      if (String(ws.getRange("T4").getValue()).indexOf("Switcher") > -1) ws.getRange("T4").setValue("Switcher");
+    } catch (e) {}
+
+    // Format Notes values (Row 5 and below) with 9pt font
+    try {
+      ws.getRange("I5:I150").setFontSize(9);
+      ws.getRange("N5:N150").setFontSize(9);
+      ws.getRange("S5:S150").setFontSize(9);
+    } catch (e) {}
+
+    // Hide Technical ProfileID columns
+    try {
+      ws.hideColumns(7);  // Col G (ProfileID)
+      ws.hideColumns(12); // Col L (ProfileID)
+      ws.hideColumns(17); // Col Q (ProfileID)
+    } catch (e) {}
+
+    // Ensure slot numbers formatting
+    ensureRoundSlotNumbers(ws);
+  } else {
+    // Legacy unnumbered round sheet
+    ws.setColumnWidth(1, 110); ws.setColumnWidth(2, 190); ws.setColumnWidth(3, 20);
+    ws.setColumnWidth(4, 190); ws.setColumnWidth(5, 20);
+    ws.setColumnWidth(6, 80);  ws.setColumnWidth(7, 153); ws.setColumnWidth(8, 143); ws.setColumnWidth(9, 57); ws.setColumnWidth(10, 20);
+    ws.setColumnWidth(11, 80); ws.setColumnWidth(12, 153); ws.setColumnWidth(13, 163); ws.setColumnWidth(14, 57); ws.setColumnWidth(15, 20);
+    ws.setColumnWidth(16, 80); ws.setColumnWidth(17, 153); ws.setColumnWidth(18, 143); ws.setColumnWidth(19, 57); ws.setColumnWidth(20, 20);
+    ws.setColumnWidth(21, 330); // Col U (Availability Message)
+    ws.setColumnWidth(22, 330); // Col V (Wall of Shame Message)
+    ws.setColumnWidth(23, 20);  // Col W (Spacer)
+
+    // Update header text to "Switcher" if existing
+    try {
+      if (String(ws.getRange("I4").getValue()).indexOf("Switcher") > -1) ws.getRange("I4").setValue("Switcher");
+      if (String(ws.getRange("N4").getValue()).indexOf("Switcher") > -1) ws.getRange("N4").setValue("Switcher");
+      if (String(ws.getRange("S4").getValue()).indexOf("Switcher") > -1) ws.getRange("S4").setValue("Switcher");
+    } catch (e) {}
+
+    // Format Notes values (Row 5 and below) with 9pt font
+    try {
+      ws.getRange("H5:H150").setFontSize(9);
+      ws.getRange("M5:M150").setFontSize(9);
+      ws.getRange("R5:R150").setFontSize(9);
+    } catch (e) {}
+
+    try {
+      ws.hideColumns(6);  // Col F (ProfileID)
+      ws.hideColumns(11); // Col K (ProfileID)
+      ws.hideColumns(16); // Col P (ProfileID)
+    } catch (e) {}
+  }
 }
 
 
@@ -1683,28 +2023,31 @@ function syncPresentationStagingHub(ss, targetRoundName) {
       // Team Banner
       sh.getRange(rowIdx, 1, 1, 4).merge().setValue(f.name).setFontWeight("bold").setBackground(headerBg).setFontColor(headerFg).setHorizontalAlignment("center");
       
-      // Metadata rows: Round, Opponent, Venue, Format (Exact 1-to-1 match with Round sheet)
+      var isNumExpr = 'INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B5")="Round:"';
+
+      // Metadata rows: Round, Opponent, Venue, Format (Dynamic support for numbered and legacy round sheets)
       sh.getRange(rowIdx + 1, 1).setValue("Round:").setFontStyle("italic");
-      sh.getRange(rowIdx + 1, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 1) + '"), "")');
+      sh.getRange(rowIdx + 1, 2).setFormula('=IFERROR(IF(' + isNumExpr + ', INDIRECT("\'" & ' + targetTabExpr + ' & "\'!C' + (rowIdx + 1) + '"), INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 1) + '")), "")');
       
       sh.getRange(rowIdx + 2, 1).setValue("Opponent:").setFontStyle("italic");
-      sh.getRange(rowIdx + 2, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 2) + '"), "")');
+      sh.getRange(rowIdx + 2, 2).setFormula('=IFERROR(IF(' + isNumExpr + ', INDIRECT("\'" & ' + targetTabExpr + ' & "\'!C' + (rowIdx + 2) + '"), INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 2) + '")), "")');
       
       sh.getRange(rowIdx + 3, 1).setValue("Venue:").setFontStyle("italic");
-      sh.getRange(rowIdx + 3, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 3) + '"), "")');
+      sh.getRange(rowIdx + 3, 2).setFormula('=IFERROR(IF(' + isNumExpr + ', INDIRECT("\'" & ' + targetTabExpr + ' & "\'!C' + (rowIdx + 3) + '"), INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 3) + '")), "")');
       
       sh.getRange(rowIdx + 4, 1).setValue("Format:").setFontStyle("italic");
-      sh.getRange(rowIdx + 4, 2).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 4) + '"), "")');
+      sh.getRange(rowIdx + 4, 2).setFormula('=IFERROR(IF(' + isNumExpr + ', INDIRECT("\'" & ' + targetTabExpr + ' & "\'!C' + (rowIdx + 4) + '"), INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + (rowIdx + 4) + '")), "")');
       
       // Player Slot Rows (start + 5 to start + 4 + slots) -> Exact 1-to-1 match with Round sheet
       for (var idx = 0; idx < f.slots; idx++) {
         var currRow = rowIdx + 5 + idx;
         
-        // Col A: Slot Role (Dynamically pulled from active round sheet)
-        sh.getRange(currRow, 1).setFormula('=IFERROR(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!A' + currRow + '"), "")').setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
+        // Col A: Slot Role (Col B if numbered, Col A if legacy)
+        sh.getRange(currRow, 1).setFormula('=IFERROR(IF(' + isNumExpr + ', INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '"), INDIRECT("\'" & ' + targetTabExpr + ' & "\'!A' + currRow + '")), "")').setFontWeight("bold").setBackground(LCC_PALETTE.zebraLight);
         
-        // Col B: Clean Player Name (Stripped of junior tags like (U16))
-        sh.getRange(currRow, 2).setFormula('=IFERROR(IF(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")="", "", TRIM(REGEXREPLACE(TO_TEXT(INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '")), "\\s*\\(.*?\\)", ""))), "")');
+        // Col B: Clean Player Name (Col C if numbered, Col B if legacy, stripped of junior tags)
+        var rawPlayerExpr = 'IF(' + isNumExpr + ', INDIRECT("\'" & ' + targetTabExpr + ' & "\'!C' + currRow + '"), INDIRECT("\'" & ' + targetTabExpr + ' & "\'!B' + currRow + '"))';
+        sh.getRange(currRow, 2).setFormula('=IFERROR(IF(' + rawPlayerExpr + '="", "", TRIM(REGEXREPLACE(TO_TEXT(' + rawPlayerExpr + '), "\\s*\\(.*?\\)", ""))), "")');
         
         // Col C: Dynamic Profile ID Lookup from Players tab (Hidden)
         sh.getRange(currRow, 3).setFormula('=IFERROR(IF(B' + currRow + '="", "", INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$D$2:$D, 0))), IFERROR(INDEX(Players!$A$2:$A, MATCH(B' + currRow + ', Players!$B$2:$B & " " & Players!$C$2:$C, 0)), ""))');
@@ -1866,8 +2209,13 @@ function pullNewPlayersToActiveTab() {
   var playerSheet = ss.getSheetByName("Players");
   var masterData = playerSheet.getRange(2, 1, playerSheet.getLastRow() - 1, playerSheet.getLastColumn()).getValues();
 
+  var isNumbered = isNumberedRoundSheet(ws);
+  var checkCols = isNumbered ? [7, 12, 17] : [6, 11, 16];
+  var unavailDestCol = isNumbered ? 12 : 11;
+  var unknownDestCol = isNumbered ? 17 : 16;
+
   var existingIds = {};
-  [6, 11, 16].forEach(function(col) {
+  checkCols.forEach(function(col) {
     var ids = ws.getRange(5, col, 100, 1).getValues();
     ids.forEach(function(r) {
       if (r[0] !== "") existingIds[String(r[0]).trim()] = true;
@@ -1875,27 +2223,41 @@ function pullNewPlayersToActiveTab() {
   });
 
   var newPlayersAdded = 0;
+  var roundDate = toDateKey(ws.getName());
   masterData.forEach(function(row) {
     var profileId = String(row[0]).trim();
-    var fullName = row[3] || (row[1] + " " + row[2]);
-    var globalStatus = String(row[6]).trim();
+    var fullName = String(row[3] || (row[1] + " " + row[2]));
     var juniorLevel = row[4] || "";
 
-    if (profileId !== "" && fullName.trim() !== "" && globalStatus === "Active" && !existingIds[profileId]) {
-      var destLastRow = 5;
-      var destNames = ws.getRange(5, 17, 100, 1).getValues();
-      for (var i = 0; i < destNames.length; i++) {
-        if (destNames[i][0] !== "") destLastRow = 5 + i + 1;
-        else break;
-      }
+    if (profileId === "" || fullName.trim() === "" || existingIds[profileId]) return;
 
-      var displayName = formatNameWithJuniorTag(fullName, juniorLevel);
-      ws.getRange(destLastRow, 16, 1, 3).setValues([[profileId, displayName, "Newly Added from Master"]]);
-      newPlayersAdded++;
+    var placement = resolveGlobalStatusPlacement(row[6], row[7], roundDate);
+    if (placement.status === "Inactive") return;
+    var displayName = formatNameWithJuniorTag(fullName, juniorLevel);
+    if (placement.list === "Unavailable") {
+      appendPlayerToRoundList(ws, unavailDestCol, [profileId, displayName, placement.note]);
+    } else {
+      appendPlayerToRoundList(ws, unknownDestCol, [profileId, displayName, "Newly Added from Master"]);
     }
+    newPlayersAdded++;
   });
 
-  ui.alert("Sync Complete", newPlayersAdded + " new player(s) pulled into Unknown Status list.", ui.ButtonSet.OK);
+  ui.alert("Sync Complete", newPlayersAdded + " new player(s) pulled into the round lists.", ui.ButtonSet.OK);
+}
+
+
+/**
+ * Appends a [profileId, displayName, note] row to the bottom of a round list.
+ * startCol: 6 (Available), 11 (Unavailable), 16 (Unknown).
+ */
+function appendPlayerToRoundList(ws, startCol, rowValues) {
+  var destRow = 5;
+  var destNames = ws.getRange(5, startCol + 1, 100, 1).getValues();
+  for (var i = 0; i < destNames.length; i++) {
+    if (destNames[i][0] !== "") destRow = 5 + i + 1;
+    else break;
+  }
+  ws.getRange(destRow, startCol, 1, 3).setValues([rowValues]);
 }
 
 
@@ -2547,7 +2909,7 @@ function getPlayersForDropdown() {
   data.forEach(function(row) {
     var pId = String(row[0]).trim();
     var fName = row[3] || (row[1] + " " + row[2]);
-    var status = String(row[6] || "Active").trim();
+    var status = normalizeGlobalStatus(row[6]);
     var junior = row[4] || "";
     if (pId && fName.trim()) {
       list.push({
@@ -2698,6 +3060,7 @@ function syncNewPlayersToActiveTab(targetTabName) {
   var juniorCol = 4;
   var t20Col = 5;
   var statusCol = 6;
+  var returnCol = 7;
 
   pHeaders.forEach(function(h, i) {
     var ch = String(h || "").trim().toLowerCase();
@@ -2708,10 +3071,16 @@ function syncNewPlayersToActiveTab(targetTabName) {
     else if (ch === "juniorlevel" || ch === "junior level") juniorCol = i;
     else if (ch.indexOf("t20") > -1) t20Col = i;
     else if (ch === "globalstatus" || ch === "global status" || ch === "status") statusCol = i;
+    else if (ch === "expectedreturndate" || ch === "return date") returnCol = i;
   });
 
+  var isNumbered = isNumberedRoundSheet(ws);
+  var checkCols = isNumbered ? [7, 12, 17] : [6, 11, 16];
+  var unavailDestCol = isNumbered ? 12 : 11;
+  var unknownDestCol = isNumbered ? 17 : 16;
+
   var existingIds = {};
-  [6, 11, 16].forEach(function(col) {
+  checkCols.forEach(function(col) {
     var ids = ws.getRange(5, col, 100, 1).getValues();
     ids.forEach(function(r) {
       if (r[0] !== "") existingIds[String(r[0]).trim()] = true;
@@ -2721,7 +3090,8 @@ function syncNewPlayersToActiveTab(targetTabName) {
   var isT20 = false;
   var a4Val = String(ws.getRange("A4").getValue() || "");
   var a1Val = String(ws.getRange("A1").getValue() || "");
-  if (a4Val.indexOf("T20") > -1 || a1Val.indexOf("T20") > -1 || /t20/i.test(ws.getName())) {
+  var b1Val = String(ws.getRange("B1").getValue() || "");
+  if (a4Val.indexOf("T20") > -1 || a1Val.indexOf("T20") > -1 || b1Val.indexOf("T20") > -1 || /t20/i.test(ws.getName())) {
     isT20 = true;
   } else {
     var fixSheet = ss.getSheetByName("Fixtures");
@@ -2731,38 +3101,41 @@ function syncNewPlayersToActiveTab(targetTabName) {
   }
 
   var newPlayersAdded = 0;
+  var exemptPlayersAdded = 0;
+  var roundDate = toDateKey(ws.getName());
   pRows.forEach(function(row) {
     var profileId = String(row[idCol] || "").trim();
     var fullName = String(row[fullCol] || (String(row[fNameCol] || "") + " " + String(row[lNameCol] || ""))).trim();
     var t20Raw = (t20Col !== -1 && t20Col < row.length) ? row[t20Col] : "";
     var t20Val = String(t20Raw || "").trim().toLowerCase();
     var isExplicitYes = (t20Val === "yes" || t20Val === "y" || t20Val === "true");
-    var globalStatus = String(row[statusCol] || "Active").trim();
     var juniorLevel = String(row[juniorCol] || "").trim();
 
     if (isT20 && !isExplicitYes) return;
+    if (profileId === "" || fullName === "" || existingIds[profileId]) return;
 
-    if (profileId !== "" && fullName !== "" && globalStatus === "Active" && !existingIds[profileId]) {
-      var destLastRow = 5;
-      var destNames = ws.getRange(5, 17, 100, 1).getValues();
-      for (var i = 0; i < destNames.length; i++) {
-        if (destNames[i][0] !== "") destLastRow = 5 + i + 1;
-        else break;
-      }
-
-      var displayName = formatNameWithJuniorTag(fullName, juniorLevel);
-      ws.getRange(destLastRow, 16, 1, 3).setValues([[profileId, displayName, "Newly Added from Master"]]);
+    var placement = resolveGlobalStatusPlacement(row[statusCol], row[returnCol], roundDate);
+    var displayName = formatNameWithJuniorTag(fullName, juniorLevel);
+    if (placement.list === "Unavailable") {
+      if (placement.status === "Inactive") return; // never re-add inactive players on sync
+      appendPlayerToRoundList(ws, unavailDestCol, [profileId, displayName, placement.note]);
+      exemptPlayersAdded++;
+    } else {
+      appendPlayerToRoundList(ws, unknownDestCol, [profileId, displayName, "Newly Added from Master"]);
       newPlayersAdded++;
     }
   });
 
-  // Update Roster Last Synced timestamp in G1 / H1
+  // Update Roster Last Synced timestamp
   try {
-    ws.getRange("G1").setValue("Roster Last Synced:").setFontWeight("bold");
-    ws.getRange("H1").setValue(new Date()).setNumberFormat("dd/mm/yyyy hh:mm").setFontColor("#666666");
+    var labelCell = isNumbered ? "H1" : "G1";
+    var timeCell = isNumbered ? "I1" : "H1";
+    ws.getRange(labelCell).setValue("Roster Last Synced:").setFontWeight("bold");
+    ws.getRange(timeCell).setValue(new Date()).setNumberFormat("dd/mm/yyyy hh:mm").setFontColor("#666666");
   } catch (e) {}
 
-  return "Sync Complete for tab '" + ws.getName() + "'.\n\n" + newPlayersAdded + " new player(s) pulled into Unknown Status list.";
+  return "Sync Complete for tab '" + ws.getName() + "'.\n\n" + newPlayersAdded + " new player(s) pulled into Unknown Status list." +
+    (exemptPlayersAdded > 0 ? "\n" + exemptPlayersAdded + " player(s) with an unavailable/injured status added to Unavailable list." : "");
 }
 
 
@@ -3448,7 +3821,7 @@ function resolveRoundStartDate(activeRound, s) {
   var ss = s || (typeof getSS === "function" ? getSS() : null);
   if (!ss) return "";
 
-  // 2. Check active round sheet B1 (Match Date)
+  // 2. Check active round sheet B1 or C1 (Match Date)
   if (activeRound) {
     try {
       var rSheet = ss.getSheetByName(String(activeRound));
@@ -3456,6 +3829,9 @@ function resolveRoundStartDate(activeRound, s) {
         var b1 = rSheet.getRange("B1").getValue();
         var fromB1 = formatRoundDate(b1);
         if (fromB1) return fromB1;
+        var c1 = rSheet.getRange("C1").getValue();
+        var fromC1 = formatRoundDate(c1);
+        if (fromC1) return fromC1;
       }
     } catch (e) {}
   }

@@ -77,8 +77,8 @@ npx clasp open    # open the Apps Script editor
 
 - `src/` is the clasp `rootDir` (see `.clasp.json`); `.claspignore` keeps
   package files and docs out of the Apps Script project.
-- After any `clasp push`, bump the deployment version in the Apps Script editor
-  (Deploy > Manage Deployments > New Version) or the live URL runs old code.
+- `npm run push` pushes files to Apps Script and automatically redeploys the
+  live web app deployment via `clasp deploy -i <deploymentId>`.
 - Do not commit `.clasp.json`, `service-account.json`, or `.env` (secrets).
 
 ## Conventions

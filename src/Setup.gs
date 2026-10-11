@@ -58,7 +58,7 @@ function createCoreDatabaseSheets(ss) {
   playerSheet.getRange("F2:F200").setDataValidation(t20Rule);
 
   var statusRule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(["Active", "Injured", "Long-Term Away", "Inactive"], true)
+    .requireValueInList(GLOBAL_STATUS_OPTIONS, true)
     .setAllowInvalid(true)
     .build();
   playerSheet.getRange("G2:G200").setDataValidation(statusRule);

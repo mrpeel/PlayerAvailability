@@ -7,7 +7,7 @@
     "deploy:all": "firebase deploy",
     "test": "jest",
     "test:watch": "jest --watch",
-    "push": "npm test && clasp push -f"
+    "push": "npm test && clasp push -f && clasp deploy -i AKfycbxBl5Uhn6GucAIsvcDYpANfyN1aF3qXuooP1kEzwzH0LY_RnmkjLUjtfoOz8T-0uHNxbQ -d 'Auto-deploy from npm run push'"
   },
   "devDependencies": {
     "@google/clasp": "^2.4.2",

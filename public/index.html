@@ -697,7 +697,8 @@
         document.getElementById('header-round').innerText = d1;
         document.getElementById('round-indicator-container').style.display = 'inline-block';
       }
-      document.getElementById('round-title').innerText = d1 ? `Round starting ${d1}` : 'Round';
+      const roundPrefix = isOneDayFormat(info.Format || 'Two Day') ? 'Round on' : 'Round starting';
+      document.getElementById('round-title').innerText = d1 ? `${roundPrefix} ${d1}` : 'Round';
       document.getElementById('round-date').innerText = info.Format || 'Two Day Match';
 
       const list = document.getElementById('players-list');
@@ -721,7 +722,7 @@
         let statusText = pStatus;
         if (pStatus === 'Injured') {
           statusClass = 'status-injured';
-        } else if (pStatus === 'UnavailableUntil' || pStatus.startsWith('Away') || pStatus === 'Inactive') {
+        } else if (pStatus === 'Unavailable Until' || pStatus === 'UnavailableUntil' || pStatus === 'Long-Term Away' || pStatus.startsWith('Away') || pStatus === 'Inactive') {
           statusClass = 'status-away';
           statusText = pReturn ? `Unavailable until ${pReturn}` : (pStatus === 'Inactive' ? 'Inactive' : 'Unavailable');
         }
@@ -784,7 +785,7 @@
       let statusClass = 'status-active';
       let statusText = newStatus;
       if (newStatus === 'Injured') statusClass = 'status-injured';
-      if (newStatus === 'UnavailableUntil') {
+      if (newStatus === 'Unavailable Until') {
         statusClass = 'status-away';
         statusText = `Unavailable until ${returnDate}`;
       }
@@ -822,15 +823,18 @@
 
     function handleDatePicker(input, playerId) {
       if (input.value) {
-        const d = new Date(input.value);
-        const formatted = d.toISOString().split('T')[0];
-        updateGlobalStatus(playerId, 'UnavailableUntil', formatted);
+        // input.value is already yyyy-mm-dd; avoid Date/UTC round-trips.
+        updateGlobalStatus(playerId, 'Unavailable Until', input.value);
       }
     }
 
-    function getOptionsForFormat(format, playerId, current) {
+    function isOneDayFormat(format) {
       const fmtLower = String(format || '').toLowerCase();
-      const isOneDay = fmtLower.includes('one') || fmtLower.includes('t20') || fmtLower.includes('1-day');
+      return fmtLower.includes('one') || fmtLower.includes('t20') || fmtLower.includes('1-day');
+    }
+
+    function getOptionsForFormat(format, playerId, current) {
+      const isOneDay = isOneDayFormat(format);
       let opts = isOneDay ? ['Available', 'Unavailable'] : ['Both Days', 'Day 1 Only', 'Day 2 Only', 'Unavailable'];
 
       return opts.map(opt => {

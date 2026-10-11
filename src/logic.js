@@ -563,7 +563,7 @@ function simulatePlayerAvailability(players, matchFormat, rng) {
   return players.map(function(player) {
     var profileId = String(player.profileId || player.ProfileID || player.id || "").trim();
     var name = player.fullName || player.FullName || player.name || "";
-    var status = String(player.globalStatus || player.GlobalStatus || "Active").trim();
+    var status = normalizeGlobalStatus(player.globalStatus || player.GlobalStatus);
 
     // Respect Injured or Inactive status
     if (status === "Inactive") {
@@ -574,12 +574,12 @@ function simulatePlayerAvailability(players, matchFormat, rng) {
         notes: "Inactive in Master"
       };
     }
-    if (status === "Injured") {
+    if (status === "Injured" || status === "Unavailable Until" || status === "Long-Term Away") {
       return {
         profileId: profileId,
         fullName: name,
         response: "Unavailable",
-        notes: "Injured"
+        notes: status === "Injured" ? "Injured" : status
       };
     }
 
@@ -1055,6 +1055,138 @@ function getRoundFrames(isT20) {
 }
 
 /**
+ * Generates 1-based sequential slot numbers [1..slots] for a team frame.
+ * 1s and 2s: 1-12, 3s, 4s, 5s: 1-13.
+ *
+ * @param {Object} frame Frame definition from getRoundFrames.
+ * @returns {Array<number>}
+ */
+function getSlotNumbersForFrame(frame) {
+  var count = (frame && typeof frame.slots === "number") ? frame.slots : 12;
+  var nums = [];
+  for (var i = 1; i <= count; i++) {
+    nums.push(i);
+  }
+  return nums;
+}
+
+/**
+ * Returns column mappings for round selection tab.
+ * When isNumbered is true:
+ *   Col 1 (A): Slot Numbers (1-12 / 1-13)
+ *   Col 2 (B): Role
+ *   Col 3 (C): Player
+ *   Col 4 (D): Spacer
+ *   Col 5 (E): Dynamic Pool ("AVAILABLE FOR SELECTION")
+ *   Col 6 (F): Spacer
+ *   Cols 7-10 (G-J): Available for Round [ProfileID, Player Name, Notes, Switcher]
+ *   Col 11 (K): Spacer
+ *   Cols 12-15 (L-O): Unavailable for Round [ProfileID, Player Name, Notes, Switcher]
+ *   Col 16 (P): Spacer
+ *   Cols 17-20 (Q-T): Unknown Status [ProfileID, Player Name, Notes, Switcher]
+ *   Col 21 (U): Spacer
+ *   Col 22 (V): WhatsApp Availability Message
+ *   Col 23 (W): WhatsApp Wall of Shame Message
+ *   Col 24 (X): Spacer
+ *   Col 28 (AB): Start of dynamic slot validation helper columns
+ *
+ * @param {boolean} isNumbered Whether the sheet has the slot numbers column at Col A.
+ * @returns {Object} Column indices (1-based).
+ */
+function getRoundColumnMapping(isNumbered) {
+  if (isNumbered) {
+    return {
+      numberCol: 1,
+      roleCol: 2,
+      playerCol: 3,
+      spacer1Col: 4,
+      dynamicPoolCol: 5,
+      spacer2Col: 6,
+      availStartCol: 7,
+      availNameCol: 8,
+      availNotesCol: 9,
+      availSwitcherCol: 10,
+      spacer3Col: 11,
+      unavailStartCol: 12,
+      unavailNameCol: 13,
+      unavailNotesCol: 14,
+      unavailSwitcherCol: 15,
+      spacer4Col: 16,
+      unknownStartCol: 17,
+      unknownNameCol: 18,
+      unknownNotesCol: 19,
+      unknownSwitcherCol: 20,
+      spacer5Col: 21,
+      whatsappMsgCol: 22,
+      whatsappShameCol: 23,
+      spacer6Col: 24,
+      helperStartCol: 28
+    };
+  }
+  return {
+    numberCol: null,
+    roleCol: 1,
+    playerCol: 2,
+    spacer1Col: 3,
+    dynamicPoolCol: 4,
+    spacer2Col: 5,
+    availStartCol: 6,
+    availNameCol: 7,
+    availNotesCol: 8,
+    availSwitcherCol: 9,
+    spacer3Col: 10,
+    unavailStartCol: 11,
+    unavailNameCol: 12,
+    unavailNotesCol: 13,
+    unavailSwitcherCol: 14,
+    spacer4Col: 15,
+    unknownStartCol: 16,
+    unknownNameCol: 17,
+    unknownNotesCol: 18,
+    unknownSwitcherCol: 19,
+    spacer5Col: 20,
+    whatsappMsgCol: 21,
+    whatsappShameCol: 22,
+    spacer6Col: 23,
+    helperStartCol: 27
+  };
+}
+
+/**
+ * Checks whether 2D grid data or key cell indicators denote a numbered round selection sheet.
+ *
+ * @param {Array<Array>|Object} data 2D array or object with cell values { b5, a9, a5, ... }.
+ * @returns {boolean} True if numbered layout.
+ */
+function isNumberedRoundSheetLayout(data) {
+  if (!data) return false;
+  if (Array.isArray(data)) {
+    // If row 5 (index 4) has "Round:" in Col B (index 1)
+    if (data.length > 4 && data[4]) {
+      var cellB5 = String(data[4][1] || "").trim().toLowerCase();
+      if (cellB5 === "round:") return true;
+    }
+    // If row 9 (index 8) has 1 in Col A (index 0)
+    if (data.length > 8 && data[8]) {
+      var cellA9 = data[8][0];
+      if (cellA9 === 1 || cellA9 === "1" || String(cellA9).trim() === "1") return true;
+    }
+    // If row 1 (index 0) has "Match Date:" in Col B (index 1)
+    if (data.length > 0 && data[0]) {
+      var cellB1 = String(data[0][1] || "").trim().toLowerCase();
+      if (cellB1.indexOf("match date") > -1) return true;
+    }
+    return false;
+  }
+  if (typeof data === "object") {
+    if (data.b5 && String(data.b5).trim().toLowerCase() === "round:") return true;
+    if (data.a9 !== undefined && (data.a9 === 1 || data.a9 === "1" || String(data.a9).trim() === "1")) return true;
+    if (data.b1 && String(data.b1).trim().toLowerCase().indexOf("match date") > -1) return true;
+  }
+  return false;
+}
+
+/**
  * Detects whether a given fixture row object, tab name, or date corresponds to a T20 round.
  *
  * @param {Object|string} fixInfoOrDate Either a fixInfo object (keys like '1st format', 't20 1st opponent') or date string.
@@ -1113,6 +1245,161 @@ function isT20Fixture(fixInfoOrDate, fixtures2DData) {
 }
 
 /**
+ * Returns true if a match format string represents a single-day game
+ * ("One Day", "1-Day", "T20", etc.). Anything else is treated as multi-day.
+ *
+ * @param {string} format
+ * @returns {boolean}
+ */
+function isOneDayFormat(format) {
+  var f = String(format || "").toLowerCase();
+  return f.indexOf("one") > -1 || f.indexOf("t20") > -1 || f.indexOf("1-day") > -1;
+}
+
+/**
+ * Resolves the effective format for a whole round from a fixture row object.
+ * Mixed rounds (e.g. 1sts on a two-day game, other teams one-day) resolve to
+ * the two-day format so players can indicate day-specific availability.
+ *
+ * Rules:
+ *   - Considers every column whose header ends in "Format" with a non-blank value.
+ *   - If any value is multi-day, returns it (preferring "1st Format").
+ *   - Otherwise returns "1st Format" if set, else the first one-day value found.
+ *   - If no formats are set at all, returns the default "Two Day".
+ *
+ * @param {Object} fixtureInfo Fixture row keyed by header (e.g. {"1st Format": "Two Day"}).
+ * @returns {string} Effective round format.
+ */
+function resolveRoundFormat(fixtureInfo) {
+  var DEFAULT_FORMAT = "Two Day";
+  if (!fixtureInfo || typeof fixtureInfo !== "object") return DEFAULT_FORMAT;
+
+  var firstFormat = String(fixtureInfo["1st Format"] || "").trim();
+  var formats = [];
+  for (var k in fixtureInfo) {
+    if (!/format\s*$/i.test(String(k || "").trim())) continue;
+    var v = String(fixtureInfo[k] || "").trim();
+    if (v) formats.push(v);
+  }
+
+  if (formats.length === 0) return DEFAULT_FORMAT;
+
+  if (firstFormat && !isOneDayFormat(firstFormat)) return firstFormat;
+  for (var i = 0; i < formats.length; i++) {
+    if (!isOneDayFormat(formats[i])) return formats[i];
+  }
+  return firstFormat || formats[0];
+}
+
+/**
+ * Canonical values allowed in the Players tab GlobalStatus column.
+ * Keep the sheet data validation, web app and round logic in sync with this.
+ */
+var GLOBAL_STATUS_OPTIONS = ["Active", "Injured", "Unavailable Until", "Long-Term Away", "Inactive"];
+
+/**
+ * Maps any legacy / web-app variant of a GlobalStatus to its canonical value.
+ * e.g. "UnavailableUntil", "unavailable until", "Away" -> "Unavailable Until".
+ * Blank -> "Active". Unrecognised values are returned trimmed, unchanged.
+ *
+ * @param {*} raw
+ * @returns {string}
+ */
+function normalizeGlobalStatus(raw) {
+  var s = String(raw === undefined || raw === null ? "" : raw).trim();
+  if (!s) return "Active";
+  var key = s.toLowerCase().replace(/[\s_\-]+/g, "");
+  if (key === "active") return "Active";
+  if (key === "injured") return "Injured";
+  if (key === "inactive") return "Inactive";
+  if (key === "longtermaway") return "Long-Term Away";
+  if (key === "unavailableuntil" || key === "unavailable" || key === "away" || key.indexOf("awayuntil") === 0) {
+    return "Unavailable Until";
+  }
+  return s;
+}
+
+/**
+ * Converts a sheet date cell / ISO string / Date into a "yyyy-MM-dd" key.
+ * Strings that start with yyyy-MM-dd are sliced directly (no timezone shift).
+ * Returns "" when the value cannot be parsed.
+ *
+ * @param {*} value
+ * @returns {string}
+ */
+function toDateKey(value) {
+  if (value === undefined || value === null || value === "") return "";
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return "";
+    var mm = String(value.getMonth() + 1);
+    var dd = String(value.getDate());
+    return value.getFullYear() + "-" + (mm.length < 2 ? "0" + mm : mm) + "-" + (dd.length < 2 ? "0" + dd : dd);
+  }
+  var str = String(value).trim();
+  var iso = str.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return iso[1] + "-" + iso[2] + "-" + iso[3];
+  var parsed = new Date(str);
+  return isNaN(parsed.getTime()) ? "" : toDateKey(parsed);
+}
+
+/**
+ * Decides which round list a player belongs in based on their GlobalStatus.
+ *
+ * Rules:
+ * - Inactive: always Unavailable.
+ * - Injured / Unavailable Until / Long-Term Away:
+ *     - no return date (or no match date): Unavailable.
+ *     - match date before the return date: Unavailable.
+ *     - match date on/after the return date: back in Unknown (they are due back).
+ *   The ExpectedReturnDate is the first day the player is available again.
+ * - Active / anything else: Unknown.
+ *
+ * @param {*} globalStatus Raw GlobalStatus cell value.
+ * @param {*} returnDate Raw ExpectedReturnDate cell value.
+ * @param {*} matchDate Round date (Date or yyyy-MM-dd string).
+ * @returns {{ list: string, note: string, status: string }}
+ *   list is "Unavailable" or "Unknown"; note is the text for the Notes column.
+ */
+function resolveGlobalStatusPlacement(globalStatus, returnDate, matchDate) {
+  var status = normalizeGlobalStatus(globalStatus);
+  var returnKey = toDateKey(returnDate);
+  var matchKey = toDateKey(matchDate);
+
+  if (status === "Inactive") {
+    return { list: "Unavailable", note: "Inactive", status: status };
+  }
+
+  if (status === "Injured" || status === "Unavailable Until" || status === "Long-Term Away") {
+    var label = status === "Unavailable Until" ? "Unavailable" : status;
+    var note = label + (returnKey ? " until " + returnKey : "");
+    if (!returnKey || !matchKey || matchKey < returnKey) {
+      return { list: "Unavailable", note: note, status: status };
+    }
+    return { list: "Unknown", note: "", status: status };
+  }
+
+  return { list: "Unknown", note: "", status: status };
+}
+
+/**
+ * Determines whether an Exemption / Notes string was generated from a player's GlobalStatus
+ * (or legacy "Global Exemption" prefix).
+ *
+ * @param {string} note
+ * @returns {boolean}
+ */
+function isGlobalStatusNote(note) {
+  var s = String(note || "").trim();
+  if (!s) return false;
+  if (s.indexOf("Global Exemption") === 0) return true;
+  if (s === "Inactive") return true;
+  if (s === "Injured" || s.indexOf("Injured until ") === 0) return true;
+  if (s === "Unavailable" || s.indexOf("Unavailable until ") === 0) return true;
+  if (s === "Long-Term Away" || s.indexOf("Long-Term Away until ") === 0) return true;
+  return false;
+}
+
+/**
  * Extracts and filters players from the 2D data of the Players tab for a round snapshot.
  *
  * @param {Array<Array>} players2DData 2D array from Players tab (including headers in row 0).
@@ -1147,7 +1434,6 @@ function filterPlayersForRoundSnapshot(players2DData, isT20, targetDate) {
     else if (ch === "expectedreturndate" || ch === "return date") returnCol = i;
   });
 
-  var matchDate = targetDate ? (targetDate instanceof Date ? targetDate : new Date(targetDate)) : null;
   var unavailableSnapshot = [];
   var unknownSnapshot = [];
 
@@ -1167,28 +1453,17 @@ function filterPlayersForRoundSnapshot(players2DData, isT20, targetDate) {
       continue;
     }
 
-    var globalStatus = String(row[statusCol] || "Active").trim();
+    var globalStatus = row[statusCol];
     var returnDateRaw = row[returnCol];
     var juniorLevel = String(row[juniorCol] || "").trim();
 
     var displayName = formatNameWithJuniorTag(fullName, juniorLevel);
 
-    var isExempt = false;
-    if (globalStatus === "Injured" || globalStatus === "Long-Term Away" || globalStatus === "Inactive") {
-      if (returnDateRaw && globalStatus !== "Inactive" && matchDate && !isNaN(matchDate.getTime())) {
-        var returnDate = new Date(returnDateRaw);
-        if (!isNaN(returnDate.getTime()) && returnDate >= matchDate) {
-          isExempt = true;
-        }
-      } else {
-        isExempt = true;
-      }
-    }
-
-    if (isExempt) {
-      unavailableSnapshot.push([profileId, displayName, "Global Exemption: " + globalStatus, ""]);
-    } else if (globalStatus === "Active") {
-      unknownSnapshot.push([profileId, displayName, "", ""]);
+    var placement = resolveGlobalStatusPlacement(globalStatus, returnDateRaw, targetDate);
+    if (placement.list === "Unavailable") {
+      unavailableSnapshot.push([profileId, displayName, placement.note, ""]);
+    } else {
+      unknownSnapshot.push([profileId, displayName, placement.note, ""]);
     }
   }
 
@@ -2395,9 +2670,19 @@ if (typeof module !== 'undefined' && module.exports) {
     mergeFixturesIntoMatrix,
     getFixtureOptionsForRoundInit,
     getRoundFrames,
+    getSlotNumbersForFrame,
+    getRoundColumnMapping,
+    isNumberedRoundSheetLayout,
     extractSlotNumberForTeam,
     isT20Fixture,
+    isOneDayFormat,
+    resolveRoundFormat,
     filterPlayersForRoundSnapshot,
+    GLOBAL_STATUS_OPTIONS,
+    normalizeGlobalStatus,
+    toDateKey,
+    resolveGlobalStatusPlacement,
+    isGlobalStatusNote,
     simulatePlayerAvailability,
     generateAvailabilityCalloutMessage,
     generateWallOfShameMessage,
