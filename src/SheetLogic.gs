@@ -779,46 +779,48 @@ function getInitialData(phone, dateStr) {
     }
 
     const normalizedInputPhone = normalizePhone(phone);
-    if (!normalizedInputPhone) return { error: 'Please enter a valid phone number.' };
+    let household = [];
 
-    // 1. MATCH HOUSEHOLD PLAYERS ACROSS ALL 4 PHONE COLUMNS
-    const pData = playersSheet.getDataRange().getValues();
-    const pHeaders = pData[0];
-    const pRows = pData.slice(1);
+    if (normalizedInputPhone) {
+      // 1. MATCH HOUSEHOLD PLAYERS ACROSS ALL 4 PHONE COLUMNS
+      const pData = playersSheet.getDataRange().getValues();
+      const pHeaders = pData[0];
+      const pRows = pData.slice(1);
 
-    const profileIdIdx = pHeaders.indexOf('ProfileID');
-    const firstNameIdx = pHeaders.indexOf('FirstName');
-    const lastNameIdx = pHeaders.indexOf('LastName');
-    const fullNameIdx = pHeaders.indexOf('FullName');
-    const statusIdx = pHeaders.indexOf('GlobalStatus');
-    const returnDateIdx = pHeaders.indexOf('ExpectedReturnDate');
-    const juniorLevelIdx = pHeaders.indexOf('JuniorLevel') !== -1 ? pHeaders.indexOf('JuniorLevel') : pHeaders.indexOf('JuniorClass');
+      const profileIdIdx = pHeaders.indexOf('ProfileID');
+      const firstNameIdx = pHeaders.indexOf('FirstName');
+      const lastNameIdx = pHeaders.indexOf('LastName');
+      const fullNameIdx = pHeaders.indexOf('FullName');
+      const statusIdx = pHeaders.indexOf('GlobalStatus');
+      const returnDateIdx = pHeaders.indexOf('ExpectedReturnDate');
+      const juniorLevelIdx = pHeaders.indexOf('JuniorLevel') !== -1 ? pHeaders.indexOf('JuniorLevel') : pHeaders.indexOf('JuniorClass');
 
-    const phoneIndexes = [
-      pHeaders.indexOf('Phone'),
-      pHeaders.indexOf('Phone2'),
-      pHeaders.indexOf('Phone3'),
-      pHeaders.indexOf('Phone4')
-    ].filter(idx => idx !== -1);
+      const phoneIndexes = [
+        pHeaders.indexOf('Phone'),
+        pHeaders.indexOf('Phone2'),
+        pHeaders.indexOf('Phone3'),
+        pHeaders.indexOf('Phone4')
+      ].filter(idx => idx !== -1);
 
-    const household = pRows.filter(row => {
-      return phoneIndexes.some(pIdx => normalizePhone(row[pIdx]) === normalizedInputPhone);
-    }).map(row => {
-      const pId = String(row[profileIdIdx]).trim();
-      return {
-        profileId: pId,
-        firstName: row[firstNameIdx],
-        lastName: row[lastNameIdx],
-        fullName: row[fullNameIdx] || (row[firstNameIdx] + " " + row[lastNameIdx]),
-        globalStatus: normalizeGlobalStatus(row[statusIdx]),
-        expectedReturnDate: toDateKey(row[returnDateIdx]),
-        juniorLevel: row[juniorLevelIdx] || "",
-        photoUrl: getPlayerPhotoUrl(pId)
-      };
-    });
+      household = pRows.filter(row => {
+        return phoneIndexes.some(pIdx => normalizePhone(row[pIdx]) === normalizedInputPhone);
+      }).map(row => {
+        const pId = String(row[profileIdIdx]).trim();
+        return {
+          profileId: pId,
+          firstName: row[firstNameIdx],
+          lastName: row[lastNameIdx],
+          fullName: row[fullNameIdx] || (row[firstNameIdx] + " " + row[lastNameIdx]),
+          globalStatus: normalizeGlobalStatus(row[statusIdx]),
+          expectedReturnDate: toDateKey(row[returnDateIdx]),
+          juniorLevel: row[juniorLevelIdx] || "",
+          photoUrl: getPlayerPhotoUrl(pId)
+        };
+      });
 
-    if (household.length === 0) {
-      return { error: 'No registered players found matching phone number ' + normalizedInputPhone };
+      if (household.length === 0) {
+        return { error: 'No registered players found matching phone number ' + normalizedInputPhone };
+      }
     }
 
     // 2. FETCH FIXTURE / ROUND DETAILS FOR THE DATE
@@ -827,15 +829,51 @@ function getInitialData(phone, dateStr) {
     const fRows = fData.slice(1);
     const gameDateIdx = fHeaders.indexOf('Game Date');
 
+    // Build structured fixtures list for smart selection
+    const fixturesList = fRows.map(function(row) {
+      const fixObj = {};
+      fHeaders.forEach(function(h, i) {
+        fixObj[h] = row[i] ? String(row[i]) : "";
+      });
+      fixObj.date = normalizeDateToYYYYMMDD(row[gameDateIdx]);
+      return fixObj;
+    }).filter(function(f) { return Boolean(f.date); });
+
+    const smartSelection = resolveSmartRoundSelection(dateStr, fixturesList, new Date());
+
+    if (smartSelection.noUpcomingRounds && !dateStr) {
+      return {
+        status: "no_upcoming_rounds",
+        noUpcomingRounds: true,
+        message: "No upcoming rounds are currently scheduled. Check back soon or contact your club selector.",
+        players: household.map(function(p) {
+          return {
+            id: p.profileId,
+            profileId: p.profileId,
+            name: p.fullName,
+            fullName: p.fullName,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            globalStatus: p.globalStatus || 'Active',
+            expectedReturnDate: p.expectedReturnDate || '',
+            juniorLevel: p.juniorLevel || '',
+            photoUrl: p.photoUrl || ''
+          };
+        }),
+        allRounds: fixturesList.map(function(f) { return { date: f.date, round: f['1st Round'] || '' }; })
+      };
+    }
+
+    const targetDate = smartSelection.targetDate || dateStr;
     let targetFixture = null;
-    if (dateStr) {
-      targetFixture = fRows.find(row => String(row[gameDateIdx]).indexOf(dateStr) > -1);
-      const roundTabExists = ss.getSheetByName(dateStr) !== null;
+    if (targetDate) {
+      targetFixture = fRows.find(row => String(row[gameDateIdx]).indexOf(targetDate) > -1);
+      const roundTabExists = ss.getSheetByName(targetDate) !== null;
       if (!targetFixture && !roundTabExists) {
         return {
-          error: "Round '" + dateStr + "' was not found. Please verify the link or check with your club selector.",
+          error: "Round '" + targetDate + "' was not found. Please verify the link or check with your club selector.",
           invalidRound: true,
-          requestedDate: dateStr
+          requestedDate: targetDate
         };
       }
     } else {
@@ -848,7 +886,7 @@ function getInitialData(phone, dateStr) {
     }
 
     // 3. FETCH CURRENT AVAILABILITY & NOTES FROM THE TARGET DATE TAB
-    const targetSheetName = dateStr || (fixtureInfo['Game Date'] ? fixtureInfo['Game Date'] : "");
+    const targetSheetName = targetDate || (fixtureInfo['Game Date'] ? fixtureInfo['Game Date'] : "");
     const dateSheet = ss.getSheetByName(targetSheetName);
 
     const householdAvail = {};
@@ -930,7 +968,14 @@ function getInitialData(phone, dateStr) {
       },
       availability: householdAvail,
       notes: householdNotes,
-      matchDate: targetSheetName
+      matchDate: targetSheetName,
+      requestedDate: dateStr || "",
+      redirected: Boolean(smartSelection.redirected),
+      redirectReason: smartSelection.redirectReason,
+      previousDate: smartSelection.previousDate || null,
+      hasUpcoming: Boolean(smartSelection.hasUpcoming),
+      noUpcomingRounds: Boolean(smartSelection.noUpcomingRounds),
+      allRounds: fixturesList.map(function(f) { return { date: f.date, round: f['1st Round'] || '' }; })
     };
 
   } catch (e) {

@@ -1907,6 +1907,221 @@ function getFixtureOptionsForRoundInit(fixturesData, existingSheetNames) {
 }
 
 /**
+ * Calculates the effective end date of a round based on start date and format.
+ * Two-day matches span two consecutive Saturdays (startDate + 7 days).
+ * One-day and T20 matches finish on the same day.
+ *
+ * @param {string|Date} startDate Start date of the round (YYYY-MM-DD or parseable).
+ * @param {boolean|string} isTwoDayOrFormat Boolean or format string (e.g. "Two Day", "One Day").
+ * @returns {string} Normalized YYYY-MM-DD of the round's final day of play.
+ */
+function getRoundEndDate(startDate, isTwoDayOrFormat) {
+  var startStr = normalizeDateToYYYYMMDD(startDate);
+  if (!startStr) return "";
+
+  var isTwoDay = false;
+  if (typeof isTwoDayOrFormat === "boolean") {
+    isTwoDay = isTwoDayOrFormat;
+  } else if (typeof isTwoDayOrFormat === "string") {
+    isTwoDay = !isOneDayFormat(isTwoDayOrFormat);
+  }
+
+  if (!isTwoDay) return startStr;
+
+  var parts = startStr.split("-");
+  var y = parseInt(parts[0], 10);
+  var m = parseInt(parts[1], 10) - 1;
+  var d = parseInt(parts[2], 10);
+
+  var dt = new Date(y, m, d);
+  dt.setDate(dt.getDate() + 7);
+  return normalizeDateToYYYYMMDD(dt);
+}
+
+/**
+ * Resolves the target round date intelligently based on URL input and today's date:
+ * 1. If no date specified in URL -> finds the next upcoming round (>= today) and redirects.
+ *    If no future rounds exist -> returns noUpcomingRounds = true.
+ * 2. If requested date is in the past AND a future round exists -> switches to the upcoming round.
+ * 3. If requested date is current or future -> keeps requested date.
+ * 4. If requested date is in the past but NO future round exists -> stays on requested past date.
+ *
+ * @param {string|null} requestedDate The round date requested via URL (?round=...).
+ * @param {Array<Object|string>} fixturesList Array of fixture objects or date strings.
+ * @param {string|Date} [referenceDate] Today's reference date (defaults to today).
+ * @returns {Object} Resolution result:
+ *   - targetDate: string|null (YYYY-MM-DD)
+ *   - action: "REDIRECT_TO_UPCOMING" | "SWITCH_TO_UPCOMING" | "DISPLAY_REQUESTED" | "DISPLAY_PAST_NO_UPCOMING" | "NO_UPCOMING_ROUNDS"
+ *   - redirected: boolean
+ *   - redirectReason: string|null
+ *   - previousDate: string|null
+ *   - hasUpcoming: boolean
+ *   - noUpcomingRounds: boolean
+ *   - nextUpcomingDate: string|null
+ */
+function resolveSmartRoundSelection(requestedDate, fixturesList, referenceDate) {
+  var refDateStr = normalizeDateToYYYYMMDD(referenceDate || new Date());
+  var reqDateStr = normalizeDateToYYYYMMDD(requestedDate);
+
+  var rawList = Array.isArray(fixturesList) ? fixturesList : [];
+  var fixturesMap = {};
+
+  for (var i = 0; i < rawList.length; i++) {
+    var item = rawList[i];
+    if (!item) continue;
+
+    var dateStr = "";
+    var rawDateStr = "";
+    var isTwoDay = false;
+    var roundTitle = "";
+    var origObj = {};
+
+    if (typeof item === "string") {
+      dateStr = normalizeDateToYYYYMMDD(item);
+      rawDateStr = item;
+    } else if (typeof item === "object") {
+      origObj = item;
+      rawDateStr = item.rawDate || item["Game Date"] || item.date || "";
+      dateStr = normalizeDateToYYYYMMDD(item.date || item["Game Date"] || rawDateStr);
+      roundTitle = item.round || item["1st Round"] || item.roundTitle || "";
+
+      if (typeof item.isTwoDay === "boolean") {
+        isTwoDay = item.isTwoDay;
+      } else if (item.format) {
+        isTwoDay = !isOneDayFormat(item.format);
+      } else if (item["1st Format"] || Object.keys(item).some(function(k) { return /format/i.test(k); })) {
+        isTwoDay = !isOneDayFormat(resolveRoundFormat(item));
+      }
+    }
+
+    if (!dateStr) continue;
+
+    // Determine end date
+    var endDateStr = "";
+    if (typeof item === "object" && item.endDate) {
+      endDateStr = normalizeDateToYYYYMMDD(item.endDate);
+    } else if (rawDateStr && rawDateStr.indexOf(",") > -1) {
+      var splitDates = rawDateStr.split(",");
+      var lastDateRaw = splitDates[splitDates.length - 1].trim();
+      endDateStr = normalizeDateToYYYYMMDD(lastDateRaw);
+    }
+
+    if (!endDateStr) {
+      endDateStr = getRoundEndDate(dateStr, isTwoDay);
+    }
+
+    if (!fixturesMap[dateStr]) {
+      fixturesMap[dateStr] = {
+        date: dateStr,
+        endDate: endDateStr,
+        isTwoDay: isTwoDay,
+        roundTitle: roundTitle,
+        rawItem: origObj
+      };
+    }
+  }
+
+  var sortedFixtures = Object.keys(fixturesMap).map(function(k) {
+    return fixturesMap[k];
+  });
+  sortedFixtures.sort(function(a, b) {
+    return a.date.localeCompare(b.date);
+  });
+
+  // Find the first upcoming round whose endDate has not passed (endDate >= refDateStr)
+  var nextUpcoming = null;
+  for (var j = 0; j < sortedFixtures.length; j++) {
+    if (sortedFixtures[j].endDate >= refDateStr) {
+      nextUpcoming = sortedFixtures[j];
+      break;
+    }
+  }
+
+  var hasUpcoming = nextUpcoming !== null;
+  var nextUpcomingDate = nextUpcoming ? nextUpcoming.date : null;
+
+  // Scenario 1: No requested date
+  if (!reqDateStr) {
+    if (hasUpcoming) {
+      return {
+        action: "REDIRECT_TO_UPCOMING",
+        targetDate: nextUpcoming.date,
+        redirected: true,
+        redirectReason: "NO_DATE_SPECIFIED",
+        previousDate: null,
+        hasUpcoming: true,
+        noUpcomingRounds: false,
+        nextUpcomingDate: nextUpcomingDate,
+        roundInfo: nextUpcoming
+      };
+    } else {
+      return {
+        action: "NO_UPCOMING_ROUNDS",
+        targetDate: sortedFixtures.length > 0 ? sortedFixtures[sortedFixtures.length - 1].date : null,
+        redirected: false,
+        redirectReason: "NO_UPCOMING_ROUNDS",
+        previousDate: null,
+        hasUpcoming: false,
+        noUpcomingRounds: true,
+        nextUpcomingDate: null,
+        roundInfo: null
+      };
+    }
+  }
+
+  // Scenario 2: Requested date provided
+  var matchFix = fixturesMap[reqDateStr];
+  var isPast = false;
+  if (matchFix) {
+    isPast = matchFix.endDate < refDateStr;
+  } else {
+    isPast = reqDateStr < refDateStr;
+  }
+
+  // If the requested round is in the past:
+  if (isPast) {
+    if (hasUpcoming) {
+      return {
+        action: "SWITCH_TO_UPCOMING",
+        targetDate: nextUpcoming.date,
+        redirected: true,
+        redirectReason: "PAST_DATE_SWITCHED",
+        previousDate: reqDateStr,
+        hasUpcoming: true,
+        noUpcomingRounds: false,
+        nextUpcomingDate: nextUpcomingDate,
+        roundInfo: nextUpcoming
+      };
+    } else {
+      return {
+        action: "DISPLAY_PAST_NO_UPCOMING",
+        targetDate: reqDateStr,
+        redirected: false,
+        redirectReason: "PAST_DATE_NO_UPCOMING",
+        previousDate: null,
+        hasUpcoming: false,
+        noUpcomingRounds: true,
+        nextUpcomingDate: null,
+        roundInfo: matchFix || null
+      };
+    }
+  }
+
+  // If requested date is current or in the future:
+  return {
+    action: "DISPLAY_REQUESTED",
+    targetDate: reqDateStr,
+    redirected: false,
+    redirectReason: null,
+    previousDate: null,
+    hasUpcoming: true,
+    noUpcomingRounds: false,
+    nextUpcomingDate: nextUpcomingDate,
+    roundInfo: matchFix || { date: reqDateStr }
+  };
+}
+
+/**
  * ============================================================================
  * WHATSAPP CONTACTS PARSING & PLAYER MATCHING
  * ============================================================================
@@ -2691,7 +2906,9 @@ if (typeof module !== 'undefined' && module.exports) {
     COMMON_NICKNAMES,
     parseWhatsAppContactsInput,
     matchContactsToPlayers,
-    filterAndEnrichFromAddressBook
+    filterAndEnrichFromAddressBook,
+    getRoundEndDate,
+    resolveSmartRoundSelection
   };
 }
 

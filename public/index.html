@@ -513,7 +513,24 @@
     </div>
   </div>
 
+  <div id="no-rounds-view" class="container">
+    <div class="card" style="border-top: 5px solid var(--gold); text-align: center; padding: 28px 20px;">
+      <div style="font-size: 44px; margin-bottom: 12px;">🏏</div>
+      <h2 style="color: var(--maroon); margin-bottom: 10px; font-weight: 800; font-size: 20px;">No Upcoming Rounds</h2>
+      <div id="no-rounds-msg" style="color: var(--text-muted); font-size: 15px; margin-bottom: 24px; line-height: 1.5;">
+        There are no upcoming match rounds scheduled at the moment. Please check back closer to the next fixture, or contact your club selector.
+      </div>
+      <div class="reset-link" onclick="handleReset()">
+        Wrong player? Switch account
+      </div>
+    </div>
+  </div>
+
   <div id="dashboard-view" class="container">
+    <div id="redirect-banner" style="display: none; background: #fef9c3; color: #854d0e; border: 1px solid #fde047; border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px; font-size: 14px; font-weight: 600; line-height: 1.4; align-items: center; justify-content: space-between; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+      <span id="redirect-banner-text" style="flex: 1;"></span>
+      <button type="button" onclick="dismissRedirectBanner()" aria-label="Dismiss" style="background: none; border: none; font-size: 18px; font-weight: 800; color: #854d0e; cursor: pointer; padding: 0 4px; margin-left: 8px; line-height: 1;">✕</button>
+    </div>
     <div id="round-info-card" class="card" style="background: var(--maroon); color: white; border: none;">
       <h3 id="round-title" style="text-transform: uppercase; letter-spacing: 1px;">ROUND</h3>
       <p id="round-date" style="opacity: 0.9; font-size: 15px; font-weight: 600;"></p>
@@ -543,6 +560,8 @@
       matchDate: ''
     };
 
+    let lastLoadTime = 0;
+
     window.onload = () => {
       const urlParams = new URLSearchParams(window.location.search);
       const roundParam = urlParams.get('round');
@@ -555,15 +574,18 @@
           if (indicator) indicator.style.display = 'inline-block';
         }
       }
-      if (state.phone && state.phone !== 'null') loadData();
-      else showView('login-view');
+      if (state.phone && state.phone !== 'null') {
+        loadData();
+      } else {
+        showView('login-view');
+        checkAnonymousRound();
+      }
     };
 
     function showView(viewId) {
       document.querySelectorAll('.container').forEach(c => c.style.display = 'none');
       document.getElementById(viewId).style.display = 'block';
     }
-
 
     async function callApi(body) {
       const res = await fetch(API_URL, {
@@ -603,8 +625,64 @@
       }
     }
 
-    async function loadData() {
-      showView('loading-view');
+    function showRedirectBanner(prevDate, newDate) {
+      const banner = document.getElementById('redirect-banner');
+      const text = document.getElementById('redirect-banner-text');
+      if (!banner || !text) return;
+      const formattedPrev = parseDate(prevDate) || prevDate;
+      const formattedNew = parseDate(newDate) || newDate;
+      text.innerText = `⚡ Switched to upcoming round (${formattedNew}). Previous round (${formattedPrev}) has concluded.`;
+      banner.style.display = 'flex';
+    }
+
+    function dismissRedirectBanner() {
+      const banner = document.getElementById('redirect-banner');
+      if (banner) banner.style.display = 'none';
+    }
+
+    async function checkAnonymousRound() {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const roundNum = urlParams.get('round');
+
+        const data = await callApi({
+          action: 'getInitialData',
+          phone: '',
+          dateStr: roundNum,
+          roundNum: roundNum
+        });
+
+        if (data.noUpcomingRounds && (!roundNum || data.status === 'no_upcoming_rounds')) {
+          const msgEl = document.getElementById('no-rounds-msg');
+          if (msgEl && data.message) msgEl.innerText = data.message;
+          const indicator = document.getElementById('round-indicator-container');
+          if (indicator) indicator.style.display = 'none';
+          showView('no-rounds-view');
+          return;
+        }
+
+        if (data.redirected && data.matchDate) {
+          const newUrl = new URL(window.location);
+          newUrl.searchParams.set('round', data.matchDate);
+          window.history.replaceState({}, '', newUrl);
+
+          const roundDateFormatted = parseDate(data.matchDate);
+          if (roundDateFormatted) {
+            const headerRoundEl = document.getElementById('header-round');
+            if (headerRoundEl) headerRoundEl.innerText = roundDateFormatted;
+            const indicator = document.getElementById('round-indicator-container');
+            if (indicator) indicator.style.display = 'inline-block';
+          }
+        }
+      } catch (err) {
+        // Silently ignore background anonymous check failures
+      }
+    }
+
+    async function loadData(options = {}) {
+      if (!options.isReactivation) {
+        showView('loading-view');
+      }
       try {
         const urlParams = new URLSearchParams(window.location.search);
         const roundNum = urlParams.get('round');
@@ -618,6 +696,45 @@
 
         if (data.error) {
           throw new Error(data.error);
+        }
+
+        lastLoadTime = Date.now();
+
+        // Check if there are no upcoming rounds scheduled
+        if (data.noUpcomingRounds && (!data.players || data.players.length === 0 || data.status === 'no_upcoming_rounds')) {
+          const msgEl = document.getElementById('no-rounds-msg');
+          if (msgEl && data.message) msgEl.innerText = data.message;
+          const indicator = document.getElementById('round-indicator-container');
+          if (indicator) indicator.style.display = 'none';
+          showView('no-rounds-view');
+          return;
+        }
+
+        // Smart link check: if backend redirected (no date or past date), sync URL and header
+        if (data.redirected && data.matchDate) {
+          const newUrl = new URL(window.location);
+          newUrl.searchParams.set('round', data.matchDate);
+          window.history.replaceState({}, '', newUrl);
+
+          const roundDateFormatted = parseDate(data.matchDate);
+          if (roundDateFormatted) {
+            const headerRoundEl = document.getElementById('header-round');
+            if (headerRoundEl) headerRoundEl.innerText = roundDateFormatted;
+            const indicator = document.getElementById('round-indicator-container');
+            if (indicator) indicator.style.display = 'inline-block';
+          }
+
+          if (data.previousDate) {
+            showRedirectBanner(data.previousDate, data.matchDate);
+          }
+        } else if (data.matchDate) {
+          const roundDateFormatted = parseDate(data.matchDate);
+          if (roundDateFormatted) {
+            const headerRoundEl = document.getElementById('header-round');
+            if (headerRoundEl) headerRoundEl.innerText = roundDateFormatted;
+            const indicator = document.getElementById('round-indicator-container');
+            if (indicator) indicator.style.display = 'inline-block';
+          }
         }
 
         state.players = data.players || [];
@@ -663,6 +780,24 @@
         showView('error-view');
       }
     }
+
+    function handleTabReactivation() {
+      const now = Date.now();
+      // Throttle: don't check more than once every 10 seconds
+      if (now - lastLoadTime < 10000) return;
+      if (state.phone && state.phone !== 'null') {
+        loadData({ isReactivation: true });
+      } else {
+        checkAnonymousRound();
+      }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        handleTabReactivation();
+      }
+    });
+    window.addEventListener('focus', handleTabReactivation);
 
     function parseDate(dateStr) {
       if (!dateStr) return '';
