@@ -995,6 +995,7 @@
       try {
         await callApi({
           action: 'saveAvailability',
+          phone: state.phone,
           profileId: playerId,
           playerId: playerId,
           dateStr: state.matchDate || (state.roundInfo && state.roundInfo.Date1),
@@ -1019,6 +1020,7 @@
       try {
         await callApi({
           action: 'saveAvailability',
+          phone: state.phone,
           profileId: playerId,
           playerId: playerId,
           dateStr: state.matchDate || (state.roundInfo && state.roundInfo.Date1),

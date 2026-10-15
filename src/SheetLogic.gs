@@ -365,7 +365,7 @@ function doPost(e) {
     var playerResponse = String(payload.response).trim();
     var playerNotes = payload.notes || "";
 
-    var saveResult = saveAvailability(pId, targetDateStr, playerResponse, playerNotes);
+    var saveResult = saveAvailability(pId, targetDateStr, playerResponse, playerNotes, payload.phone || "");
     return jsonResponse(saveResult);
   } catch (err) {
     Logger.log("doPost Error: " + err.message);
@@ -700,7 +700,7 @@ function simulateRoundAvailability(dateStr) {
   var unavailCount = 0;
   var partialCount = 0;
 
-  var logSheet = ss.getSheetByName("Availability_Log");
+  var nameMap = getPlayerNameMap(ss);
 
   simulated.forEach(function(sim) {
     executeRealtimeAppListMovement(ws, sim.profileId, sim.response, sim.notes);
@@ -714,9 +714,14 @@ function simulateRoundAvailability(dateStr) {
       unavailCount++;
     }
 
-    if (logSheet) {
-      logSheet.appendRow([new Date(), sim.profileId, targetDate, sim.response, sim.notes || "Simulated"]);
-    }
+    appendAvailabilityLog(ss, {
+      profileId: sim.profileId,
+      playerName: sim.fullName,
+      matchDate: targetDate,
+      response: sim.response,
+      notes: sim.notes || "Simulated",
+      phone: "Simulated"
+    }, nameMap);
   });
 
   return {
@@ -909,8 +914,8 @@ function getInitialData(phone, dateStr) {
 
         let match = availIds.find(r => String(r[0]).trim() === pId);
         if (match) {
-          status = "Available";
-          note = match[2] || "";
+          status = resolveResponseFromRoundNote("Available", match[2]);
+          note = parseRoundNote(match[2]).userNote;
         } else {
           match = unavailIds.find(r => String(r[0]).trim() === pId);
           if (match) {
@@ -2328,9 +2333,10 @@ function resetPlayersTab() {
 
 
 /**
- * Saves availability submitted from the Web App
+ * Saves availability submitted from the Web App.
+ * submittedByPhone: the phone the user logged in with (audit only).
  */
-function saveAvailability(profileId, dateStr, response, notes) {
+function saveAvailability(profileId, dateStr, response, notes, submittedByPhone) {
   try {
     const ss = getSS();
     let cleanDateStr = String(dateStr || '').trim();
@@ -2365,17 +2371,115 @@ function saveAvailability(profileId, dateStr, response, notes) {
       throw new Error(`Round selection tab for date ${dateStr} has not been initialised yet.`);
     }
 
-    executeRealtimeAppListMovement(ws, String(profileId).trim(), response, notes);
+    // Day 1 Only / Day 2 Only go into the Available list, so the restriction
+    // must be carried in the note or selectors never see it.
+    const roundNote = buildRoundNote(response, notes);
+    executeRealtimeAppListMovement(ws, String(profileId).trim(), response, roundNote);
 
-    const logSheet = ss.getSheetByName('Availability_Log');
-    if (logSheet) {
-      logSheet.appendRow([new Date(), String(profileId).trim(), ws.getName(), response, notes || ""]);
-    }
+    appendAvailabilityLog(ss, {
+      profileId: profileId,
+      matchDate: ws.getName(),
+      response: response,
+      notes: notes || "",
+      phone: submittedByPhone ? normalizePhone(submittedByPhone) : ""
+    });
 
     return { status: "success", success: true, round: ws.getName() };
   } catch (e) {
     Logger.log("saveAvailability Error: " + e.message);
     throw e;
+  }
+}
+
+
+/**
+ * Returns { profileId: fullName } from the Players tab.
+ */
+function getPlayerNameMap(ss) {
+  var map = {};
+  var playerSheet = ss.getSheetByName("Players");
+  if (!playerSheet || playerSheet.getLastRow() < 2) return map;
+  var pData = playerSheet.getDataRange().getValues();
+  var h = pData[0];
+  var idIdx = h.indexOf("ProfileID");
+  var nameIdx = h.indexOf("FullName");
+  var firstIdx = h.indexOf("FirstName");
+  var lastIdx = h.indexOf("LastName");
+  if (idIdx === -1) return map;
+  for (var i = 1; i < pData.length; i++) {
+    var r = pData[i];
+    var pid = String(r[idIdx] || "").trim();
+    if (!pid) continue;
+    var full = nameIdx !== -1 ? String(r[nameIdx] || "").trim() : "";
+    if (!full) {
+      full = ((firstIdx !== -1 ? r[firstIdx] : "") + " " + (lastIdx !== -1 ? r[lastIdx] : "")).trim();
+    }
+    map[pid] = full;
+  }
+  return map;
+}
+
+
+/**
+ * Returns the Availability_Log sheet, creating it or migrating the legacy
+ * [Timestamp, ProfileID, MatchDate, Response, Notes] layout to
+ * AVAILABILITY_LOG_HEADERS (back-filling player names) as needed.
+ */
+function ensureAvailabilityLogSheet(ss, nameMap) {
+  var logSheet = ss.getSheetByName("Availability_Log") || ss.insertSheet("Availability_Log");
+  var numCols = AVAILABILITY_LOG_HEADERS.length;
+  var lastRow = logSheet.getLastRow();
+  var header = lastRow > 0
+    ? logSheet.getRange(1, 1, 1, Math.max(logSheet.getLastColumn(), 1)).getValues()[0]
+    : [];
+
+  if (lastRow > 0 && String(header[1] || "").trim() === AVAILABILITY_LOG_HEADERS[1]) {
+    return logSheet; // Already on the current layout
+  }
+
+  if (lastRow > 1 && isLegacyAvailabilityLogHeader(header)) {
+    var oldRows = logSheet.getRange(2, 1, lastRow - 1, 5).getValues();
+    var migrated = migrateLegacyAvailabilityLogRows(oldRows, nameMap || getPlayerNameMap(ss));
+    logSheet.getRange(2, 1, lastRow - 1, Math.max(logSheet.getLastColumn(), numCols)).clearContent();
+    logSheet.getRange(2, 1, migrated.length, numCols).setValues(migrated);
+  }
+
+  logSheet.getRange(1, 1, 1, numCols).setValues([AVAILABILITY_LOG_HEADERS])
+    .setFontWeight("bold")
+    .setBackground(LCC_PALETTE.maroonBg)
+    .setFontColor(LCC_PALETTE.maroonFg);
+  logSheet.setFrozenRows(1);
+  applyAvailabilityLogColumnWidths(logSheet);
+  return logSheet;
+}
+
+
+function applyAvailabilityLogColumnWidths(logSheet) {
+  var widths = [170, 200, 110, 120, 260, 150, 280];
+  for (var i = 0; i < widths.length; i++) logSheet.setColumnWidth(i + 1, widths[i]);
+}
+
+
+/**
+ * Appends one audit row to Availability_Log. Never throws: a logging failure
+ * must not fail the player's save.
+ */
+function appendAvailabilityLog(ss, entry, nameMap) {
+  try {
+    var names = nameMap || getPlayerNameMap(ss);
+    var logSheet = ensureAvailabilityLogSheet(ss, names);
+    var pid = String(entry.profileId || "").trim();
+    logSheet.appendRow(buildAvailabilityLogRow({
+      timestamp: entry.timestamp || new Date(),
+      profileId: pid,
+      playerName: entry.playerName || names[pid] || "",
+      matchDate: entry.matchDate,
+      response: entry.response,
+      notes: entry.notes,
+      phone: entry.phone
+    }));
+  } catch (logErr) {
+    Logger.log("Availability_Log write failed: " + logErr.message);
   }
 }
 

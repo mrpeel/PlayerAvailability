@@ -2853,6 +2853,121 @@ function filterAndEnrichFromAddressBook(incomingContacts, existingPlayers, exist
   };
 }
 
+// ============================================================================
+// PARTIAL-DAY AVAILABILITY (Day 1 Only / Day 2 Only)
+// ============================================================================
+// Round tabs only have Available / Unavailable / Unknown lists, so a partial-day
+// response is stored as a prefix on the player's note in the Available list,
+// e.g. "Day 1 Only" or "Day 1 Only - leaving at tea".
+
+var DAY_RESTRICTION_OPTIONS = ["Day 1 Only", "Day 2 Only"];
+var DAY_RESTRICTION_SEPARATOR = " - ";
+
+/**
+ * Returns "Day 1 Only" / "Day 2 Only" if the response is a partial-day
+ * response (case-insensitive), otherwise "".
+ */
+function getDayRestriction(response) {
+  var s = String(response || "").trim().toLowerCase();
+  for (var i = 0; i < DAY_RESTRICTION_OPTIONS.length; i++) {
+    if (s === DAY_RESTRICTION_OPTIONS[i].toLowerCase()) return DAY_RESTRICTION_OPTIONS[i];
+  }
+  return "";
+}
+
+/**
+ * Splits a round-tab note into its day restriction and the player's own text.
+ * @param {string} note e.g. "Day 2 Only - arriving 1pm"
+ * @returns {{ dayRestriction: string, userNote: string }}
+ */
+function parseRoundNote(note) {
+  var s = String(note || "").trim();
+  for (var i = 0; i < DAY_RESTRICTION_OPTIONS.length; i++) {
+    var opt = DAY_RESTRICTION_OPTIONS[i];
+    if (s.toLowerCase().indexOf(opt.toLowerCase()) === 0) {
+      var rest = s.slice(opt.length).replace(/^\s*[-:,]\s*/, "").trim();
+      return { dayRestriction: opt, userNote: rest };
+    }
+  }
+  return { dayRestriction: "", userNote: s };
+}
+
+/**
+ * Builds the note written to the round tab for a player response.
+ * Any existing day-restriction prefix in userNotes is replaced, so re-saving
+ * never doubles up the prefix.
+ */
+function buildRoundNote(response, userNotes) {
+  var userNote = parseRoundNote(userNotes).userNote;
+  var restriction = getDayRestriction(response);
+  if (!restriction) return userNote;
+  return userNote ? restriction + DAY_RESTRICTION_SEPARATOR + userNote : restriction;
+}
+
+/**
+ * Resolves the response shown back to the player from a round-tab list + note.
+ * Available + "Day 1 Only..." note => "Day 1 Only".
+ */
+function resolveResponseFromRoundNote(listStatus, note) {
+  if (listStatus !== "Available") return listStatus;
+  var restriction = parseRoundNote(note).dayRestriction;
+  return restriction || "Available";
+}
+
+// ============================================================================
+// AVAILABILITY LOG (audit trail)
+// ============================================================================
+
+var AVAILABILITY_LOG_HEADERS = [
+  "Timestamp", "Player Name", "Match Date", "Response", "Notes", "Submitted By Phone", "ProfileID"
+];
+
+/**
+ * True if the header row is the old 5-column layout
+ * [Timestamp, ProfileID, MatchDate, Response, Notes].
+ */
+function isLegacyAvailabilityLogHeader(headerRow) {
+  var h = (headerRow || []).map(function(v) { return String(v || "").trim(); });
+  return h[0] === "Timestamp" && h[1] === "ProfileID" && h[2] === "MatchDate";
+}
+
+/**
+ * Builds one log row in AVAILABILITY_LOG_HEADERS order.
+ */
+function buildAvailabilityLogRow(entry) {
+  var e = entry || {};
+  return [
+    e.timestamp || new Date(),
+    e.playerName || "",
+    e.matchDate || "",
+    e.response || "",
+    e.notes || "",
+    e.phone || "",
+    String(e.profileId || "").trim()
+  ];
+}
+
+/**
+ * Converts legacy log rows [Timestamp, ProfileID, MatchDate, Response, Notes]
+ * into the new layout, back-filling player names from nameById.
+ * Phone is unknown for historical rows.
+ */
+function migrateLegacyAvailabilityLogRows(rows, nameById) {
+  var names = nameById || {};
+  return (rows || []).map(function(r) {
+    var pid = String(r[1] || "").trim();
+    return buildAvailabilityLogRow({
+      timestamp: r[0],
+      profileId: pid,
+      playerName: names[pid] || "",
+      matchDate: r[2],
+      response: r[3],
+      notes: r[4],
+      phone: ""
+    });
+  });
+}
+
 // Node/Jest interop — Apps Script ignores this guard.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -2908,7 +3023,16 @@ if (typeof module !== 'undefined' && module.exports) {
     matchContactsToPlayers,
     filterAndEnrichFromAddressBook,
     getRoundEndDate,
-    resolveSmartRoundSelection
+    resolveSmartRoundSelection,
+    DAY_RESTRICTION_OPTIONS,
+    getDayRestriction,
+    parseRoundNote,
+    buildRoundNote,
+    resolveResponseFromRoundNote,
+    AVAILABILITY_LOG_HEADERS,
+    isLegacyAvailabilityLogHeader,
+    buildAvailabilityLogRow,
+    migrateLegacyAvailabilityLogRows
   };
 }
 

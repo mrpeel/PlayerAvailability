@@ -99,8 +99,8 @@ function createCoreDatabaseSheets(ss) {
   // 4. AVAILABILITY LOG TAB (Auditing only)
   var logSheet = ss.getSheetByName("Availability_Log") || ss.insertSheet("Availability_Log");
   logSheet.clear();
-  var logHeaders = [["Timestamp", "ProfileID", "MatchDate", "Response", "Notes"]];
-  logSheet.getRange(1, 1, 1, 5).setValues(logHeaders).setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.maroonBg).setFontColor(LCC_SETUP_PALETTE.maroonFg);
+  var logHeaders = [AVAILABILITY_LOG_HEADERS];
+  logSheet.getRange(1, 1, 1, AVAILABILITY_LOG_HEADERS.length).setValues(logHeaders).setFontWeight("bold").setBackground(LCC_SETUP_PALETTE.maroonBg).setFontColor(LCC_SETUP_PALETTE.maroonFg);
 
   // 5. ADMINS TAB
   var adminSheet = ss.getSheetByName("Admins") || ss.insertSheet("Admins");
@@ -169,11 +169,8 @@ function applyAllStandardColumnWidths(ss) {
 
   var logSheet = ss.getSheetByName("Availability_Log");
   if (logSheet) {
-    logSheet.setColumnWidth(1, 170); // Timestamp
-    logSheet.setColumnWidth(2, 280); // ProfileID
-    logSheet.setColumnWidth(3, 110); // MatchDate
-    logSheet.setColumnWidth(4, 110); // Response
-    logSheet.setColumnWidth(5, 260); // Notes
+    // Timestamp, Player Name, Match Date, Response, Notes, Submitted By Phone, ProfileID
+    applyAvailabilityLogColumnWidths(logSheet);
   }
 
   var adminSheet = ss.getSheetByName("Admins");
